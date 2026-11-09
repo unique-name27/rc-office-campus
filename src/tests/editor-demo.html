@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Floor Editor Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Same UI tokens as the game page (SPEC "UI tokens"), so the editor looks the way it will in the game. */
+:root{
+  --ground:#EEF0EA; --ink:#1F2421; --muted:#5D655F; --glass:rgba(250,251,248,.88); --glass2:rgba(250,251,248,.97);
+  --line:rgba(31,36,33,.14); --accent:#E4572E; --on-accent:#fff; --chip:#F1F2EE; --btn:#fff;
+  --display:"Archivo",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ground:#07071A;--ink:#EEF0F7;--muted:#A3ABBE;--glass:rgba(14,15,32,.8);--glass2:rgba(14,15,32,.96);--line:rgba(255,255,255,.16);--chip:rgba(255,255,255,.08);--btn:rgba(255,255,255,.06);color-scheme:dark}}
+:root[data-theme="dark"]{--ground:#07071A;--ink:#EEF0F7;--muted:#A3ABBE;--glass:rgba(14,15,32,.8);--glass2:rgba(14,15,32,.96);--line:rgba(255,255,255,.16);--chip:rgba(255,255,255,.08);--btn:rgba(255,255,255,.06);color-scheme:dark}
+html,body{margin:0;min-height:100%}
+body{background:var(--ground);color:var(--ink);font-family:var(--display)}
+.tb{font:600 12px var(--display);padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--btn);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
+.tb:hover{border-color:var(--muted)}
+.tb:focus-visible,.primary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.primary{font:700 14px var(--display);padding:11px 16px;border-radius:9px;border:0;background:var(--accent);color:var(--on-accent);cursor:pointer}
+main{max-width:760px;margin:0 auto;padding:28px 16px 40px;display:flex;flex-direction:column;gap:16px}
+h1{margin:0;font-size:28px;font-weight:800;letter-spacing:-.02em}
+p{margin:0;line-height:1.5;color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.card{border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--glass)}
+.card h2{margin:0;font-size:15px;font-weight:800}
+label{display:inline-flex;gap:6px;align-items:center;font-size:13px;min-height:32px}
+select{font:500 13px var(--display);padding:6px 8px;border-radius:7px;border:1px solid var(--line);background:var(--btn);color:var(--ink);min-height:32px}
+pre{margin:0;font:400 11px/1.5 var(--mono);color:var(--muted);white-space:pre-wrap;max-height:260px;overflow:auto}
+.kick{font:500 11px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+</style>
+</head>
+<body>
+<main>
+  <div><div class="kick">RC Campus v4 · dev page</div><h1>Floor editor demo</h1></div>
+  <p>Opens <code>EDITOR</code> from <code>../js/editor.js</code> on a sample floor (Building 1 · Floor 1) with a fake preview builder, 70 sample people and 16 desks that carry facilities x,y in feet. Nothing here talks to a server.</p>
+  <div class="card">
+    <h2>Open</h2>
+    <div class="row">
+      <button class="primary" id="openPlan" type="button">Open with a plan image</button>
+      <button class="tb" id="openBare" type="button">Open with no plan</button>
+      <button class="tb" id="openViewer" type="button">Open as a non-uploader</button>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="failSave"> Saving fails</label>
+      <label><input type="checkbox" id="oneFloor"> One-floor building</label>
+      <label>Theme <select id="theme"><option value="">Follow system</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+      <button class="tb" id="reset" type="button">Reset sample floor</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Sample files to try</h2>
+    <p>The DXF has wall, glazing and furniture layers in feet. The PNG is the same plan with the 16 numbered desks, for trying “Load floor plan”, “Set scale” (the scale bar is 50 ft) and “Place desks from your facilities file” (desks 1-101 and 1-116 are labelled).</p>
+    <div class="row"><a class="tb" id="dlDxf" download="sample-floor.dxf" href="#">Download sample-floor.dxf</a><a class="tb" id="dlPng" download="sample-plan.png" href="#">Download sample-plan.png</a></div>
+  </div>
+  <div class="card">
+    <h2>Last save</h2>
+    <pre id="log">Nothing saved yet.</pre>
+  </div>
+</main>
+
+<script src="../js/importers.js"></script>
+<script src="../js/editor.js"></script>
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id);
+const PI=Math.PI,HALF=PI/2;
+const IMP=typeof IMPORT!=="undefined"?IMPORT:null;   // real importers when present; fallbacks below otherwise
+
+/* ---------------- sample people (deterministic) ---------------- */
+let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return(seed-1)/2147483646};
+const FIRST="Ava Ben Cleo Dev Eli Fay Gus Hana Ivan Jo Kai Lena Milo Nia Omar Priya Quinn Rosa Sam Tara Uma Vik Wren Xavi Yara Zane Abe Bea Cal Dina".split(" ");
+const LAST="Adams Baker Chen Diaz Ellis Fox Garcia Hill Ito Jensen Khan Lopez Moreau Park Rossi Silva Tanaka Usman Vance Walsh".split(" ");
+const TEAMS={"Validation Lab":{color:"#C2456B",arr:"lab"},"Finance":{color:"#8E6FBF",arr:"offices"},"Verification":{color:"#3E7CB1",arr:"bench"},
+  "Field Sales":{color:"#2E9C7A",arr:"hot"},"People Ops":{color:"#D9822B",arr:"cubes"},"Hardware":{color:"#5A9E3A",arr:"bench"}};
+const ROSTER=[];const used=new Set();
+function person(team,desk,extra){let n;do{n=FIRST[Math.floor(rnd()*FIRST.length)]+" "+LAST[Math.floor(rnd()*LAST.length)]}while(used.has(n));used.add(n);ROSTER.push(Object.assign({desk,name:n,team,title:"Staff"},extra||{}))}
+[["Validation Lab",14],["Finance",8],["Verification",16],["Field Sales",7],["People Ops",9]].forEach(([t,n])=>{for(let i=0;i<n;i++)person(t,"")});
+// Hardware: 16 desks with facilities coordinates in feet (origin = building's south-west corner, y up)
+const HW=[];for(let r=0;r<2;r++)for(let i=0;i<8;i++){const x=-6+i*1.6,z=r?16.8:16;HW.push({id:"1-1"+String(r*8+i+1).padStart(2,"0"),x,z,a:r?0:PI})}
+HW.forEach(d=>person("Hardware",d.id,{x:+((d.x+36)/.3048).toFixed(2),y:+((22-d.z)/.3048).toFixed(2),rot:d.a?180:0}));
+person("Finance","1-201");person("Field Sales","");
+
+/* ---------------- sample floor ---------------- */
+const SAMPLE={v:1,key:"B1-1",b:"B1",f:1,w:72,d:44,door:{side:"s",at:0,w:3},plan:null,
+  walls:[[-14,-15.5,-14,-5],[14,-15.5,14,-5],[-36,-15.5,-14,-15.5]],
+  glass:[[8,-12,16,-12]],
+  rooms:[
+    {id:"e1",type:"elevator",name:"Elevator",x:-1.5,z:-2,w:2.6,d:2.4,door:"s"},{id:"e2",type:"elevator",name:"Elevator",x:1.5,z:-2,w:2.6,d:2.4,door:"s"},
+    {id:"r1",type:"restroom",name:"Restroom",x:-6.5,z:-2,w:6,d:4,door:null},{id:"r2",type:"stairs",name:"Stairs",x:6,z:-2,w:3,d:5,door:null},
+    {id:"r3",type:"conf",name:"Silicon",x:-20,z:-18.5,w:8,d:6,door:"s",seats:10},{id:"r4",type:"conf",name:"Wafer",x:-9,z:-18.5,w:6,d:6,door:"s"},
+    {id:"r5",type:"kitchen",name:"Kitchen",x:12,z:-18.5,w:10,d:6,door:"s"},{id:"r6",type:"conf",name:"Die",x:24,z:-18.5,w:6,d:6,door:"s"},
+    {id:"r7",type:"phone",name:"Booth 1",x:29.75,z:-19.25,w:1.5,d:1.5,door:"s"},{id:"r8",type:"phone",name:"Booth 2",x:31.75,z:-19.25,w:1.5,d:1.5,door:"s"},
+    {id:"r9",type:"lab",name:"Validation Lab",x:-25,z:8,w:20,d:16,door:"e"},{id:"1-201",type:"office",name:"CFO",x:31,z:-9,w:4,d:4,door:"w"}],
+  zones:[
+    {id:"z1",team:"Validation Lab",arr:null,x:-25,z:8,w:18,d:14,dir:"h"},{id:"z2",team:"Finance",arr:null,x:25,z:10,w:18,d:14,dir:"h"},
+    {id:"z3",team:"Verification",arr:null,x:0,z:8,w:18,d:10,dir:"h"},{id:"z4",team:"Field Sales",arr:null,x:-22,z:-9.5,w:12,d:7,dir:"h"},
+    {id:"z5",team:"People Ops",arr:null,x:21,z:-7,w:12,d:8,dir:"h"}],
+  desks:[],ramps:null,updatedAt:0};
+let current=JSON.parse(JSON.stringify(SAMPLE));
+
+/* ---------------- tiny fake LAYOUT.build ---------------- */
+const guessArr=t=>/lab|validation/i.test(t)?"lab":/financ|legal/i.test(t)?"offices":/people|hr|operation/i.test(t)?"cubes":/sales|support/i.test(t)?"hot":"bench";
+function fakeBuild(spec){
+  const desks=[],chairs=[],items=[],walls=[],elevators=[],people=ROSTER.map(r=>({name:r.name,team:r.team,title:r.title,desk:-1,auto:false})),unplaced=[];
+  const addDesk=(id,x,z,a,arr,team,zone)=>{
+    const i=desks.length,fx=-Math.sin(a),fz=-Math.cos(a);
+    desks.push({id,x,z,a,w:arr==="lab"?1.8:1.6,dd:arr==="lab"?.9:.8,arr,team,zone,person:-1,mon:true,chair:chairs.length});
+    chairs.push({x:x-fx*.8,z:z-fz*.8,a,desk:i,kind:arr==="lab"?"stool":"task"});
+  };
+  spec.desks.forEach(d=>addDesk(d.id,d.x,d.z,d.a,d.arr||"bench",d.team||"",null));
+  spec.rooms.forEach(r=>{
+    if(r.type==="office")addDesk(r.id,r.x,r.z,{n:0,s:PI,e:-HALF,w:HALF}[r.door||"s"]+PI,"offices","",null);
+    if(r.type==="conf")items.push({t:"rtable",x:r.x,z:r.z,a:0,w:r.w*.55,d:r.d*.4,h:.74});
+    if(r.type==="kitchen"){items.push({t:"counter",x:r.x,z:r.z-r.d/2+.6,a:0,w:r.w-1,d:.7,h:.95});items.push({t:"table",x:r.x-2,z:r.z+1,a:0,w:1.2,d:1.2,h:.74},{t:"table",x:r.x+2,z:r.z+1,a:0,w:1.2,d:1.2,h:.74})}
+    if(r.type==="elevator"&&r.door){const o={n:[0,-1],s:[0,1],e:[1,0],w:[-1,0]}[r.door];elevators.push({id:r.id,x:r.x,z:r.z,a:0,pad:{x:r.x+o[0]*(r.d/2+1.2),z:r.z+o[1]*(r.d/2+1.2),r:1}})}
+  });
+  spec.zones.forEach((z,zi)=>{
+    const arr=z.arr||(TEAMS[z.team]&&TEAMS[z.team].arr)||guessArr(z.team),H=z.dir!=="v";
+    const L=H?z.w:z.d,Wd=H?z.d:z.w,pa=arr==="offices"?3.2:arr==="lab"?2.2:1.6,pb=arr==="offices"?3.4:arr==="lab"?3.4:3.6,m=.9;
+    const at=(u,v)=>H?[z.x-z.w/2+u,z.z-z.d/2+v]:[z.x-z.w/2+v,z.z-z.d/2+u];   // u along the rows, v across them
+    for(let v=m;v+(arr==="offices"||arr==="lab"?1:1.6)<=Wd-m+1e-6;v+=pb)for(let u=m+pa/2;u<=L-m-pa/2+1e-6;u+=pa){
+      const rows=arr==="offices"||arr==="lab"?[[v+.5,H?0:HALF]]:[[v+.4,H?PI:-HALF],[v+1.2,H?0:HALF]];
+      for(const[vv,a]of rows){const p=at(u,vv);addDesk(`${z.id}-${desks.length}`,p[0],p[1],a,arr,z.team,z.id)}
+      if(arr==="offices"||arr==="cubes"){const p=at(u-pa/2,v-.3),q=at(u+pa/2,v-.3),r2=at(u-pa/2,v+(arr==="offices"?2:1.9));walls.push({x1:p[0],z1:p[1],x2:q[0],z2:q[1],t:.08,h:1.3,kind:"part"},{x1:p[0],z1:p[1],x2:r2[0],z2:r2[1],t:.08,h:1.3,kind:"part"})}
+      if(arr==="lab"){const p=at(u,v+1.4);items.push({t:"bench",x:p[0],z:p[1],a:H?0:HALF,w:pa*.9,d:.75,h:.9})}
+    }
+  });
+  // seat: matching desk id first, then a free desk in the person's team area
+  const byId=new Map();desks.forEach((d,i)=>{if(d.id)byId.set(String(d.id).toLowerCase(),i)});
+  const later=[];
+  ROSTER.forEach((r,pi)=>{const i=r.desk?byId.get(r.desk.toLowerCase()):undefined;if(i!=null&&desks[i].person<0){desks[i].person=pi;people[pi].desk=i}else later.push(pi)});
+  later.forEach(pi=>{const t=ROSTER[pi].team.toLowerCase(),i=desks.findIndex(d=>d.person<0&&String(d.team).toLowerCase()===t);if(i>=0){desks[i].person=pi;people[pi].desk=i;people[pi].auto=true}else unplaced.push(ROSTER[pi])});
+  const occupied=desks.filter(d=>d.person>=0).length;
+  const exit=spec.door?{x:spec.door.side==="s"||spec.door.side==="n"?spec.door.at:(spec.door.side==="e"?spec.w/2-1.2:-spec.w/2+1.2),z:spec.door.side==="s"?spec.d/2-1.2:spec.door.side==="n"?-spec.d/2+1.2:spec.door.at,a:0,r:1.2}:null;
+  const k=spec.rooms.find(r=>r.type==="kitchen");
+  return{key:spec.key,b:spec.b,f:spec.f,w:spec.w,d:spec.d,walls,rooms:spec.rooms,areas:[],desks,people,unplaced,chairs,items,blocks:[],posts:[],elevators,stairs:[],exit,
+    spawn:{x:0,z:0,a:0},kitchen:k?{x:k.x,z:k.z,pickup:{x:k.x,z:k.z+k.d/2-.9,r:.9}}:null,coffee:[],
+    ramps:[{k:"hump",x:-4,z:0,ax:"x",dir:1,len:1.5,w:1.8,h:.14},{k:"hump",x:4,z:0,ax:"x",dir:1,len:1.5,w:1.8,h:.14}],
+    signs:[],dests:[],teams:Object.keys(TEAMS).map(t=>({team:t,color:TEAMS[t].color,count:ROSTER.filter(r=>r.team===t).length})),
+    stats:{desks:desks.length,occupied,open:desks.length-occupied,unplaced:unplaced.length}};
+}
+
+/* ---------------- sample plan image + DXF ---------------- */
+function drawPlan(){
+  const PX=20,c=document.createElement("canvas");c.width=72*PX;c.height=44*PX;const g=c.getContext("2d");
+  const X=x=>(x+36)*PX,Z=z=>(z+22)*PX;
+  g.fillStyle="#fbfaf6";g.fillRect(0,0,c.width,c.height);
+  g.strokeStyle="#c9c6bd";g.lineWidth=1;for(let x=0;x<=72;x+=8){g.beginPath();g.moveTo(x*PX,0);g.lineTo(x*PX,c.height);g.stroke()}for(let z=0;z<=44;z+=8){g.beginPath();g.moveTo(0,z*PX);g.lineTo(c.width,z*PX);g.stroke()}
+  g.strokeStyle="#2b2b2b";g.lineWidth=8;g.strokeRect(4,4,c.width-8,c.height-8);
+  g.fillStyle="#fbfaf6";g.fillRect(X(-1.5),Z(22)-10,3*PX,14);
+  g.lineWidth=4;
+  SAMPLE.walls.forEach(w=>{g.beginPath();g.moveTo(X(w[0]),Z(w[1]));g.lineTo(X(w[2]),Z(w[3]));g.stroke()});
+  SAMPLE.rooms.forEach(r=>{g.strokeRect(X(r.x-r.w/2),Z(r.z-r.d/2),r.w*PX,r.d*PX);g.font="600 16px sans-serif";g.fillStyle="#555";g.textAlign="center";g.fillText(r.name,X(r.x),Z(r.z)+5)});
+  g.strokeStyle="#4a7fd1";g.lineWidth=3;SAMPLE.glass.forEach(w=>{g.beginPath();g.moveTo(X(w[0]),Z(w[1]));g.lineTo(X(w[2]),Z(w[3]));g.stroke()});
+  g.strokeStyle="#777";g.lineWidth=2;g.fillStyle="#e7e4da";
+  HW.forEach(d=>{g.save();g.translate(X(d.x),Z(d.z));g.fillRect(-.8*PX,-.4*PX,1.6*PX,.8*PX);g.strokeRect(-.8*PX,-.4*PX,1.6*PX,.8*PX);g.restore()});
+  g.fillStyle="#C2456B";g.font="700 18px sans-serif";g.textAlign="center";
+  [HW[0],HW[HW.length-1]].forEach(d=>{g.fillText(d.id,X(d.x),Z(d.z)+(d.z<16.5?-14:28));g.beginPath();g.arc(X(d.x),Z(d.z),6,0,2*PI);g.fill()});
+  // 50 ft scale bar
+  const L=50*.3048*PX;g.fillStyle="#222";g.fillRect(X(20),Z(19),L,6);g.font="600 16px sans-serif";g.textAlign="left";g.fillText("50 ft",X(20),Z(19)-8);
+  g.font="800 22px sans-serif";g.fillText("N ↑",X(32),Z(-19.5));
+  return c;
+}
+function sampleDXF(){
+  const out=["0","SECTION","2","HEADER","9","$INSUNITS","70","2","0","ENDSEC","0","SECTION","2","ENTITIES"];
+  const ft=v=>(v/.3048).toFixed(3);
+  const line=(layer,x1,z1,x2,z2)=>out.push("0","LINE","8",layer,"10",ft(x1+36),"20",ft(22-z1),"11",ft(x2+36),"21",ft(22-z2));
+  const rect=(layer,x,z,w,d)=>{line(layer,x-w/2,z-d/2,x+w/2,z-d/2);line(layer,x+w/2,z-d/2,x+w/2,z+d/2);line(layer,x+w/2,z+d/2,x-w/2,z+d/2);line(layer,x-w/2,z+d/2,x-w/2,z-d/2)};
+  SAMPLE.walls.forEach(w=>line("A-WALL",...w));
+  SAMPLE.glass.forEach(w=>line("A-GLAZ",...w));
+  SAMPLE.rooms.forEach(r=>rect(r.type==="conf"?"A-GLAZ":"A-WALL",r.x,r.z,r.w,r.d));
+  HW.forEach(d=>rect("E-FURN",d.x,d.z,1.6,.8));
+  out.push("0","ENDSEC","0","EOF");
+  return out.join("\r\n");
+}
+// fallback DXF reader (LINE only) when importers.js isn't there
+function miniDXF(text){
+  const L=text.split(/\r?\n/),segs=[],layers={};let units=null;
+  for(let i=0;i<L.length-1;i+=2){const c=L[i].trim(),v=L[i+1].trim();if(c==="9"&&v==="$INSUNITS")units=+L[i+3];if(c==="0"&&v==="LINE"){const e={};let j=i+2;for(;j<L.length-1&&L[j].trim()!=="0";j+=2)e[L[j].trim()]=L[j+1].trim();segs.push({layer:e["8"]||"0",x1:+e["10"],y1:+e["20"],x2:+e["11"],y2:+e["21"]});layers[e["8"]||"0"]=(layers[e["8"]||"0"]||0)+1;i=j-2}}
+  const u={1:["in",.0254],2:["ft",.3048],4:["mm",.001],5:["cm",.01],6:["m",1]}[units];
+  return{units:u?u[0]:"unknown",scale:u?u[1]:null,layers,segments:segs,texts:[],inserts:[],bounds:null};
+}
+
+/* ---------------- wiring ---------------- */
+const planCanvas=drawPlan();
+const planUrl=planCanvas.toDataURL("image/png");
+const PLAN_ASSET="0123456789abcdef0123456789abcdef";
+planCanvas.toBlob(b=>{if(b)$("dlPng").href=URL.createObjectURL(b)},"image/png");
+$("dlDxf").href=URL.createObjectURL(new Blob([sampleDXF()],{type:"application/dxf"}));
+let assetN=0;const uploaded=new Map([[PLAN_ASSET,planUrl]]);
+function upload(blob){
+  return new Promise(res=>setTimeout(()=>{const asset=(++assetN).toString(16).padStart(32,"a");const url=URL.createObjectURL(blob);uploaded.set(asset,url);res({asset,url})},500));
+}
+function openEditor(mode){
+  const spec=JSON.parse(JSON.stringify(current));
+  if(mode==="plan"&&!spec.plan)spec.plan={asset:PLAN_ASSET,x:-36,z:-22,w:72,d:44,opacity:.55};
+  if(mode==="bare")spec.plan=null;
+  EDITOR.open({
+    key:spec.key,title:"Building 1 · Floor 1",spec,
+    planUrl:spec.plan?uploaded.get(spec.plan.asset)||null:null,
+    teams:TEAMS,roster:ROSTER,build:fakeBuild,
+    upload:mode==="viewer"?null:upload,
+    renderPDF:IMP&&window.pdfjsLib?(f=>IMP.renderPDF(f,window.pdfjsLib)):null,
+    parseDXF:IMP?IMP.parseDXF:miniDXF,
+    similarity:IMP?IMP.similarity:null,
+    floors:$("oneFloor").checked?1:4,
+    onSave:s=>new Promise((res,rej)=>setTimeout(()=>{
+      if($("failSave").checked){rej(new Error("The database didn't answer (demo: “Saving fails” is on)."));return}
+      current=s;
+      $("log").textContent=`Saved ${new Date().toLocaleTimeString()}: ${s.w} × ${s.d} m, ${s.walls.length} walls, ${s.glass.length} glass, ${s.rooms.length} rooms, ${s.zones.length} team areas, ${s.desks.length} desks${s.plan?", plan "+s.plan.w+" × "+s.plan.d+" m":""}\n\n`+JSON.stringify(s,null,1).slice(0,4000);
+      res();
+    },700)),
+    onClose:()=>{$("openPlan").focus()}
+  });
+}
+$("openPlan").onclick=()=>openEditor("plan");
+$("openBare").onclick=()=>openEditor("bare");
+$("openViewer").onclick=()=>openEditor("viewer");
+$("reset").onclick=()=>{current=JSON.parse(JSON.stringify(SAMPLE));$("log").textContent="Sample floor restored."};
+$("theme").onchange=e=>{if(e.target.value)document.documentElement.dataset.theme=e.target.value;else delete document.documentElement.dataset.theme};
+if(/[?&]open=1/.test(location.search))openEditor("plan");
+})();
+</script>
+</body>
+</html>
