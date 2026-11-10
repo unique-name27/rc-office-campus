@@ -60,6 +60,7 @@ kbd{font:500 10px var(--mono);color:var(--muted);border:1px solid var(--line);bo
 .sw[aria-checked="true"]{box-shadow:0 0 0 2px var(--glass2),0 0 0 4px var(--ink)}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .chip{font:500 12px var(--display);padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--btn);color:var(--ink);cursor:pointer}
+.qrow{gap:8px;margin-top:10px;align-items:center}.qnote{margin:6px 0 0;font-size:12px;color:var(--muted,#6b6f76)}
 .chip[aria-pressed="true"],.chip[aria-checked="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
 .sdesc{font-size:13px;color:var(--muted);line-height:1.4;margin:0}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -136,6 +137,10 @@ kbd{font:500 10px var(--mono);color:var(--muted);border:1px solid var(--line);bo
 .meter i{display:block;height:100%;background:var(--accent);transform-origin:left center}
 #speedo .tags{display:flex;gap:6px;margin-top:6px;font:500 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);min-height:14px}
 #speedo .tags span[data-on="1"]{color:var(--accent)}
+#speedo .meter.sk{height:4px;margin-top:4px}#skillBar{background:var(--muted)!important;transition:background-color .15s}#skillBar[data-tier="1"]{background:#5BC0FF!important}#skillBar[data-tier="2"]{background:#FFA43C!important}
+[data-theme="light"] #skillBar[data-tier="1"]{background:#1B6FB0!important}[data-theme="light"] #skillBar[data-tier="2"]{background:#C25E00!important}#skillBar[data-tier="3"]{background:var(--accent)!important}
+#boostBar{transition:opacity .2s}#boostBar[data-lock="1"]{opacity:.35}
+body.animal #tDriftTag{display:none}
 #help{position:fixed;z-index:4;left:max(12px,env(safe-area-inset-left,0px));bottom:calc(12px + env(safe-area-inset-bottom,0px));padding:8px 10px;font:400 11px var(--mono);color:var(--muted);max-width:360px;line-height:1.55}
 #look{position:fixed;z-index:5;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);padding:9px 14px;min-width:200px;max-width:calc(100vw - 40px);box-sizing:border-box;text-align:center}
 #look .n{font-weight:800;font-size:15px}
@@ -317,6 +322,10 @@ body.touch #help{display:none}
   <div class="row" style="justify-content:space-between"><h2 id="styleH">Graphic style</h2><button class="tb" id="styleClose" type="button">Done</button></div>
   <div class="chips" id="chipsB" role="group" aria-label="Graphic style"></div>
   <p class="sdesc" id="styleDescB"></p>
+  <div id="qualityRow" hidden>
+    <div class="row qrow"><span class="lbl" id="qLbl">Quality</span><div class="chips" id="quality" role="radiogroup" aria-labelledby="qLbl"></div></div>
+    <p class="qnote" id="qnote" aria-live="polite"></p>
+  </div>
   <div class="keys">Number keys 1–5 switch styles while you drive · N toggles Neon night</div>
 </section>
 
@@ -341,7 +350,7 @@ body.touch #help{display:none}
 
 <div id="mapwrap" class="glass hud no-o"><canvas id="map" width="440" height="280" aria-label="Top view of where you are"></canvas><div class="cap"><span id="mapCap">Top view</span><span id="coords">—</span></div></div>
 <div id="status" class="glass hud no-o" hidden></div>
-<div id="speedo" class="glass hud no-o no-w"><div><span class="v" id="spd">0</span><span class="u">km/h</span></div><div class="meter" aria-hidden="true"><i id="boostBar"></i></div><div class="tags"><span id="tBoostTag">Boost</span><span id="tDriftTag">Drift</span><span id="tAirTag">Air</span></div></div>
+<div id="speedo" class="glass hud no-o no-w"><div><span class="v" id="spd">0</span><span class="u">km/h</span></div><div class="meter" aria-hidden="true"><i id="boostBar"></i></div><div class="meter sk" aria-hidden="true"><i id="skillBar"></i></div><div class="tags"><span id="tBoostTag">Boost</span><span id="tDriftTag">Drift</span><span id="tAirTag">Air</span><span id="tSkillTag">Turbo</span></div></div>
 <div id="look" class="glass hud no-o" hidden><div class="n" id="lookName"></div><div class="m" id="lookMeta"></div></div>
 <div id="help" class="glass hud no-o"></div>
 <section id="elev" class="glass hud no-o" hidden aria-labelledby="elevK">

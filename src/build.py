@@ -6,15 +6,32 @@ usage: python -I build.py [out.html] [--test]
 import sys, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MODULES = ["layout.js", "campus.js", "nav.js", "importers.js", "editor.js", "people.js"]
-GAME = ["game-1-core.js", "game-1b-avatars.js", "game-2-world.js", "game-2b-people.js", "game-3-play.js", "game-4-ui.js"]
-THREE = '<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>'
+MODULES = ["layout.js", "campus.js", "nav.js", "importers.js", "editor.js", "people.js", "avatar-meshes.js", "kit-meshes.js"]
+GAME = ["game-1-core.js", "game-1b-avatars.js", "game-2-world.js", "game-2b-people.js", "game-2c-hd.js", "game-3-play.js", "game-4-ui.js"]
+# three.js r165 as ES modules from jsDelivr: one copy, shared with the add-ons through the import map
+TV = "0.165.0"
+IMPORTMAP = ('<script type="importmap">\n{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@%s/build/three.module.min.js",'
+             '"three/addons/":"https://cdn.jsdelivr.net/npm/three@%s/examples/jsm/"}}\n</script>' % (TV, TV))
+IMPORTS = """import * as THREE from "three";
+import {EffectComposer} from "three/addons/postprocessing/EffectComposer.js";
+import {RenderPass} from "three/addons/postprocessing/RenderPass.js";
+import {GTAOPass} from "three/addons/postprocessing/GTAOPass.js";
+import {UnrealBloomPass} from "three/addons/postprocessing/UnrealBloomPass.js";
+import {OutputPass} from "three/addons/postprocessing/OutputPass.js";
+import {RoomEnvironment} from "three/addons/environments/RoomEnvironment.js";
+window.__rcLoaded=true;"""
+# if the 3D library can't be fetched (offline, a blocked CDN) the module never runs: say so instead of showing a blank page
+FAILSAFE = """<script>
+window.__rcFail=function(){if(window.__rcLoaded)return;var f=document.getElementById("fatal");if(!f)return;f.hidden=false;f.querySelector("p").textContent="The 3D library didn't load, so the campus can't be shown. Check your connection and reload the page.";["bar","start","side","panel","mapwrap","speedo","help"].forEach(function(id){var e=document.getElementById(id);if(e)e.style.display="none"})};
+setTimeout(window.__rcFail,25000);
+</script>"""
 
 TEST_HOOK = """
 window.__rc={get me(){return me},get bot(){return bot},get WKEY(){return WKEY},get WM(){return WM},get DATA(){return DATA},get mode(){return mode},get route(){return route},get race(){return race},get run(){return run},
   enterWorld,goWorld,goFloor,goCampus,routeTo,startRace,runStart,applyStyle,setCam,buildIndex,modelFor,floorKeys,ride,flyTo,spawnNear,openEditor,openSetup,
   readImportText:(name,text)=>readImport(new File([text],name,{type:"text/csv"})),
   snap:()=>{fly=null;document.body.dataset.fly="0";poseFor(mode,camPos,camLook);camera.position.copy(camPos);camera.lookAt(camLook);camera.updateProjectionMatrix();renderer.render(scene,camera)},
+  snapFx:()=>{fly=null;document.body.dataset.fly="0";poseFor(mode,camPos,camLook);camera.position.copy(camPos);camera.lookAt(camLook);camera.updateProjectionMatrix();HD.render(1/60)},HD,makeAvatar,dropVis,syncCar,skillFx,woofAt,get chairsList(){return chairs},get root(){return root},
   renderMs:n=>{n=n||5;const gl=renderer.getContext();renderer.render(scene,camera);gl.finish();const t=performance.now();for(let i=0;i<n;i++)renderer.render(scene,camera);gl.finish();return (performance.now()-t)/n},
   measureSfx:async(name,arg)=>{audio();const sv={AC,bus,noiseBuf,brownBuf,muted},sr=44100,off=new OfflineAudioContext(1,sr*2,sr);
     try{AC=off;bus=off.createGain();bus.connect(off.destination);const cp=b0=>{const b=off.createBuffer(1,Math.min(b0.length,sr*2),sr);b.copyToChannel(b0.getChannelData(0).slice(0,b.length),0);return b};noiseBuf=cp(sv.noiseBuf);brownBuf=cp(sv.brownBuf);muted=false;SFX[name](arg)}
@@ -45,7 +62,8 @@ def main():
     pre = ""
     if test:  # in-memory stand-in for the claude.ai runtime, active only with #fakedb in the URL
         pre = "<script>\n" + open(os.path.join(HERE, "tests", "fake-claude.js"), encoding="utf-8").read() + "\n</script>\n"
-    html = shell.rstrip() + "\n\n" + pre + THREE + "\n<script>\n(function(){\n\"use strict\";\n" + body + "\n})();\n</script>\n"
+    html = (shell.rstrip() + "\n\n" + pre + FAILSAFE + "\n" + IMPORTMAP + '\n<script type="module" onerror="window.__rcFail()">\n' + IMPORTS
+            + "\n(function(){\n\"use strict\";\n" + body + "\n})();\n</script>\n")
     if "--standalone" in sys.argv:
         html = html.replace("<title>Floor 4 Walkthrough</title>",
                             '<title>RC Office Campus</title>\n<meta name="description" content="Drive a remote-control car around a two-building office campus: routes to coworkers and rooms, races, coffee runs and five graphic styles.">', 1)

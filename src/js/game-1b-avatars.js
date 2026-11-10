@@ -1,5 +1,9 @@
 /* ===================== game part 1b: avatars (RC car, dog, cat) ===================== */
-// Each avatar returns the same shape as makeCar's: {g, tilt, cup, under, ...}. Animals add legs/tail/head for animation.
+// Modeled in Blender from code (src/blender/avatars.py) and inlined as AVMESH. Each avatar is a few parts on pivots the
+// game animates: wheels (spin, front pair steers) and the antenna; the head, four legs and the tail. Every Blender
+// material maps onto one of the style roles, so all five styles recolor them. The line-art styles draw each piece's
+// silhouette (an inverted hull) and its creases; Comic inks the same hull black. Studio adds the baked AO.
+// makeAvatar returns {g, tilt, cup, under, ...}: wheels/ap/flame/beam for the car, head/legs/tail for the animals.
 const AVATARS=[["car","RC car"],["dog","Dog"],["cat","Cat"]];
 // coat colors for the animals (the car keeps its paint swatches)
 const COATS={
@@ -7,52 +11,91 @@ const COATS={
   cat:[["#E08A3C","Orange tabby"],["#2A2724","Black"],["#F2EEE6","White"],["#9AA0A6","Gray"],["#C9B79A","Siamese"],["#7A5A3A","Brown"],["#5E6670","Blue"]]
 };
 const AV_KINDS=new Set(["car","dog","cat"]);
-function makeAvatar(kind,paint){return kind==="dog"||kind==="cat"?makeAnimal(kind,paint):makeCar(paint)}
-function makeAnimal(kind,coat){CAR_BUILD=true;try{return buildAnimal(kind,coat)}finally{CAR_BUILD=false}}
-function buildAnimal(kind,coat){
-  const g=new THREE.Group(),tilt=new THREE.Group();g.add(tilt);root.add(g);
-  const dog=kind==="dog",face=S.carFace?pal("car"):coat,oc={car:true,paint:coat,color:face};
-  const shade=(c,t,to)=>S.carFace||S.faceIsBg?face:mix(c,to,t).getStyle();
-  const light=Object.assign({},oc,{color:shade(coat,.5,"#FFFFFF")}),dark=Object.assign({},oc,{color:shade(coat,.45,"#1A1410")});
-  // proportions: a medium dog and a smaller, longer-tailed cat (meters; the RC car is about .5 m long)
-  const B=dog?{bw:.24,bh:.2,bd:.42,by:.27,hw:.19,hh:.18,hd:.19,hy:.42,hz:-.27,leg:.2,lx:.08,lz:.15,lr:.034}
-             :{bw:.16,bh:.15,bd:.34,by:.21,hw:.16,hh:.14,hd:.14,hy:.32,hz:-.21,leg:.16,lx:.055,lz:.12,lr:.026};
-  part(bx(B.bw,B.bh,B.bd),"fur",0,B.by,0,tilt,oc);
-  if(dog)part(bx(B.bw*.8,B.bh*.5,B.bd*.5),"fur",0,B.by-B.bh*.3,-.02,tilt,light); // pale belly/chest
-  const head=new THREE.Group();head.position.set(0,B.hy,B.hz);tilt.add(head);
-  part(bx(B.hw,B.hh,B.hd),"fur",0,0,0,head,oc);
-  const eye=(s,y,z,col)=>part(new THREE.BoxGeometry(.026,.03,.012),col?"screen":"tire",s*(dog?.052:.042),y,z,head,col?Object.assign({},oc,{color:S.carFace?col:col}):oc);
-  if(dog){
-    part(bx(.11,.085,.12),"fur",0,-.035,-.135,head,light);                       // muzzle
-    part(new THREE.BoxGeometry(.05,.035,.03),"tire",0,-.008,-.2,head,oc);        // nose
-    [-1,1].forEach(s=>{const e=part(bx(.035,.13,.085),"fur",s*.108,-.03,.01,head,dark);e.rotation.z=s*.22});  // floppy ears
-    eye(-1,.035,-B.hd/2-.004);eye(1,.035,-B.hd/2-.004);
-    part(new THREE.BoxGeometry(B.bw*.82,.035,.06),"ramp",0,B.hy-.1,B.hz+.08,tilt,{car:true,paint:coat,color:S.faceIsBg?null:S.acc}); // collar
-  }else{
-    part(bx(.075,.05,.045),"fur",0,-.04,-.08,head,light);                        // muzzle
-    part(new THREE.BoxGeometry(.024,.018,.012),"tail",0,-.02,-.105,head,Object.assign({},oc,{color:"#E58C9A"})); // pink nose
-    [-1,1].forEach(s=>{const cg=new THREE.ConeGeometry(.042,.08,4);cg.rotateY(Math.PI/4);part(cg,"fur",s*.052,.1,.005,head,oc)}); // pointed ears
-    eye(-1,.025,-B.hd/2-.004,"#9BD84A");eye(1,.025,-B.hd/2-.004,"#9BD84A");
-  }
-  // legs on pivots at the hips/shoulders so they can swing
-  const legs=[];
-  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>{
-    const pv=new THREE.Group();pv.position.set(sx*B.lx,B.leg+.005,sz*B.lz);tilt.add(pv);
-    part(cyl(B.lr,B.lr*.85,B.leg,10),"fur",0,-B.leg/2,0,pv,oc);
-    part(bx(B.lr*2.2,.03,B.lr*2.6),"fur",0,-B.leg+.012,-.008,pv,dog?light:oc);
-    legs.push(pv);
+const TABBY=new Set(["#E08A3C","#9AA0A6","#7A5A3A"]),SIAMESE="#C9B79A"; // coats that show stripes / dark points
+const LEGI={legFL:0,legFR:1,legBL:2,legBR:3};                           // the order animateAnimal expects
+
+// decoded once per kind; the geometry is shared by every avatar of that kind (marked keep: never disposed)
+const AVD={};
+function avData(kind){
+  if(AVD[kind])return AVD[kind];
+  const src=AVMESH[kind],q=AVMESH.q,u8=s=>{const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u};
+  const parts=src.parts.map(P=>{
+    const m=P.m.map(M=>{
+      const Pq=new Int16Array(u8(M.p).buffer),Nq=new Int8Array(u8(M.n).buffer),A=u8(M.a),I=new Uint16Array(u8(M.i).buffer);
+      const pos=new Float32Array(Pq.length),nor=new Float32Array(Nq.length),col=new Float32Array(A.length*3);
+      for(let i=0;i<Pq.length;i++)pos[i]=Pq[i]/q;
+      for(let i=0;i<Nq.length;i+=3){const l=Math.hypot(Nq[i],Nq[i+1],Nq[i+2])||1;nor[i]=Nq[i]/l;nor[i+1]=Nq[i+1]/l;nor[i+2]=Nq[i+2]/l}
+      for(let i=0;i<A.length;i++)col[i*3]=col[i*3+1]=col[i*3+2]=A[i]/255;
+      const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.BufferAttribute(pos,3));g.setAttribute("normal",new THREE.BufferAttribute(nor,3));
+      g.setAttribute("color",new THREE.BufferAttribute(col,3));g.setIndex(new THREE.BufferAttribute(I,1));g.computeBoundingSphere();g.userData.keep=true;
+      return{k:M.k,geo:g};
+    });
+    let lines=null;
+    if(P.l){const L=new Int16Array(u8(P.l).buffer);if(L.length){const lp=new Float32Array(L.length);for(let i=0;i<L.length;i++)lp[i]=L[i]/q;lines=new THREE.BufferGeometry();lines.setAttribute("position",new THREE.BufferAttribute(lp,3));lines.userData.keep=true}}
+    return{n:P.n,o:new V3(P.o[0],P.o[1],P.o[2]),m,lines,hull:{}};
   });
-  // tail: the dog's points up and back, the cat's is long and curls upward
-  const tail=new THREE.Group();tail.position.set(0,B.by+B.bh*.25,B.bd/2-.01);tilt.add(tail);
-  if(dog){const tg=cyl(.022,.014,.2,8);tg.translate(0,.1,0);const t=part(tg,"fur",0,0,0,tail,oc);t.rotation.x=.7}
-  else{const t1=new THREE.Group();tail.add(t1);t1.rotation.x=.55;const a=cyl(.016,.014,.17,8);a.translate(0,.085,0);part(a,"fur",0,0,0,t1,oc);
-       const t2=new THREE.Group();t2.position.y=.17;t1.add(t2);t2.rotation.x=-.5;const b=cyl(.014,.011,.13,8);b.translate(0,.065,0);part(b,"fur",0,0,0,t2,dark)}
-  const cup=new THREE.Group();cup.position.set(0,B.by+B.bh/2+.005,.03);tilt.add(cup);cup.visible=false;
-  part(cyl(.03,.026,.075,12),"cup",0,.04,0,cup,oc);part(cyl(.032,.032,.012,12),"lid",0,.082,0,cup,oc);
-  let under=null;
-  if(S.glow){const pg=new THREE.PlaneGeometry(.34,.56);pg.rotateX(-Math.PI/2);const gm=new THREE.MeshBasicMaterial({map:RADIAL,color:bright(coat),transparent:true,opacity:.8,blending:THREE.AdditiveBlending,depthWrite:false});glowMats.push(gm);under=new THREE.Mesh(pg,gm);under.position.y=.03;g.add(under)}
-  if(S.blob||S.ao){const pg=new THREE.PlaneGeometry(dog?.36:.28,dog?.56:.44);pg.rotateX(-Math.PI/2);under=new THREE.Mesh(pg,new THREE.MeshBasicMaterial({map:RADIAL,color:0x000000,transparent:true,opacity:S.ao?.35:.5,depthWrite:false,toneMapped:false}));under.position.y=.028;g.add(under)}
-  return{g,tilt,head,legs,tail,cup,under,kind,wheels:[],ap:null,flame:null,beam:null};
+  return AVD[kind]={parts,at:src.at||{}};
+}
+// an outline shell for a part: its pieces (not the cat's stripes) pushed out along their smoothed normals by t meters (drawn back faces only)
+function avHull(P,t){
+  const key=t.toFixed(4);if(P.hull[key])return P.hull[key];
+  const sum=new Map(),K=(a,i)=>Math.round(a[i]*4000)+","+Math.round(a[i+1]*4000)+","+Math.round(a[i+2]*4000);
+  const ms=P.m.filter(M=>M.k!=="furStripe");
+  for(const M of ms){const p=M.geo.attributes.position.array,n=M.geo.attributes.normal.array;for(let i=0;i<p.length;i+=3){const k=K(p,i);let s=sum.get(k);if(!s)sum.set(k,s=[0,0,0]);s[0]+=n[i];s[1]+=n[i+1];s[2]+=n[i+2]}}
+  let nv=0,ni=0;for(const M of ms){nv+=M.geo.attributes.position.count;ni+=M.geo.index.count}
+  const pos=new Float32Array(nv*3),idx=new Uint32Array(ni);let vo=0,io=0;
+  for(const M of ms){
+    const p=M.geo.attributes.position.array,ix=M.geo.index.array,base=vo/3;
+    for(let i=0;i<p.length;i+=3){const s=sum.get(K(p,i)),l=Math.hypot(s[0],s[1],s[2])||1;pos[vo++]=p[i]+s[0]/l*t;pos[vo++]=p[i+1]+s[1]/l*t;pos[vo++]=p[i+2]+s[2]/l*t}
+    for(let i=0;i<ix.length;i++)idx[io++]=ix[i]+base;
+  }
+  const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.BufferAttribute(pos,3));g.setIndex(new THREE.BufferAttribute(idx,1));g.computeBoundingSphere();g.userData.keep=true;
+  return P.hull[key]=g;
+}
+// Blender material name -> [style role, color]. Coat shades follow the coat; Neon draws faces dark, Blueprint in the ground color.
+function avRoles(kind,paint){
+  const face=S.carFace?pal("car"):paint,flat=S.carFace||S.faceIsBg,shade=(t,to)=>flat?face:mix(paint,to,t).getStyle();
+  if(kind==="car")return{paint:["car",face],trim:["tire"],glass:["glass"],tire:["tire"],rim:["rim"],light:["light"],tail:["tail"],white:["cup"]};
+  const tab=TABBY.has(paint)&&kind==="cat",sia=paint===SIAMESE&&kind==="cat";
+  return{fur:["fur",face],furLight:["fur",shade(.5,"#FFFFFF")],furDark:["fur",shade(.45,"#1A1410")],furStripe:["fur",tab?shade(.4,"#2A1608"):face],furPoint:["fur",sia&&!flat?"#4A3426":face],
+    eye:["tire"],iris:["screen",S.carFace?null:"#9BD84A"],shine:["light"],nose:["tire"],pink:["fur",flat?face:"#E58C9A"],collar:["ramp",S.faceIsBg?null:S.acc],tag:["rim",flat?null:"#E8C25A"],whisker:["cup"]};
+}
+function makeCar(paint){return makeAvatar("car",paint)}
+function makeAvatar(kind,paint){
+  if(!AV_KINDS.has(kind))kind="car";
+  const D=avData(kind),car=kind==="car",g=new THREE.Group(),tilt=new THREE.Group();g.add(tilt);root.add(g);
+  const v={g,tilt,kind,wheels:[],legs:car?null:[],head:null,tail:null,ap:null,cup:null,under:null,flame:null,beam:null};
+  const R=avRoles(kind,paint),ec=S.edges?edgeColor("car",{car:true,paint}):null,art=!!ec;
+  const hullT=S.outline?.0065:art?.0032:0,hullM=S.outline?HULL:art?new THREE.MeshBasicMaterial({color:ec,side:THREE.BackSide,transparent:S.edges.o<1,opacity:S.edges.o}):null;
+  if(hullM&&hullM!==HULL&&hullM.transparent)lineMats.push(hullM);
+  for(const P of D.parts){
+    const pv=new THREE.Group();pv.position.copy(P.o);tilt.add(pv);let host=pv;
+    if(P.n.startsWith("wheel")){const sp=new THREE.Group();pv.add(sp);host=sp;v.wheels.push({pv,sp,f:P.n[5]==="F"})}
+    else if(P.n in LEGI)v.legs[LEGI[P.n]]=pv;else if(P.n==="head")v.head=pv;else if(P.n==="tail")v.tail=pv;else if(P.n==="antenna")v.ap=pv;
+    for(const M of P.m){
+      if(M.k==="furStripe"&&!TABBY.has(paint))continue; // the raised tabby bands: only tabby coats show them
+      const r=R[M.k]||["car",paint],m=part(M.geo,r[0],0,0,0,host,{car:true,paint,color:r[1]||undefined,noEdge:true,noOutline:true});
+      if(S.hd&&m.material.isMeshStandardMaterial){m.material.vertexColors=true;m.material.needsUpdate=true} // the AO baked in Blender
+    }
+    if(hullM)host.add(new THREE.Mesh(avHull(P,hullT),hullM));
+    if(art&&P.lines){const lm=new THREE.LineBasicMaterial({color:ec,transparent:S.edges.o<1,opacity:S.edges.o});lineMats.push(lm);host.add(new THREE.LineSegments(P.lines,lm))}
+  }
+  // a coffee cup that rides on the roof (or the back) during a coffee run
+  const cp=D.at.cup||[0,.2,0],cup=new THREE.Group();cup.position.set(cp[0],cp[1],cp[2]);tilt.add(cup);cup.visible=false;v.cup=cup;
+  part(cyl(.03,.026,.075,12),"cup",0,.0375,0,cup,{car:true,paint});part(cyl(.032,.032,.012,12),"lid",0,.08,0,cup,{car:true,paint});
+  if(car){
+    // boost flames out of the exhausts
+    const flame=new THREE.Group();tilt.add(flame);flame.visible=false;v.flame=flame;
+    const fmO=new THREE.MeshBasicMaterial({color:S.glow||S.depthOnly?bright(paint):"#FF9A3C",transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}),fmI=new THREE.MeshBasicMaterial({color:"#FFF4C2",transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false});
+    for(const [x,y,z] of D.at.flame||[[-.05,.05,.28],[.05,.05,.28]]){const o=new THREE.ConeGeometry(.022,.13,10);o.rotateX(Math.PI/2);const mo=new THREE.Mesh(o,fmO);mo.position.set(x,y,z+.065);flame.add(mo);const i=new THREE.ConeGeometry(.011,.07,8);i.rotateX(Math.PI/2);const mi=new THREE.Mesh(i,fmI);mi.position.set(x,y,z+.035);flame.add(mi)}
+  }
+  // underglow (Neon) or a soft contact shadow
+  const big=car?[.38,.62]:kind==="dog"?[.36,.56]:[.28,.44];
+  if(S.glow){
+    const pg=new THREE.PlaneGeometry(big[0],big[1]);pg.rotateX(-Math.PI/2);const gm=new THREE.MeshBasicMaterial({map:RADIAL,color:bright(paint),transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthWrite:false});glowMats.push(gm);v.under=new THREE.Mesh(pg,gm);v.under.position.y=.03;g.add(v.under);
+    if(car){const bg=new THREE.ConeGeometry(.45,2.4,20,1,true);bg.rotateX(Math.PI/2);bg.translate(0,.07,-.25-1.2);v.beam=new THREE.Mesh(bg,new THREE.MeshBasicMaterial({color:"#E8FFFF",transparent:true,opacity:.07,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));tilt.add(v.beam)}
+  }else if(S.blob||S.ao){const pg=new THREE.PlaneGeometry(big[0],big[1]);pg.rotateX(-Math.PI/2);v.under=new THREE.Mesh(pg,new THREE.MeshBasicMaterial({map:RADIAL,color:0x000000,transparent:true,opacity:S.hd?.3:.35,depthWrite:false,toneMapped:false}));v.under.position.y=.028;g.add(v.under)}
+  return v;
 }
 // trot cycle, tail wag, head bob; legs tuck while airborne
 function animateAnimal(c,v,dt){

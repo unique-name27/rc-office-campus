@@ -1,7 +1,10 @@
 # RC Campus v4 — module contracts
 
 The page is ONE html file (a claude.ai artifact) built by concatenating modules into a single
-`(function(){"use strict"; ... })();` script. three.js r128 is a global `THREE` (only the game/renderer uses it).
+`(function(){"use strict"; ... })();` script inside one `<script type="module">`, which imports three.js r165 (and its post-processing
+add-ons) from jsDelivr through an import map; only the game/renderer uses `THREE`. Generated data modules: `js/avatar-meshes.js`
+(`AVMESH`, from `src/blender/avatars.py`) and `js/kit-meshes.js` (`KITMESH`, from `src/tools/pack_kit.py`). Studio is the HD style
+(`js/game-2c-hd.js`: color-managed, image-based light, GTAO, bloom, quality levels); the other styles keep the classic unmanaged colors.
 Today it is a single-floor RC-car game ("Floor 4 Walkthrough"). v4 turns it into a **San Jose campus: 2 buildings x 4 floors**
 with real coworkers loaded from facilities data, per-team desk arrangements, floor-plan import, routes and races.
 

@@ -1,7 +1,7 @@
 /* ===================== game part 4: input, UI, search, HUD, multiplayer, data, setup, boot ===================== */
 
 /* ---------- input ---------- */
-const keys={},tc={gas:false,brake:false,boost:false,drift:false,joy:false,jx:0,jy:0};
+const keys={},tc={gas:false,brake:false,boost:false,drift:false,jump:false,joy:false,jx:0,jy:0};
 const q=$("q"),typing=()=>{const a=document.activeElement;return!!a&&(a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.tagName==="SELECT"||a.isContentEditable)};
 let edOpen=false;
 function readDrive(){
@@ -15,7 +15,8 @@ function readDrive(){
   }else{
     thr=(up?1:0)-(dn?1:0)+(tc.gas?1:0)-(tc.brake?1:0);steer=(lf?1:0)-(rt?1:0)-(tc.joy?tc.jx*1.3:0);
   }
-  return{thr:clamp(thr,-1,1),steer:clamp(steer,-1,1),boost,drift,park:false};
+  const jumpHeld=!!(k.KeyJ||(me.kind!=="car"&&k.Space)||tc.jump); // held jump: the cat doubles by itself near the top
+  return{thr:clamp(thr,-1,1),steer:clamp(steer,-1,1),boost,drift,jumpHeld,park:false};
 }
 function overviewKey(){if(fly||trans)return;if(mode!=="overview")flyTo("overview");else if(WKIND==="floor")goCampus();else{if(camMode==="top")setCam("chase");flyTo("drive",2.4)}}
 function goCampus(){return goWorld("campus",{mode:"overview",title:DATA.campus.name||"Campus",sub:`${DATA.campus.buildings.length} buildings`})}
@@ -64,8 +65,8 @@ function ndc(e){const r=cv.getBoundingClientRect();_ndc.set((e.clientX-r.left)/r
 function bldgAt(e){if(!bldgMeshes.length)return null;ndc(e);const h=pickRay.intersectObjects(bldgMeshes,false)[0];if(!h)return null;const b=bldg(h.object.userData.bldg);if(!b)return null;return{b,f:clamp(Math.floor(h.point.y/FLOOR_H)+1,1,b.floors)}}
 function deskAt(e){
   if(WKIND!=="floor"||!(WM.desks||[]).length)return null;ndc(e);
-  const objs=[deskG&&deskG.mesh,chairG[2]&&chairG[2].mesh,...figMeshes()].filter(Boolean),h=objs.length?pickRay.intersectObjects(objs,false)[0]:null;
-  if(h){const fd=figDeskOf(h),di=fd>=0?fd:deskG&&h.object===deskG.mesh?instDesk[h.instanceId]:(chairs[h.instanceId]||{}).desk;if(di!=null&&di>=0)return di}
+  const objs=[deskG&&deskG.mesh,...chairPickMeshes(),...figMeshes()].filter(Boolean),h=objs.length?pickRay.intersectObjects(objs,false)[0]:null;
+  if(h){const fd=figDeskOf(h),di=fd>=0?fd:deskG&&h.object===deskG.mesh?instDesk[h.instanceId]:(chairOfHit(h)||{}).desk;if(di!=null&&di>=0)return di}
   // lab benches and shared tables are furniture: take the seat nearest to where the click meets the work surface
   const r=pickRay.ray;if(Math.abs(r.direction.y)<1e-4)return null;const t=(.8-r.origin.y)/r.direction.y;if(t<0)return null;
   const px=r.origin.x+r.direction.x*t,pz=r.origin.z+r.direction.z*t;let best=1.2,bi=null;
@@ -123,7 +124,7 @@ let prevStyle=null;
 function styleUI(i){
   const root_=document.documentElement;root_.dataset.theme=S.ui;root_.style.setProperty("--ground",S.bg);root_.style.setProperty("--accent",S.acc);root_.style.setProperty("--on-accent",(()=>{const a=lum(S.acc),d=lum("#14161f");return(a+.05)/(d+.05)>1.05/(a+.05)?"#14161f":"#ffffff"})());
   $("scan").hidden=!S.scan;$("vig").hidden=!S.vignette;
-  renderer.toneMapping=S.tone?THREE.ACESFilmicToneMapping:THREE.NoToneMapping;renderer.toneMappingExposure=S.exposure||1;
+  renderer.toneMapping=S.tone?THREE.NeutralToneMapping:THREE.NoToneMapping;renderer.toneMappingExposure=S.exposure||1;
   cv.style.filter=S.glowCss||"";
   document.querySelectorAll(".chip[data-i]").forEach(c=>c.setAttribute("aria-pressed",String(+c.dataset.i===i)));
   $("styleName").textContent=S.n;$("styleDescA").textContent=$("styleDescB").textContent=S.d;store.set("rc-style",String(i));store.set("rc-style-v","3");
@@ -133,11 +134,14 @@ function applyStyle(i){
   clearRoot();S=ST[i];cur=i;buildWorld();buildCars();fxRestyle();rebuildTags();restoreCups();
   setTarget(target);routeVisuals(true);updateGates();
   styleUI(i);
-  resize();drawMapBase();labelsClear();
+  HD.restyle();drawMapBase();labelsClear();
   if(markerTag){disposeSprite(markerTag);markerTag=null;markerFor=-1}
 }
+// quality levels (Studio only): Auto measures the GPU and steps down or back up; the others fix a level
+[["auto","Auto"],["0","High"],["1","Balanced"],["2","Low"]].forEach(([q,n])=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.q=q;b.textContent=n;b.setAttribute("role","radio");b.onclick=()=>HD.setQuality(q);$("quality").appendChild(b)});
+$("quality").addEventListener("keydown",e=>{if(!/Arrow(Left|Right)/.test(e.key))return;e.preventDefault();e.stopPropagation();const bs=[...$("quality").querySelectorAll(".chip")],i=bs.findIndex(b=>b.getAttribute("aria-checked")==="true"),n=bs[(i+(e.key==="ArrowRight"?1:-1)+bs.length)%bs.length];n.focus();n.click()});
 ["chipsA","chipsB"].forEach(id=>{const box=$(id);ST.forEach((s,i)=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.i=i;b.textContent=(i+1)+". "+s.n;b.setAttribute("aria-pressed","false");b.onclick=()=>applyStyle(i);box.appendChild(b)})});
-function openStyle(){closeMe();$("stylePop").hidden=false;$("bStyle").setAttribute("aria-expanded","true");const p=$("stylePop").querySelector('.chip[aria-pressed="true"]');(p||$("styleClose")).focus()}
+function openStyle(){closeMe();$("stylePop").hidden=false;HD.qUI();$("bStyle").setAttribute("aria-expanded","true");const p=$("stylePop").querySelector('.chip[aria-pressed="true"]');(p||$("styleClose")).focus()}
 function closeStyle(){$("stylePop").hidden=true;$("bStyle").setAttribute("aria-expanded","false")}
 $("bStyle").onclick=()=>{$("stylePop").hidden?openStyle():closeStyle()};
 $("styleClose").onclick=closeStyle;
@@ -151,25 +155,32 @@ function setAvatar(av){
   if(!AV_KINDS.has(av))av="car";me.kind=av;store.set("rc-av",av);makeRoomFor(av);document.body.classList.toggle("animal",av!=="car");
   document.querySelectorAll("#avChips .chip").forEach(c=>c.setAttribute("aria-checked",String(c.dataset.av===av)));
   $("avName").textContent=(AVATARS.find(x=>x[0]===av)||[0,""])[1];
-  $("pBoost").textContent=av==="car"?"Boost":"Sprint";$("pHorn").textContent=av==="dog"?"Bark":av==="cat"?"Meow":"Horn";
+  $("pBoost").textContent=av==="car"?"Boost":"Sprint";$("pHorn").textContent=av==="dog"?"Woof":av==="cat"?"Meow":"Horn";$("pJump").textContent=av==="cat"?"Jump ×2":"Jump";
+  $("tSkillTag").textContent=SKILL_TAG[av];me.drift=false;me.driftTier=0;me.driftT=0;me.turboPend=0;me.turboT=0;me.flipT=0;me.woofT=0;me.woofReq=false;me.airJumps=me.air?1:0;
   renderSwatches();const L=swatches(),saved=store.get(av==="car"?"rc-paint":"rc-coat-"+av);setPaint(L.some(x=>x[0]===saved)?saved:L.some(x=>x[0]===paint)?paint:L[0][0]);
   $("bCam").innerHTML=camName(camMode)+' <kbd>V</kbd>';setHelp();
+  renderBoard();
   const nx=AV_WHO[AV_NEXT[av]],b=$("bAv");b.innerHTML=AV_LBL[av]+' <kbd>P</kbd>';b.title=`Switch to the ${nx} (P)`;b.setAttribute("aria-label",`Playing as the ${AV_WHO[av]}. Switch to the ${nx}`);
 }
 const AV_LBL={car:"Car",dog:"Dog",cat:"Cat"},AV_WHO={car:"RC car",dog:"dog",cat:"cat"},AV_NEXT={car:"dog",dog:"cat",cat:"car"};
-const AV_TIP={car:"RC car: Space drifts, J jumps, H honks",dog:"Dog: Space jumps, Shift sprints, H barks",cat:"Cat: Space jumps (onto desks too), H meows"};
+const AV_TIP={car:"RC car: hold Space through a turn for a turbo · Shift boost · J jump · H horn",dog:"Dog: Space jump · Shift sprint · H big woof pushes chairs away",cat:"Cat: Space jump, press again (or keep holding) to double jump · H meow"};
+// each avatar's special skill: its HUD tag, and the hint the touch layout gets on the first drive
+const SKILL_TAG={car:"Turbo",dog:"Woof",cat:"2× Jump"};
+const SKILL_TOUCH={car:"Hold Drift through a turn for a turbo.",dog:"Woof pushes chairs away.",cat:"Hold Jump to double jump."};
 // P or the toolbar button: car -> dog -> cat, right where you are
 function cycleAvatar(){
   if(fly||trans||mode==="walk")return;
   if((run&&run.phase!=="done")||race){toast(`Finish or cancel the ${race?"race":"coffee run"} first (Enter), then switch`);return}
   const next=AV_NEXT[me.kind]||"car";
-  setAvatar(next);toast(AV_TIP[next]);
+  setAvatar(next);toast(document.body.classList.contains("touch")?AV_WHO[next][0].toUpperCase()+AV_WHO[next].slice(1)+". "+SKILL_TOUCH[next]:AV_TIP[next]);
   if(mode==="drive")for(let k=0;k<6;k++)puff(me.x+(Math.random()-.5)*.3,me.y+.05,me.z+(Math.random()-.5)*.3,"#ffffff");
 }
 $("bAv").onclick=()=>cycleAvatar();
 AVATARS.forEach(([k,n])=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.av=k;b.textContent=n;b.setAttribute("role","radio");b.setAttribute("aria-checked","false");b.onclick=()=>setAvatar(k);$("avChips").appendChild(b)});
 $("avChips").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const i=AVATARS.findIndex(x=>x[0]===me.kind),n=(i+(/Right|Down/.test(e.key)?1:-1)+AVATARS.length)%AVATARS.length;setAvatar(AVATARS[n][0]);$("avChips").children[n].focus()});
-$("pJump").addEventListener("pointerdown",e=>{e.preventDefault();audio();if(mode==="drive")me.jumpReq=true});
+{const pj=$("pJump"),off=()=>{tc.jump=false;pj.dataset.on="0"};
+  pj.addEventListener("pointerdown",e=>{e.preventDefault();audio();if(mode!=="drive")return;me.jumpReq=true;tc.jump=true;pj.dataset.on="1";try{pj.setPointerCapture(e.pointerId)}catch(_){}});
+  pj.addEventListener("pointerup",off);pj.addEventListener("pointercancel",off);pj.addEventListener("lostpointercapture",off);pj.addEventListener("contextmenu",e=>e.preventDefault())}
 $("go").onclick=()=>{if(camMode==="top")setCam("chase");flyTo("drive",2.4)};
 $("goTop").onclick=()=>{camMode="top";$("bCam").innerHTML=camName("top")+' <kbd>V</kbd>';$("joyHint").textContent="Drive";flyTo("drive",2.2)};
 $("goWalk").onclick=()=>flyTo("walk",2.4);
@@ -337,7 +348,7 @@ function pop(x,y,z,txt,col){const s=spriteFrom(textCanvas([txt],{size:52,pad:14,
 function popsFrame(dt){for(let i=pops.length-1;i>=0;i--){const p=pops[i];p.t+=dt;p.s.position.y+=dt*.5;const d=camera.position.distanceTo(p.s.position),k=clamp(d/3.2,1,26)*p.s.userData.h*(1+Math.min(1,p.t*6)*.3);p.s.scale.set(k*p.s.userData.ar,k,1);p.s.material.opacity=1-Math.max(0,(p.t-.5)/.4);if(p.t>.9){disposeSprite(p.s);pops.splice(i,1)}}}
 let hornCount=0,lastHonk=0;
 const HONK={car:["horn","HONK"],dog:["bark","WOOF"],cat:["meow","MEOW"]};
-function honk(){const n=performance.now();if(n-lastHonk<350)return;lastHonk=n;hornCount++;const h=HONK[me.kind]||HONK.car;SFX[h[0]](1);pop(me.x,me.y+.5+tagH(me.kind)-.36,me.z,h[1],paint);presDirty=true}
+function honk(){const n=performance.now();if(n-lastHonk<350)return;lastHonk=n;if(me.kind==="dog")me.woofReq=true;hornCount++;const h=HONK[me.kind]||HONK.car;SFX[h[0]](1);pop(me.x,me.y+.5+tagH(me.kind)-.36,me.z,h[1],paint);presDirty=true}
 const tagH=k=>k==="dog"?.66:k==="cat"?.52:.36;
 
 /* ---------- look card (walk: who you're looking at; drive: whose desk you're under / whose chair you bumped) ---------- */
@@ -347,8 +358,8 @@ function bumpedChair(ch){if(ch.desk<0)return;const{d,p}=deskInfo(ch.desk);if(!d)
 function underDesk(x,z){const desks=WM.desks||[];for(let k=0;k<desks.length;k++){const d=desks[k];if(d.arr==="hot"||d.arr==="lab")continue;const dx=x-d.x,dz=z-d.z;if(Math.abs(dx)>1.2||Math.abs(dz)>1.2)continue;const c=Math.cos(d.a||0),s=Math.sin(d.a||0),lx=dx*c-dz*s,lz=dx*s+dz*c,w=d.w||1.56,dd=d.dd||.78;if(Math.abs(lx)<w/2&&Math.abs(lz)<dd/2)return k}return -1}
 function updateLookCard(force){
   let i=null,title="",meta="";
-  if(WKIND==="floor"&&mode==="walk"&&!fly&&(WM.desks||[]).length){ray.setFromCamera({x:0,y:0},camera);const objs=[deskG&&deskG.mesh,chairG[2]&&chairG[2].mesh,chairG[3]&&chairG[3].mesh,...figMeshes()].filter(Boolean);const h=objs.length?ray.intersectObjects(objs,false)[0]:null;
-    let di=h?(figDeskOf(h)>=0?figDeskOf(h):deskG&&h.object===deskG.mesh?instDesk[h.instanceId]:(chairs[h.instanceId]||{desk:-1}).desk):-1;
+  if(WKIND==="floor"&&mode==="walk"&&!fly&&(WM.desks||[]).length){ray.setFromCamera({x:0,y:0},camera);const objs=[deskG&&deskG.mesh,...chairPickMeshes(),...figMeshes()].filter(Boolean);const h=objs.length?ray.intersectObjects(objs,false)[0]:null;
+    let di=h?(figDeskOf(h)>=0?figDeskOf(h):deskG&&h.object===deskG.mesh?instDesk[h.instanceId]:(chairOfHit(h)||{desk:-1}).desk):-1;
     if(di<0){ // lab benches and shared tables are furniture, not desk tops: pick the nearest seat you're facing
       let best=2.3;const fx_=-Math.sin(walker.yaw),fz_=-Math.cos(walker.yaw);
       (WM.desks||[]).forEach((d,k)=>{const dx=d.x-walker.x,dz=d.z-walker.z,dist=Math.hypot(dx,dz);if(dist<best&&dist>.05&&(dx*fx_+dz*fz_)/dist>.8){best=dist;di=k}})}
@@ -405,10 +416,15 @@ function objective(){if(run&&run.phase!=="done"){const s=ROUTE[run.stage];return
 /* ---------- HUD ---------- */
 const statusEl=$("status");let statusKey="";
 const ARROW='<svg class="cmp" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l7 18-7-4-7 4z" fill="currentColor"/></svg>';
+let hudSk=-1,hudTier=-1,hudLock=null,hudTag=null;
 function hudFrame(){
   const sp=Math.abs(me.vF)*3.6;$("spd").textContent=Math.round(sp);
   $("boostBar").style.transform=`scaleX(${me.boost.toFixed(3)})`;
   $("tBoostTag").dataset.on=me.boosting?"1":"0";$("tDriftTag").dataset.on=me.drift?"1":"0";$("tAirTag").dataset.on=me.air?"1":"0";
+  // the skill meter: the drift charge (car), the woof cooling down (dog), the air jump still in hand (cat)
+  const k=me.kind,sk=k==="car"?(me.drift?Math.min(1,me.driftT/1.4):me.turboT>0?1:0):k==="dog"?1-me.woofCd/1.5:(me.airJumps<1?1:0),tier=k==="car"?(me.drift?me.driftTier:me.turboT>0?(me.sl||1):0):k==="dog"?(me.woofCd<=0?3:0):(me.airJumps<1?3:0);
+  const tagOn=(k==="car"?tier>0:k==="dog"?tier===3:me.air&&tier===3)?"1":"0";
+  if(hudSk!==sk||hudTier!==tier||hudLock!==me.boostLock||hudTag!==tagOn){hudSk=sk;hudTier=tier;hudLock=me.boostLock;hudTag=tagOn;$("skillBar").style.transform=`scaleX(${sk.toFixed(3)})`;$("skillBar").dataset.tier=tier;$("boostBar").dataset.lock=me.boostLock?"1":"0";$("tSkillTag").dataset.on=tagOn}
   if(mode==="overview"){if(!statusEl.hidden)statusEl.hidden=true;statusKey="";return}
   if(joinable&&performance.now()<joinable.until&&mode==="drive"&&!run&&!race){ // a coworker just started a race here: offer a tappable Join
     const key="join|"+joinable.rc.t0;
@@ -435,8 +451,9 @@ function hudFrame(){
 }
 function setHelp(){
   const h=$("help");
-  if(mode==="drive")h.innerHTML=me.kind==="car"?"<kbd>W A S D</kbd> drive · <kbd>Space</kbd> drift · <kbd>J</kbd> jump · <kbd>Shift</kbd> boost · <kbd>H</kbd> horn · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look"
-    :"<kbd>W A S D</kbd> run · <kbd>Space</kbd> jump · <kbd>Shift</kbd> sprint · <kbd>H</kbd> "+(me.kind==="dog"?"bark":"meow")+" · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look"+(me.kind==="cat"?" · cats can jump onto desks":"");
+  if(mode==="drive")h.innerHTML=me.kind==="car"?"<kbd>W A S D</kbd> drive · <kbd>Space</kbd> drift (hold through a turn: turbo) · <kbd>J</kbd> jump · <kbd>Shift</kbd> boost · <kbd>H</kbd> horn · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look"
+    :me.kind==="dog"?"<kbd>W A S D</kbd> run · <kbd>Space</kbd> jump · <kbd>Shift</kbd> sprint · <kbd>H</kbd> big woof (pushes chairs) · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look"
+    :"<kbd>W A S D</kbd> run · <kbd>Space</kbd> jump, again or hold to double jump · <kbd>Shift</kbd> sprint · <kbd>H</kbd> meow · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look";
   else if(mode==="walk")h.innerHTML="<kbd>Click</kbd> to look around · <kbd>W A S D</kbd> walk · <kbd>Shift</kbd> run · <kbd>/</kbd> find · <kbd>L</kbd> my look · <kbd>Esc</kbd> free mouse";
   else h.innerHTML="";
 }
@@ -446,18 +463,22 @@ let raceDocs=[],myRaces={},lbLoaded=false,lbFresh=false,lbTimedOut=false;
 const validT=v=>typeof v==="number"&&isFinite(v)&&v>.5&&v<3600;
 let postDenied=false; // set when a time save is refused for access (rules: races/<you> needs Contributor)
 function bestOf(key){const v=myRaces[key];return validT(v)?v:null}
+// the dog and the cat jump and move differently from the car, so their times go on boards of their own; the car keeps the original keys
+const boardKey=k=>me.kind==="car"?k:k+"|"+me.kind,avSuffix=()=>me.kind==="car"?"":" · "+AV_LBL[me.kind];
 function boardFor(key,n){const out=[];for(const d of raceDocs){const v=d.data(),t=v&&v.t&&v.t[key];if(validT(t))out.push({id:d.id,t,paint:HEX.test(v.paint)?v.paint:"#9AA0A6"})}out.sort((a,b)=>a.t-b.t);return out.slice(0,n||10)}
-async function fillBoard(ol,list){
+async function fillBoard(ol,list,current){
   let ps={};if(user&&list.length){try{ps=await user.profiles(list.map(d=>d.id))}catch(_){}}
+  if(current&&!current())return false;
   ol.innerHTML="";
   list.forEach((d,i)=>{const li=document.createElement("li");const rk=document.createElement("span");rk.className="rk";rk.textContent=i+1;const dot=document.createElement("i");dot.className="dot";dot.style.background=d.paint;const n=document.createElement("span");n.className="nm";n.textContent=(ps[d.id]&&ps[d.id].name)||"Someone";li.append(rk,dot,n);if(myId&&d.id===myId){const y=document.createElement("span");y.className="you";y.textContent="you";li.append(y)}const t=document.createElement("span");t.className="tm";t.textContent=fmt(d.t);li.append(t);ol.appendChild(li)});
 }
+let boardSeq=0;
 async function renderBoard(){
   const ol=$("board"),note=$("boardNote");
   if(WKIND!=="floor"){$("boardH").textContent="Fastest coffee runs";ol.innerHTML="";note.textContent="Open a floor to see its coffee-run times.";return}
-  $("boardH").textContent="Fastest coffee runs · "+floorShort(WKEY);
+  $("boardH").textContent="Fastest coffee runs · "+floorShort(WKEY)+avSuffix();
   if(!db){ol.innerHTML="";note.textContent="Times aren't saved in this view, but you can still race the clock.";return}
-  const key=WKEY+":coffee",list=boardFor(key,10);await fillBoard(ol,list);
+  const seq=++boardSeq,key=boardKey(WKEY+":coffee"),list=boardFor(key,10);if(await fillBoard(ol,list,()=>seq===boardSeq)===false||seq!==boardSeq)return;
   if(!lbLoaded){note.textContent=lbTimedOut?"Can't reach the leaderboard yet.":"Loading times…";return}
   const mine=bestOf(key);
   const denied=postDenied||(db&&!myId);
@@ -524,7 +545,7 @@ function syncPeers(peers){
     if(x!=null&&z!=null&&h!=null){
       if(r.has){const dtm=Math.max(.04,(now-r.t)/1000);r.vx=lerp(r.vx,clamp((x-r.tx)/dtm,-15,15),.5);r.vz=lerp(r.vz,clamp((z-r.tz)/dtm,-15,15),.5)}else{r.car.x=x;r.car.z=z;r.car.h=h}
       r.tx=x;r.tz=z;r.ty=num(pr.y,0,6)||0;r.th=h;r.t=now;r.has=true;r.tp=num(pr.p,-1.5,1.5)||0;r.tr=num(pr.r,-1.5,1.5)||0;
-      r.car.air=pr.a===1;r.car.vF=num(pr.s,-20,20)||0;r.car.steer=num(pr.st,-1,1)||0;r.car.boosting=pr.b===1;r.car.drift=pr.d===1;r.car.driftDir=Math.sign(r.car.steer)||1;
+      r.car.air=pr.a===1;r.car.vF=num(pr.s,-20,20)||0;r.car.steer=num(pr.st,-1,1)||0;r.car.boosting=pr.b===1;r.car.drift=pr.d===1;r.car.driftDir=Math.sign(r.car.steer)||1;r.car.driftTier=r.car.drift?num(pr.dc,0,2)||0:0;r.car.driftT=r.car.driftTier===2?1.2:r.car.driftTier?.8:0;
     }
     if(r.m!=="d"){r.vx=r.vz=0}
     r.wx=num(pr.wx,-400,400);r.wz=num(pr.wz,-400,400);r.wy=num(pr.wy,-1e5,1e5)||0;
@@ -532,6 +553,15 @@ function syncPeers(peers){
     if(rc&&(!r.rc||r.rc.t0!==rc.t0)&&r.w===WKEY&&mode==="drive"&&!race&&!run&&Date.now()-rc.t0<2600&&rc.t0<Date.now()+1500){joinable={r,rc,until:performance.now()+3000};toast(`${r.name||"A coworker"} is racing to ${rc.n} · ${document.body.classList.contains("touch")?"tap Join race":"press Y to join"}`)}
     r.rc=rc;
     const hk=typeof pr.hk==="number"?pr.hk:0;if(r.hk!==undefined&&hk>r.hk&&r.has&&r.w===WKEY){const d=camera.position.distanceTo(_P.set(r.car.x,r.car.y,r.car.z));const h=HONK[r.car.kind]||HONK.car;SFX[h[0]](clamp(1-d/30,.12,1));pop(r.car.x,r.car.y+.5,r.car.z,h[1],r.paint)}r.hk=hk;
+    // their skills: a turbo, a woof (which also scatters the chairs here), a double jump
+    const sx=typeof pr.sx==="number"?pr.sx:0,ev=pr.sk;
+    if(r.sx!==undefined&&sx>r.sx&&r.has&&r.w===WKEY&&r.m==="d"&&!edOpen&&!document.hidden&&r.car.vis){const d=camera.position.distanceTo(_P.set(r.car.x,r.car.y,r.car.z)),vol=clamp(1-d/30,0,1),kd=r.car.kind;
+      if(vol>.04){
+        if((ev==="t1"||ev==="t2")&&kd==="car")skillFx(r.car,"turbo",vol,ev==="t2"?2:1);
+        else if(ev==="j"&&kd==="cat")skillFx(r.car,"jump2",vol);
+        else if(ev==="w"&&kd==="dog"&&now-(r.woofAt||0)>1200){r.woofAt=now;skillFx(r.car,"woof",vol);if(!(run&&run.phase!=="done")&&!race)woofAt(r.car.x,r.car.z,r.car)}
+      }}
+    r.sx=sx;
   }
   for(const [k,r] of remotes)if(!seen.has(k)){removeRemote(r);remotes.delete(k)}
   resolveNames();
@@ -562,7 +592,7 @@ function remoteFrame(dt,now){
     if(!c.vis&&root)c.vis=makeAvatar(c.kind,r.paint);if(c.vis)c.vis.g.visible=true;
     const lead=Math.min(.3,(now-r.t)/1000),px=r.tx+r.vx*lead,pz=r.tz+r.vz*lead;
     if(Math.hypot(px-c.x,pz-c.z)>4){c.x=px;c.z=pz}
-    const k=1-Math.exp(-dt*10);c.x+=(px-c.x)*k;c.z+=(pz-c.z)*k;c.y+=(r.ty-c.y)*k;c.h+=angDiff(c.h,r.th)*k;c.pitch+=(r.tp-c.pitch)*k;c.roll+=(r.tr-c.roll)*k;c.vx=r.vx;c.vz=r.vz;c.lat=0;
+    const k=1-Math.exp(-dt*10);c.x+=(px-c.x)*k;c.z+=(pz-c.z)*k;c.y+=(r.ty-c.y)*(1-Math.exp(-dt*16));c.h+=angDiff(c.h,r.th)*k;c.pitch+=(r.tp-c.pitch)*k;c.roll+=(r.tr-c.roll)*k;c.vx=r.vx;c.vz=r.vz;c.lat=0;
     syncCar(c,dt,true);
     if(!r.tag){r.tag=tagSprite(r.name||"Coworker",r.paint);tags.add(r.tag)}r.tag.visible=true;
     if(r.m==="w"&&r.wx!=null){if(!r.wvis&&root)r.wvis=makeWalker(r.paint);if(r.wvis){r.wvis.visible=true;r.wvis.position.set(r.wx,0,r.wz);r.wvis.rotation.y=r.wy}placeTag(r.tag,r.wx,1.75,r.wz)}
@@ -580,7 +610,8 @@ function renderRoster(){
 function sendPresence(){
   if(!room)return;
   const m=mode==="drive"?"d":mode==="walk"?"w":"o",r2=v=>Math.round(v*100)/100;
-  const o={v:2,m,w:WKEY,c:paint,x:r2(me.x),z:r2(me.z),y:r2(me.y),h:Math.round(me.h*1000)/1000,p:r2(me.pitch),r:r2(me.roll),s:Math.round(me.vF*10)/10,st:r2(me.steer),b:me.boosting?1:0,d:me.drift?1:0,hk:hornCount};
+  const o={v:2,m,w:WKEY,c:paint,x:r2(me.x),z:r2(me.z),y:r2(me.y),h:Math.round(me.h*1000)/1000,p:r2(me.pitch),r:r2(me.roll),s:Math.round(me.vF*10)/10,st:r2(me.steer),b:me.boosting||me.turboT>0?1:0,d:me.drift?1:0,hk:hornCount};
+  if(me.drift&&me.driftTier)o.dc=me.driftT>1.1?2:me.driftTier;if(me.sx){o.sx=me.sx;o.sl=me.sl;o.sk=me.sk}
   if(myId)o.u=myId;
   if(mode==="walk"){o.wx=r2(walker.x);o.wz=r2(walker.z);o.wy=r2(walker.yaw)}else{o.wx=null;o.wz=null;o.wy=null}
   o.rc=race?{k:race.key,t0:race.t0,n:race.dest.name.slice(0,60)}:null;
@@ -1064,7 +1095,7 @@ function renderClaimsSec(box){
 
 /* ---------- main loop ---------- */
 function resize(){
-  const w=innerWidth,h=innerHeight;renderer.setPixelRatio(DPR);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
+  const w=innerWidth,h=innerHeight;renderer.setPixelRatio(HD.pixelRatio());renderer.setSize(w,h,false);HD.resizeFx(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();
 }
 addEventListener("resize",resize);
 let last=performance.now(),lblAcc=0,lookAcc=0,mapAcc=0,rosterAcc=0;
@@ -1105,7 +1136,7 @@ function frame(now){
   hudFrame();audioFrame();
   presT+=dt;if(presT>1/15){presT=0;sendPresence()}
   rosterAcc+=dt;if(rosterAcc>1){rosterAcc=0;if(mode==="overview")renderRoster()}
-  renderer.render(scene,camera);
+  HD.render(dt);
 }
 // continuous sounds follow the car (motor pitch rises with speed; tyre roll; a soft hiss when sliding); dogs and cats patter
 let stepPh=0;
@@ -1126,7 +1157,7 @@ function audioFrame(){
 try{DEMO=CAMPUS.demo(LAYOUT)}catch(e){console.error(e);fatal("The campus couldn't be built. Reload the page to try again.");return}
 DATA=null;mergeData(true);
 {const V1=[0,1,2,3,0,0,0,0,0,4],V2=[0,1,2,3,0,0,4],ver=store.get("rc-style-v");let saved=parseInt(store.get("rc-style"),10);if(Number.isInteger(saved)&&ver!=="3")saved=(ver==="2"?V2:V1)[saved];const i=Number.isInteger(saved)&&saved>=0&&saved<ST.length?saved:(matchMedia("(prefers-color-scheme: dark)").matches?1:0);S=ST[i];cur=i;fxRestyle();styleUI(i)}
-resize();
+HD.restyle(); // sizes the canvas for the quality level (and sets up Studio's post-processing)
 {const last_=store.get("rc-world");enterWorld(last_&&(last_==="campus"||floorKeys().includes(last_))?last_:"campus")}
 setAvatar(me.kind);setMuted(muted);setMode("overview");updateRunBtn();
 ovPose(camPos,camLook);camera.fov=fovFor("overview");

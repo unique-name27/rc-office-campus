@@ -1,12 +1,15 @@
 /* ===================== game part 3: play (cars, modes, camera, input, worlds, elevator, doors, routes, races, coffee) ===================== */
-function newCar(x,z,h,paint,kind){return{kind:kind||"car",jumpReq:false,jumpCd:0,phase:0,x,z,y:0,vy:0,h,camH:h,vx:0,vz:0,vF:0,lat:0,air:false,pitch:0,roll:0,steer:0,thr:0,boost:1,boosting:false,drift:false,driftDir:0,driftT:0,gPrev:0,squash:0,paint,vis:null,cup:false,sk:[null,null],stuck:0,rev:0,wi:0,lastHit:0,airT:0}}
+function newCar(x,z,h,paint,kind){return{kind:kind||"car",jumpReq:false,jumpCd:0,phase:0,x,z,y:0,vy:0,h,camH:h,vx:0,vz:0,vF:0,lat:0,air:false,pitch:0,roll:0,steer:0,thr:0,boost:1,boosting:false,drift:false,driftDir:0,driftT:0,gPrev:0,squash:0,paint,vis:null,cup:false,sk:[null,null],stuck:0,rev:0,wi:0,lastHit:0,airT:0,
+  // skills: car drift charge (tier) and turbo; boost lockout; jump buffer; cat air jumps and flip; dog woof; sx counts skill events for presence
+  driftTier:0,driftCd:0,turboT:0,turboPend:0,boostLock:false,jumpBuf:0,airJumps:0,bonk:false,flipT:0,woofReq:false,woofCd:0,woofT:0,sx:0,sl:0}}
 const PAINTS=[["#E4572E","Tomato"],["#2F6FED","Cobalt"],["#F2C14E","Taxi"],["#2E9C7A","Racing green"],["#8E6FBF","Grape"],["#FF2E97","Hot pink"],["#22B8CF","Teal"],["#F4F1EA","Pearl"],["#1F2421","Carbon"]];
 let paint=store.get("rc-paint");if(!PAINTS.some(p=>p[0]===paint))paint=PAINTS[Math.floor(Math.random()*7)][0];
 const me=newCar(0,0,0,paint,(()=>{const a=store.get("rc-av");return a==="dog"||a==="cat"?a:"car"})());
 if(me.kind!=="car"){const c=store.get("rc-coat-"+me.kind),list=COATS[me.kind];paint=me.paint=list.some(x=>x[0]===c)?c:list[0][0]}
 const bot=newCar(0,0,0,"#22B8CF");bot.name="Mailbot";
 let BOTPATH=[[0,0]];
-function spawn(c,x,z,h){c.x=x;c.z=z;c.h=c.camH=h;c.vx=c.vz=c.vF=c.vy=c.lat=0;c.hop=false;c.jumpReq=false;c.y=groundY(x,z);c.gPrev=c.y;c.air=false;c.drift=false;c.boost=1;c.sk=[null,null];c.pitch=c.roll=0}
+function spawn(c,x,z,h){c.x=x;c.z=z;c.h=c.camH=h;c.vx=c.vz=c.vF=c.vy=c.lat=0;c.hop=false;c.jumpReq=false;c.y=groundY(x,z);c.gPrev=c.y;c.air=false;c.drift=false;c.boost=1;c.sk=[null,null];c.pitch=c.roll=0;
+  c.driftT=0;c.driftTier=0;c.driftCd=0;c.turboT=0;c.turboPend=0;c.boostLock=false;c.jumpBuf=0;c.jumpCd=0;c.airJumps=0;c.bonk=false;c.flipT=0;c.woofReq=false;c.woofCd=0;c.woofT=0;c.squash=0;c.airT=0}
 const G=12,CRAD=.155,AX=.13,IDLE={thr:0,steer:0,boost:false,drift:false,park:true};
 // handling per avatar: top speed, boost speed, acceleration, turn rate, side grip, reverse speed, jump speed (m/s), body radius
 const AVP={car:{max:7.2,bmax:11.5,acc:11,bacc:20,turn:3.3,grip:13,rev:3.2,jump:3.4,drift:true,r:.155,ax:.13},
@@ -29,12 +32,23 @@ let shake=0;
 function carStep(c,ctl,dt,isMe){
   const P=AVP[c.kind]||AVP.car,fx_=-Math.sin(c.h),fz_=-Math.cos(c.h),rx=-fz_,rz=fx_;
   let vF=c.vx*fx_+c.vz*fz_;const vR=c.vx*rx+c.vz*rz,sp=Math.abs(vF);let ground=!c.air;
-  c.jumpCd=Math.max(0,c.jumpCd-dt);
-  if(c.jumpReq){c.jumpReq=false;if(ground&&c.jumpCd<=0&&!ctl.park){c.vy=Math.max(P.jump,Math.max(c.vy,0)+P.jump*.6);c.hop=true;c.y+=.01;c.air=true;ground=false;c.jumpCd=.3;c.squash=.4;if(isMe){SFX.jump(c.kind);for(let k=0;k<3;k++)puff(c.x+(Math.random()-.5)*.2,.03,c.z+(Math.random()-.5)*.2,smokeCol(c))}}}
-  c.boosting=!!ctl.boost&&c.boost>.02&&ctl.thr>=0&&!ctl.park;
+  c.jumpCd=Math.max(0,c.jumpCd-dt);c.jumpBuf=Math.max(0,c.jumpBuf-dt);c.driftCd=Math.max(0,c.driftCd-dt);c.woofCd=Math.max(0,c.woofCd-dt);c.turboT=Math.max(0,c.turboT-dt);
+  if(ctl.park){c.jumpBuf=0;c.turboPend=0} // countdowns, cut-scenes, result cards: no skill fires
+  // jump: a press you can't use yet is kept for .2 s and fires when you land. Cats get one more jump in the air:
+  // press again, or just keep holding jump and it fires by itself near the top of the first leap.
+  if(c.jumpReq){c.jumpReq=false;if(!ctl.park){if(!ground&&c.kind==="cat"&&c.airJumps<1)vF=airJump(c,P,vF,isMe);else c.jumpBuf=.2}}
+  if(c.kind==="cat"&&ctl.jumpHeld&&!ground&&c.hop&&!c.bonk&&c.airJumps<1&&c.vy<=.5&&!ctl.park)vF=airJump(c,P,vF,isMe);
+  if(c.jumpBuf>0&&ground&&c.jumpCd<=0&&!ctl.park){c.jumpBuf=0;c.bonk=false;c.vy=Math.max(P.jump,Math.max(c.vy,0)+P.jump*.6);c.hop=true;c.y+=.01;c.air=true;ground=false;c.jumpCd=.3;c.squash=.4;if(isMe){SFX.jump(c.kind);for(let k=0;k<3;k++)puff(c.x+(Math.random()-.5)*.2,.03,c.z+(Math.random()-.5)*.2,smokeCol(c))}}
+  // the dog's big woof: pushes chairs (and the Mailbot) away; at most once every 1.5 s
+  if(c.woofReq){c.woofReq=false;if(c.kind==="dog"&&c.woofCd<=0&&!ctl.park){c.woofCd=1.5;woofAt(c.x,c.z,c);if(isMe){c.sx++;c.sk="w";presDirty=true;skillFx(c,"woof",1)}}}
+  // a turbo earned in the air (drift released mid-jump) pays out on landing
+  if(c.turboPend&&ground){vF=payTurbo(c,c.turboPend,vF,P,isMe);c.turboPend=0}
+  // boost: an empty meter locks until it has refilled to a quarter (no flicker while Shift stays held)
+  if(c.boost<=.02)c.boostLock=true;else if(c.boostLock&&c.boost>=.25)c.boostLock=false;
+  c.boosting=!!ctl.boost&&!c.boostLock&&c.boost>.02&&ctl.thr>=0&&!ctl.park;
   if(c.boosting)c.boost=Math.max(0,c.boost-.42*dt);else c.boost=Math.min(1,c.boost+.11*dt);
   let thr=ctl.park?0:(c.boosting?1:ctl.thr);c.thr=thr;
-  const maxF=c.boosting?P.bmax:P.max,acc=c.boosting?P.bacc:P.acc;
+  const fast=c.boosting||c.turboT>0,maxF=fast?P.bmax:P.max,acc=fast?P.bacc:P.acc;
   if(ground){
     if(ctl.park){const r=12*dt;vF=Math.abs(vF)<r?0:vF-Math.sign(vF)*r}
     else if(thr>0){if(vF<-.3)vF=Math.min(0,vF+18*dt);else if(vF<maxF)vF=Math.min(maxF,vF+acc*thr*dt*(1-.5*Math.max(0,vF)/maxF))}
@@ -43,13 +57,19 @@ function carStep(c,ctl,dt,isMe){
     if(vF>maxF)vF=Math.max(maxF,vF-6*dt);if(vF<-P.rev)vF=Math.min(-P.rev,vF+6*dt);
   }else if(!P.drift&&thr>0&&!ctl.park&&vF<maxF*.75)vF=Math.min(maxF*.75,vF+P.acc*.45*thr*dt); // animals can push forward mid-leap
   c.steer+=((ctl.park?0:ctl.steer)-c.steer)*Math.min(1,dt*10);
-  const want=P.drift&&ctl.drift&&ground&&sp>2.4&&Math.abs(ctl.steer)>.2;
-  if(want&&!c.drift){c.drift=true;c.driftDir=Math.sign(ctl.steer);c.driftT=0}
-  if(c.drift&&(!ctl.drift||sp<1.4)){
-    if(c.driftT>.8&&ground&&!ctl.park&&vF>0){vF+=2.6*Math.sign(vF||1);c.boost=Math.min(1,c.boost+.2);if(isMe){SFX.turbo();for(let k=0;k<10;k++)spark(c.x-fx_*.25,.05,c.z-fz_*.25,"#5BC0FF",2.2)}}
-    c.drift=false;
+  // charged drift: the charge builds while sliding on the ground. Let go after .7 s (blue) for a turbo; at 1.4 s
+  // (orange) the big turbo fires by itself, and holding the drift through a long bend starts the next charge.
+  const want=P.drift&&ctl.drift&&ground&&sp>2.4&&Math.abs(ctl.steer)>.2&&c.driftCd<=0&&!ctl.park;
+  if(want&&!c.drift){c.drift=true;c.driftDir=Math.sign(ctl.steer);c.driftT=0;c.driftTier=0}
+  if(c.drift){
+    if(ground)c.driftT+=dt;
+    const tier=c.driftT>=1.4?2:c.driftT>=.7?1:0;if(tier>c.driftTier){c.driftTier=tier;if(isMe&&tier===1)SFX.tier()}
+    let pay=0,end=false;
+    if(ctl.park||sp<1.4)end=true;                           // stopped (a wall) or parked: the charge is lost
+    else if(c.driftTier===2){pay=2;end=true;c.driftCd=.3}   // full charge fires by itself
+    else if(!ctl.drift){pay=c.driftTier;end=true}           // let go: pay what's charged
+    if(end){c.drift=false;c.driftTier=0;c.driftT=0;if(pay){if(ground)vF=payTurbo(c,pay,vF,P,isMe);else c.turboPend=pay}}
   }
-  if(c.drift)c.driftT+=dt;
   let yaw;
   if(c.drift&&ground)yaw=(c.driftDir+c.steer*.6)*1.55*clamp(sp/2.5,0,1);
   else yaw=c.steer*(ground?P.turn:.7)*(P.drift?clamp(sp/1.3,0,1):Math.max(.5,clamp(sp/.8,0,1)))*(1-.3*clamp(sp/11,0,1))*(vF<0?-1:1); // animals can turn on the spot
@@ -77,14 +97,16 @@ function carStep(c,ctl,dt,isMe){
   // vertical
   const y0=c.y;c.vy-=G*dt;c.y+=c.vy*dt;
   // ceilings: rising into the underside of something above you stops the jump
-  if(c.vy>0){const bh=BODY_H[c.kind]||.2,l=query(c.x,c.z,.05,8);for(let i=0;i<l.length;i++){const p=l[i];if(p.u==null||c.x<p.x0||c.x>p.x1||c.z<p.z0||c.z>p.z1)continue;if(y0+bh<=p.u+.02&&c.y+bh>p.u){c.y=Math.max(y0,p.u-bh);c.vy=0}}}
+  if(c.vy>0){const bh=BODY_H[c.kind]||.2,l=query(c.x,c.z,.05,8);for(let i=0;i<l.length;i++){const p=l[i];if(p.u==null||c.x<p.x0||c.x>p.x1||c.z<p.z0||c.z>p.z1)continue;if(y0+bh<=p.u+.02&&c.y+bh>p.u){c.y=Math.max(y0,p.u-bh);c.vy=0;c.bonk=true}}}
+  // and nobody leaves through the floor's ceiling
+  if(WKIND==="floor"){const bh=BODY_H[c.kind]||.2;if(c.y+bh>H-.05){c.y=H-.05-bh;if(c.vy>0){c.vy=0;c.bonk=true}}}
   const g=surfaceY(c,c.x,c.z,y0);
   if(c.y<=g){
     // a fall longer than your own hop lands hard (thud, dust, a little shake); a plain hop lands softly
-    const heavy=c.air&&c.vy<-1.5&&(!c.hop||-c.vy>P.jump+.6);
+    const heavy=c.air&&(c.kind==="cat"?-c.vy>8.5:c.vy<-1.5&&(!c.hop||-c.vy>P.jump+.6)); // cats land on their feet from up to ~3 m
     if(heavy){c.squash=Math.min(1,-c.vy/5);if(isMe){SFX.land(-c.vy);shake=Math.max(shake,Math.min(.6,-c.vy*.08))}for(let k=0;k<4;k++)puff(c.x+(Math.random()-.5)*.3,.03,c.z+(Math.random()-.5)*.3,smokeCol(c))}
     else if(c.air&&c.vy<-1){c.squash=Math.min(.5,-c.vy/9);if(isMe&&c.kind!=="car")SFX.step(c.kind)}
-    c.vy=dt>0?Math.min(4.5,(g-c.gPrev)/dt,.4*Math.hypot(c.vx,c.vz)):0;c.y=g;if(c.air&&!c.hop&&c.airT>.35&&isMe)toastAir(c.airT);c.air=false;c.airT=0;c.hop=false;
+    c.vy=dt>0?Math.min(4.5,(g-c.gPrev)/dt,.4*Math.hypot(c.vx,c.vz)):0;c.y=g;if(c.air&&!c.hop&&c.airT>.35&&isMe)toastAir(c.airT);c.air=false;c.airT=0;c.hop=false;c.airJumps=0;c.bonk=false;
   }else{c.air=(c.y-g)>.012;if(c.air)c.airT+=dt}
   c.gPrev=g;
   // static collisions (two circles along the body)
@@ -117,6 +139,7 @@ function smokeCol(c){const s=S.smoke[0];return s==="paint"?bright(c.paint):s}
 function chairsStep(dt){
   for(const ch of dirtyChairs){
     if(!ch.awake){dirtyChairs.delete(ch);continue}
+    {const v=Math.hypot(ch.vx,ch.vz);if(v>6){ch.vx*=6/v;ch.vz*=6/v}} // never faster than 6 m/s (no passing through walls)
     ch.x+=ch.vx*dt;ch.z+=ch.vz*dt;ch.a+=ch.va*dt;
     const f=Math.exp(-2.6*dt);ch.vx*=f;ch.vz*=f;ch.va*=Math.exp(-3*dt);
     for(let it=0;it<2;it++){const list=query(ch.x,ch.z,CHR+.05,2);for(let q=0;q<list.length;q++){if(circleVs(list[q],ch.x,ch.z,CHR)){ch.x+=HIT.nx*HIT.pen;ch.z+=HIT.nz*HIT.pen;const vn=ch.vx*HIT.nx+ch.vz*HIT.nz;if(vn<0){ch.vx-=1.4*vn*HIT.nx;ch.vz-=1.4*vn*HIT.nz}}}
@@ -130,6 +153,42 @@ function chairsStep(dt){
   if((dirtyChairs.size||chairsMoved)&&chairG.length){for(const ch of dirtyChairs){chairMatrices(ch);figChair(ch)}if(chairsMoved){chairs.forEach(chairMatrices);figAll()}chairG.forEach(g=>g.commit());chairsMoved=false}
 }
 const _CB={b:1,x0:0,x1:0,z0:0,z1:0};
+/* ---------- skills: the cat's air jump, the car's turbo, the dog's woof ---------- */
+// one extra jump in the air: +.75 m of height on top of whatever the cat has, a little push forward, and a flip
+function airJump(c,P,vF,isMe){
+  c.airJumps++;c.vy=Math.sqrt(Math.max(c.vy,0)**2+2*G*.75);c.hop=true;c.squash=.25;
+  if(vF<P.max){const fx_=-Math.sin(c.h),fz_=-Math.cos(c.h),add=Math.min(P.max,vF+1.2)-vF;c.vx+=fx_*add;c.vz+=fz_*add;vF+=add}
+  if(isMe){c.sx++;c.sk="j";presDirty=true;skillFx(c,"jump2",1)}
+  return vF;
+}
+// a drift turbo: tier 1 = +2.6 m/s for .4 s, tier 2 = +4 m/s for .7 s (never past 13 m/s), and some boost back
+function payTurbo(c,tier,vF,P,isMe){
+  if(vF<=0)return vF;
+  vF=Math.min(P.bmax+1.5,vF+(tier===2?4:2.6));c.boost=Math.min(1,c.boost+(tier===2?.25:.15));c.turboT=Math.max(c.turboT,tier===2?.7:.4);
+  if(isMe){c.sx++;c.sl=tier;c.sk="t"+tier;presDirty=true;skillFx(c,"turbo",1,tier)}
+  return vF;
+}
+// chairs within 2.4 m slide away (the nearer, the faster) and spin; the Mailbot backs off
+function woofAt(x,z,src){
+  for(const ch of chairsNear(x,z,2.4)){
+    const dx=ch.x-x,dz=ch.z-z,d=Math.hypot(dx,dz);if(d>2.4)continue;
+    const a=d>1e-3?Math.atan2(dz,dx):Math.random()*Math.PI*2,v=1+3*(1-d/2.4),ux=Math.cos(a),uz=Math.sin(a),vn=ch.vx*ux+ch.vz*uz;
+    if(vn<v){ch.vx+=(v-vn)*ux;ch.vz+=(v-vn)*uz} // at least v outward: woofs don't stack
+    ch.va=clamp(ch.va+(Math.random()<.5?-1:1)*(2+Math.random()),-6,6);ch.awake=true;chairCell(ch);dirtyChairs.add(ch);
+  }
+  if(src!==bot&&BOTPATH.length>1){const dx=bot.x-x,dz=bot.z-z,d=Math.hypot(dx,dz);if(d<3){bot.rev=.8;const ux=dx/(d||1),uz=dz/(d||1),vn=bot.vx*ux+bot.vz*uz;if(vn<2){bot.vx+=(2-vn)*ux;bot.vz+=(2-vn)*uz}pop(bot.x,bot.y+.55,bot.z,"!","#FFB547")}}
+}
+// what everyone sees and hears when a skill fires (also run for other players' skills, quieter with distance)
+function skillFx(c,ev,vol,tier){
+  const y=c.y;
+  if(ev==="jump2"){SFX.jump2(vol);if(!REDUCED)c.flipT=.4;for(let k=0;k<6;k++)spark(c.x,y+.1,c.z,"#FFFFFF",1.2);ringPuff(c.x,y+.04,c.z,6,"#FFFFFF",1.6)}
+  else if(ev==="woof"){SFX.woof(vol);c.woofT=.35;c.squash=Math.max(c.squash,.3);ringPuff(c.x,y+.05,c.z,10,"#FFFFFF",3);if(c===me)shake=Math.max(shake,.2)}
+  else if(ev==="turbo"){
+    SFX.turbo(tier,vol);const fx_=-Math.sin(c.h),fz_=-Math.cos(c.h),col=tier===2?"#FFA43C":"#5BC0FF";
+    for(let k=0;k<(tier===2?18:10);k++)spark(c.x-fx_*.25,y+.05,c.z-fz_*.25,col,tier===2?2.8:2.2);
+    if(tier===2)pop(c.x,y+.42,c.z,"TURBO!",col);
+  }
+}
 function tidyChairs(){chairs.forEach(c=>{c.x=c.hx;c.z=c.hz;c.a=c.ha;c.vx=c.vz=c.va=0;c.awake=false;chairCell(c)});dirtyChairs.clear();chairsMoved=true}
 function botCtl(c,dt){
   if(BOTPATH.length<2)return IDLE;
@@ -152,12 +211,12 @@ function syncCar(c,dt,remote){
   }
   c.squash=Math.max(0,c.squash-dt*4);
   v.tilt.rotation.set(c.pitch,0,c.roll);v.tilt.position.y=-c.squash*.025;
-  if(v.legs){animateAnimal(c,v,dt);v.head.visible=!(c===me&&mode==="drive"&&!fly&&camMode==="bumper");if(v.under)v.under.rotation.x=c.pitch;v.cup.visible=!!c.cup;return}
+  if(v.legs){animateAnimal(c,v,dt);skillPose(c,v,dt);v.head.visible=!(c===me&&mode==="drive"&&!fly&&camMode==="bumper");if(v.under)v.under.rotation.x=c.pitch;v.cup.visible=!!c.cup;return}
   v.wheels.forEach(w=>{w.sp.rotation.x-=c.vF/.055*dt;if(w.f)w.pv.rotation.y=c.drift?-c.driftDir*.32:c.steer*.42});
   v.ap.rotation.z=Math.sin(T*9)*.05*Math.min(1,sp/3)-c.steer*.06;v.ap.rotation.x=clamp(c.thr*-.12,-.2,.2);
   if(v.under&&S.glow){v.under.material.opacity=.65+Math.sin(T*4+c.x)*.15}
   if(v.under)v.under.rotation.x=c.pitch;
-  v.flame.visible=c.boosting;if(c.boosting){const f=.8+Math.random()*.5;v.flame.scale.set(1,1,f)}
+  const flame=c.boosting||c.turboT>0;v.flame.visible=flame;if(flame){const f=(c.turboT>0?1.1:.8)+Math.random()*.5;v.flame.scale.set(1,1,f)}
   v.cup.visible=!!c.cup;
   const skid=!c.air&&(c.drift||Math.abs(c.lat)>1.8||(c.thr<0&&c.vF>3));
   [-.128,.128].forEach((lx,k)=>{
@@ -165,7 +224,14 @@ function syncCar(c,dt,remote){
     if(skid){const y=groundY(wx,wz)+.005,l=c.sk[k];if(l&&Math.hypot(wx-l[0],wz-l[1])>.05){skidSeg(l[0],l[1],l[2],wx,wz,y,S.skid[0]==="paint"?bright(c.paint):S.skid[0]);c.sk[k]=[wx,wz,y]}else if(!l)c.sk[k]=[wx,wz,y];if(Math.random()<dt*14)puff(wx,.04,wz,smokeCol(c))}
     else c.sk[k]=null;
   });
-  if(c.drift&&c.driftT>.8&&Math.random()<dt*20){const [wx,wz]=wheelPos(c,c.driftDir*.13,.14);spark(wx,.03,wz,"#5BC0FF",.8)}
+  // drift charge sparks: blue once a turbo is earned, orange just before the big one fires
+  if(c.drift&&c.driftTier>0&&Math.random()<dt*(c.driftT>1.1?32:20)){const [wx,wz]=wheelPos(c,c.driftDir*.13,.14);spark(wx,c.y+.03,wz,c.driftT>1.1?"#FFA43C":"#5BC0FF",.8)}
+}
+// the cat's flip turns about its middle; the dog's woof rears up on its hind legs
+function skillPose(c,v,dt){
+  v.tilt.position.z=0;
+  if(c.flipT>0){c.flipT=Math.max(0,c.flipT-dt);const k=1-c.flipT/.4,th=-Math.PI*2*easeIO(k),cy=.2;v.tilt.rotation.x+=th;v.tilt.position.y+=cy-cy*Math.cos(th);v.tilt.position.z=-cy*Math.sin(th)}
+  if(c.woofT>0){c.woofT=Math.max(0,c.woofT-dt);const k=1-c.woofT/.35,th=.35*Math.sin(Math.PI*k),zb=.15;v.tilt.rotation.x+=th;v.tilt.position.y+=zb*Math.sin(th);v.tilt.position.z+=zb*(1-Math.cos(th))}
 }
 function buildCars(){
   me.vis=makeAvatar(me.kind,me.paint);bot.vis=makeCar(bot.paint);
@@ -255,7 +321,7 @@ function makeRoomFor(kind){
   if(perched){const s=WM.spawn||{x:0,z:0,a:0};spawnNear(s.x,s.z,s.a||0);return true}
   return false;
 }
-function stopKeys(){for(const k in keys)keys[k]=false;tc.gas=tc.brake=tc.boost=tc.drift=false;tc.joy=false;tc.jx=tc.jy=0;setKnob(0,0)}
+function stopKeys(){for(const k in keys)keys[k]=false;tc.gas=tc.brake=tc.boost=tc.drift=tc.jump=false;tc.joy=false;tc.jx=tc.jy=0;setKnob(0,0)}
 let shadowHS=0,camHintShown=false,vShift=0;
 function camFrame(dt,now){
   if(fly){
@@ -264,7 +330,7 @@ function camFrame(dt,now){
     camPos.set(lerp(p0.x,_PP.x,e),lerp(p0.y,_PP.y,ey),lerp(p0.z,_PP.z,e));
     camLook.lerpVectors(fly.l0,_LL,easeIO(Math.min(1,t*1.15)));
     camera.fov=lerp(fly.f0,fovFor(fly.to),e);
-    if(t>=1){fly=null;document.body.dataset.fly="0";if(mode==="drive"&&!camHintShown){camHintShown=true;toast(document.body.classList.contains("touch")?(camMode==="top"?"Push the stick the way you want to go.":"Steer with the stick, press Go to drive."):me.kind==="car"?"W A S D to drive · Space drift · J jump · Shift boost · V camera":"W A S D to run · Space jump · Shift sprint · V camera")}}
+    if(t>=1){fly=null;document.body.dataset.fly="0";if(mode==="drive"&&!camHintShown){camHintShown=true;toast(document.body.classList.contains("touch")?(camMode==="top"?"Push the stick the way you want to go. ":"Steer with the stick, press Go to drive. ")+SKILL_TOUCH[me.kind]:me.kind==="car"?"W A S D to drive · hold Space through a turn for a turbo · Shift boost · J jump":me.kind==="dog"?"W A S D to run · Space jump · Shift sprint · H big woof pushes chairs":"W A S D to run · Space jump, again (or keep holding) to double jump · Shift sprint")}}
   }else if(mode==="overview"){
     if(!REDUCED&&now-ov.lastUser>6000)ov.a+=dt*.035;
     ovPose(_PP,_LL);const k=1-Math.exp(-dt*6);camPos.lerp(_PP,k);camLook.lerp(_LL,k);camera.fov+=(fovFor("overview")-camera.fov)*k;
@@ -277,7 +343,7 @@ function camFrame(dt,now){
     camPos.lerp(_PP,k);camLook.lerp(_LL,k);
     if(camMode!=="top"&&WKIND==="floor"){camPos.x=clamp(camPos.x,-PW/2+.4,PW/2-.4);camPos.z=clamp(camPos.z,-PD/2+.4,PD/2-.4)}camPos.y=Math.max(.08,camPos.y);
     if(WKIND==="floor"&&camMode!=="top")camPos.y=Math.min(camPos.y,H-.15);
-    const ft=fovFor("drive")+(me.boosting&&camMode!=="top"?10:0);camera.fov+=(ft-camera.fov)*Math.min(1,dt*4);
+    const ft=fovFor("drive")+((me.boosting||me.turboT>0)&&camMode!=="top"&&!REDUCED?10:0);camera.fov+=(ft-camera.fov)*Math.min(1,dt*4);
   }
   camera.position.copy(camPos);
   if(shake>0&&!REDUCED){camera.position.x+=(Math.random()-.5)*shake*.06;camera.position.y+=(Math.random()-.5)*shake*.04;camera.position.z+=(Math.random()-.5)*shake*.06}
@@ -468,7 +534,7 @@ function runFrame(dt){
 function runFinish(){
   const t=run.t;run=null;doorLock=true;lockPadAt(me.x,me.z);me.cup=false;marker.visible=false;if(markerTag){disposeSprite(markerTag);markerTag=null;markerFor=-1}updateRunBtn();SFX.fanfare();
   for(let k=0;k<30;k++)spark(me.x,.3,me.z,PAINTS[k%PAINTS.length][0],3);
-  showResult(WKEY+":coffee",t,"Coffee run complete",()=>runStart(),"Run it again");
+  showResult(boardKey(WKEY+":coffee"),t,"Coffee run complete"+avSuffix(),()=>runStart(),"Run it again");
 }
 
 /* ---------- races to a destination (standard start, gates along the route) ---------- */
@@ -504,7 +570,7 @@ function raceFrame(dt){
   const k=1+Math.sin(T*6)*.06;gateNext.scale.set(k,k,k);
   if(Math.hypot(me.x-g.x,me.z-g.z)<1.9){race.gi++;SFX.gate();pop(g.x,1.9,g.z,race.gi>=race.gates.length?"Finish":race.gi+"/"+race.gates.length,S.acc);
     if(race.gi>=race.gates.length){const r=race,t=r.t;race=null;doorLock=true;lockPadAt(me.x,me.z);gateMesh.count=0;gateNext.visible=false;SFX.fanfare();for(let q=0;q<30;q++)spark(me.x,.3,me.z,PAINTS[q%PAINTS.length][0],3);setTarget(null);routeVisuals(true);presDirty=true;
-      showResult(r.key,t,"Race to "+r.dest.name,()=>startRace(r.dest),"Race again");return}
+      showResult(boardKey(r.key),t,"Race to "+r.dest.name+avSuffix(),()=>startRace(r.dest),"Race again");return}
     updateGates();
   }
 }

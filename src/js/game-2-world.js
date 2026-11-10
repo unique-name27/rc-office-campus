@@ -101,19 +101,19 @@ function initChairs(m){
 }
 
 /* ---------- world build helpers ---------- */
-let deskG=null,legG=null,monG=null,scrG=null,standG=null,chairG=[],cupsMeshes=[],deskInst=[],instDesk=[],bldgMeshes=[],planMesh=null;
+let deskG=null,legG=null,monG=null,scrG=null,standG=null,chairG=[],aoBlobs=null,cupsMeshes=[],deskInst=[],instDesk=[],bldgMeshes=[],planMesh=null;
 const _M=new THREE.Matrix4(),_M2=new THREE.Matrix4(),_M3=new THREE.Matrix4(),_Q=new THREE.Quaternion(),_E=new THREE.Euler(),_P=new V3(),_S=new V3(),ONE=new V3(1,1,1),ZERO_M=new THREE.Matrix4().makeScale(0,0,0),YAX=new V3(0,1,0);
 const CH_LOCAL=[[0,.03,0],[0,.25,0],[0,.48,0],[0,.78,.24]].map(([x,y,z])=>new THREE.Matrix4().makeTranslation(x,y,z));
-function chairMatrices(c){_M.makeRotationY(c.a);_M.setPosition(c.x,0,c.z);for(let k=0;k<4;k++){if(k===3&&c.kind==="stool"){chairG[3].set(c.i,ZERO_M);continue}_M2.multiplyMatrices(_M,CH_LOCAL[k]);chairG[k].set(c.i,_M2)}}
+function chairMatrices(c){if(c.hs){HD.chairMatrix(c,_M,_M2);return}_M.makeRotationY(c.a);_M.setPosition(c.x,0,c.z);for(let k=0;k<4;k++){if(k===3&&c.kind==="stool"){chairG[3].set(c.i,ZERO_M);continue}_M2.multiplyMatrices(_M,CH_LOCAL[k]);chairG[k].set(c.i,_M2)}}
 function jitterQ(){if(!S.jitter)return _Q.identity();_E.set(0,(jr()-.5)*S.jitter*2,(jr()-.5)*S.jitter*.6);return _Q.setFromEuler(_E)}
 function clearRoot(){
   if(!root)return;
   root.traverse(o=>{
     if(o.shadow&&o.shadow.map){o.shadow.map.dispose();o.shadow.map=null}
-    if(o.geometry)o.geometry.dispose();
-    if(o.material){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(m===INVIS)return;if(m.map&&!SHARED.has(m.map))m.map.dispose();m.dispose()})}
+    if(o.geometry&&!o.geometry.userData.keep)o.geometry.dispose();
+    if(o.material){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(m===INVIS||m.userData.keep)return;if(m.map&&!SHARED.has(m.map))m.map.dispose();m.dispose()})}
   });
-  scene.remove(root);root=null;if(HULL){HULL.dispose();HULL=null}lineMats=[];glowMats=[];signs=[];sun=null;cupsMeshes=[];deskG=legG=monG=scrG=standG=null;chairG=[];deskInst=[];instDesk=[];bldgMeshes=[];planMesh=null;figReset();
+  scene.remove(root);root=null;if(HULL){HULL.dispose();HULL=null}lineMats=[];glowMats=[];signs=[];sun=null;cupsMeshes=[];deskG=legG=monG=scrG=standG=null;chairG=[];aoBlobs=null;deskInst=[];instDesk=[];bldgMeshes=[];planMesh=null;figReset();
 }
 function buildRamp(r){
   const grp=new THREE.Group();grp.position.set(r.x,0,r.z);grp.rotation.y=(r.ax==="z"?-Math.PI/2:0)+(r.dir<0?Math.PI:0);root.add(grp);
@@ -133,13 +133,15 @@ function buildRamp(r){
 }
 function lights(){
   if(S.light==="none")return;
-  const RIG={day:[.5,0xd6d2c8,.6,0xffffff],soft:[.55,0xe2d4c6,.5,0xfff1e0],cel:[.3,0xffffff,.7,0xffffff],studio:[.24,0xb8ab99,1.6,0xffeed6]}[S.light];
-  root.add(new THREE.HemisphereLight(0xffffff,RIG[1],RIG[0]));
-  sun=new THREE.DirectionalLight(RIG[3],RIG[2]);root.add(sun);root.add(sun.target);
-  // Studio: a cool fill from the opposite side keeps shadowed faces readable (the environment map does the rest)
-  if(S.light==="studio"){const fill=new THREE.DirectionalLight(0xdfe8ff,.38);fill.position.set(-4,5,-6);root.add(fill)}
-  if(S.light==="cel")sunDir.set(2.5,6.5,1).normalize();else if(S.light==="studio")sunDir.set(3,7,4.5).normalize();else sunDir.set(3.5,6.5,3).normalize();
-  if(S.shadows){sun.castShadow=true;sun.shadow.mapSize.set(SM,SM);sun.shadow.bias=-.0006;sun.shadow.normalBias=.02;shadowHS=0}
+  // [hemisphere intensity, ground color, sun intensity, sun color, sky color]. Classic styles were tuned with three's
+  // old light units: r165 lights are physically based, so those intensities are scaled by pi to look the same.
+  const RIG={day:[.5,0xd6d2c8,.6,0xffffff],soft:[.55,0xe2d4c6,.5,0xfff1e0],cel:[.3,0xffffff,.7,0xffffff],hd:[.42,0x9a8e80,2.8,0xfff0dc,0xeef3fa]}[S.light],k=S.hd?1:Math.PI;
+  root.add(new THREE.HemisphereLight(RIG[4]||0xffffff,RIG[1],RIG[0]*k));
+  sun=new THREE.DirectionalLight(RIG[3],RIG[2]*k);root.add(sun);root.add(sun.target);
+  // HD: a cool fill from the opposite side keeps shadowed faces readable (the image-based light does the rest)
+  if(S.hd){const fill=new THREE.DirectionalLight(0xd6e4ff,.3);fill.position.set(-4,6,5);root.add(fill)}
+  if(S.light==="cel")sunDir.set(2.5,6.5,1).normalize();else if(S.hd)sunDir.set(.62,.72,-.34).normalize();else sunDir.set(3.5,6.5,3).normalize();
+  if(S.shadows){sun.castShadow=true;sun.shadow.mapSize.set(SM,SM);sun.shadow.bias=S.hd?-.0003:-.0006;sun.shadow.normalBias=S.hd?.018:.02;shadowHS=0}
 }
 function groundPlane(w,d,col){
   const fm=part(new THREE.PlaneGeometry(w,d),"floor",0,0,0,null,{still:1,color:col});fm.rotation.x=-Math.PI/2;
@@ -228,7 +230,7 @@ function buildAO(desks,items){
   const g=new THREE.PlaneGeometry(1,1);g.rotateX(-Math.PI/2);
   const m=new THREE.InstancedMesh(g,new THREE.MeshBasicMaterial({map:RADIAL,color:0x000000,transparent:true,opacity:.46,depthWrite:false,toneMapped:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}),list.length);
   list.forEach(([x,z,w,d],i)=>{_M.compose(_P.set(x,.017,z),_Q.identity(),_S.set(Math.max(.2,w),1,Math.max(.2,d)));m.setMatrixAt(i,_M)});
-  m.frustumCulled=false;m.renderOrder=1;root.add(m);
+  m.frustumCulled=false;m.renderOrder=1;root.add(m);aoBlobs=m;m.visible=!HD.quality.fx;
 }
 function buildWalls(walls){
   const kinds={ext:[],int:[],part:[],glass:[]};
@@ -265,9 +267,11 @@ function areaColor(a){
 
 /* ---------- floor world ---------- */
 function buildFloorWorld(m){
-  groundPlane(m.w,m.d);
+  // Studio (HD): ground, finishes, walls, cores, furniture and desks come from HD; the rest below is shared
+  const hdRest=S.hd?HD.floor(m):null;
+  if(!hdRest)groundPlane(m.w,m.d);
   // floor finishes
-  (m.areas||[]).forEach((a,i)=>{if(!(a.w>0&&a.d>0))return;flatRect(a.x,a.z,a.w,a.d,.006+Math.min(i,20)*.0004,"carpet",areaColor(a),S.teamEdges&&a.team?teamColorOf(a.team):null);
+  if(!hdRest)(m.areas||[]).forEach((a,i)=>{if(!(a.w>0&&a.d>0))return;flatRect(a.x,a.z,a.w,a.d,.006+Math.min(i,20)*.0004,"carpet",areaColor(a),S.teamEdges&&a.team?teamColorOf(a.team):null);
     if(a.kind==="esd"&&!S.faceIsBg&&!S.depthOnly){const y=.0145,tw=.07;[[a.x,a.z-a.d/2+tw/2,a.w,tw],[a.x,a.z+a.d/2-tw/2,a.w,tw],[a.x-a.w/2+tw/2,a.z,tw,a.d],[a.x+a.w/2-tw/2,a.z,tw,a.d]].forEach(([x,z,w,d])=>flatRect(x,z,w,d,y,"ramp","#F2C14E"))}});
   // plan image underlay (owner-loaded floor plan)
   const spec=DATA.floors[m.key];
@@ -277,9 +281,10 @@ function buildFloorWorld(m){
     planMesh=new THREE.Mesh(g,mm);planMesh.position.set(p.x+p.w/2,.02,p.z+p.d/2);root.add(planMesh);
     // plan textures are cached by asset id and survive world/style rebuilds (SHARED keeps clearRoot from disposing them)
     const key=m.key,cached=planTex.get(p.asset);
-    if(cached){mm.map=cached;mm.needsUpdate=true}
-    else new THREE.TextureLoader().load(blobUrl(p.asset),t=>{planTex.set(p.asset,t);SHARED.add(t);if(planMesh&&planMesh.material===mm&&WKEY===key){mm.map=t;mm.needsUpdate=true}},undefined,()=>{});
+    if(cached){const cs=texCS({}).colorSpace;if(cached.colorSpace!==cs){cached.colorSpace=cs;cached.needsUpdate=true}mm.map=cached;mm.needsUpdate=true}
+    else new THREE.TextureLoader().load(blobUrl(p.asset),t=>{texCS(t);planTex.set(p.asset,t);SHARED.add(t);if(planMesh&&planMesh.material===mm&&WKEY===key){mm.map=t;mm.needsUpdate=true}},undefined,()=>{});
   }
+  if(hdRest){buildItems(hdRest);buildChairs(m);buildFigures();buildAO(m.desks,m.items);floorExtras(m);return}
   buildWalls(m.walls);
   // solid rooms read as blocks from above
   (m.rooms||[]).forEach(r=>{if(r.solid&&r.w>0&&r.d>0&&r.type!=="open")part(bx(r.w,H,r.d),r.type==="elevator"?"metal":"solid",r.x,H/2,r.z,null,{still:1,color:r.type==="elevator"?null:mix(pal("wall"),pal("panel"),.22).getStyle()})});
@@ -306,15 +311,24 @@ function buildFloorWorld(m){
   [deskG,legG,monG,scrG,standG].forEach(g=>g.commit());
   buildChairs(m);buildFigures();
   buildAO(m.desks,m.items);
+  floorExtras(m);
+}
+// ramps, signs and the elevator/exit pads (every style)
+function floorExtras(m){
   (m.ramps||[]).forEach(buildRamp);
   (m.signs||[]).forEach(s=>{if(s&&s.lines&&isFinite(s.x))addSign(s.lines,s.x,isFinite(s.y)?s.y:3,s.z,s.h>0?s.h:.6,s.stripe&&HEX.test(s.stripe)?s.stripe:null)});
   (m.elevators||[]).forEach(e=>e.pad&&padDecal(e.pad.x,e.pad.z,1,null));
   if(m.exit)padDecal(m.exit.x,m.exit.z,1.1,"Exit");
 }
+// what the pointer can hit to pick a chair, and which chair a hit means
+function chairPickMeshes(){return chairG.length&&chairG[0].mesh&&chairG[0].mesh.userData.chairList?chairG.filter(g=>g.tint).map(g=>g.mesh):[chairG[2]&&chairG[2].mesh,chairG[3]&&chairG[3].mesh].filter(Boolean)}
+function chairOfHit(h){const L=h.object.userData.chairList;return L?L[h.instanceId]:h.object===(chairG[2]&&chairG[2].mesh)||h.object===(chairG[3]&&chairG[3].mesh)?chairs[h.instanceId]:null}
 function deskColor(di){const d=WM.desks[di];if(target&&target.kind==="desk"&&target.w===WKEY&&target.di===di)return new THREE.Color(S.acc);const tc=d.person>=0?teamColorOf(d.team):"#BDBBB3";return mix(pal("desk"),tc,S.td||0)}
 function chairColor(c){if(c.desk>=0&&WM.desks[c.desk]){const d=WM.desks[c.desk];if(d.person<0)return mix(pal("chair"),"#9A978F",Math.min(1,(S.tc||0)*.8+.2));return mix(pal("chair"),teamColorOf(d.team),S.tc||0)}return mix(pal("chair"),"#8A8F96",(S.tc||0)*.5)}
 function buildChairs(){
   const n=chairs.length;
+  if(S.hd){chairG=HD.buildChairs(chairs);chairs.forEach(c=>{if(!c.hs)return;HD.chairPaint(c,chairColor(c));chairMatrices(c)});chairG.forEach(g=>g.commit());return}
+  chairs.forEach(c=>{c.hs=null});
   chairG=[IG(cyl(.27,.27,.03,10),"leg",n),IG(cyl(.025,.025,.42,8),"leg",n),IG(ibx(.48,.08,.48),"chair",n,{colored:true,teamEdge:S.teamEdges}),IG(ibx(.48,.5,.06),"chair",n,{colored:true,teamEdge:S.teamEdges})];
   chairs.forEach(c=>{const col=chairColor(c);chairG[2].paint(c.i,col);chairG[3].paint(c.i,col);if(S.teamEdges){const d=c.desk>=0&&WM.desks[c.desk];const ec=d&&d.person>=0?teamColorOf(d.team):"#7d7a9c";chairG[2].edge(c.i,ec);chairG[3].edge(c.i,ec)}chairMatrices(c)});
   chairG.forEach(g=>g.commit());
@@ -355,7 +369,8 @@ let planOn=store.get("rc-plan")!=="0";
 const LOCAL_BLOBS=new Map(),planTex=new Map();
 function blobUrl(id){return LOCAL_BLOBS.get(id)||"/_blob/"+id}
 function buildWorld(){
-  jseed=11;root=new THREE.Group();scene.add(root);
+  HDCS=THREE.ColorManagement.enabled=!!S.hd;renderer.outputColorSpace=S.hd?THREE.SRGBColorSpace:THREE.LinearSRGBColorSpace;
+  jseed=11;root=new THREE.Group();scene.add(root);HD.enter();
   HULL=S.outline?new THREE.MeshBasicMaterial({color:S.outline,side:THREE.BackSide}):null;
   scene.background=S.depthOnly?null:new THREE.Color(S.bg);
   const big=WKIND==="campus";
