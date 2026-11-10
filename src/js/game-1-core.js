@@ -38,30 +38,77 @@ const hazardImg=document.createElement("canvas");hazardImg.width=128;hazardImg.h
 function hazardTex(rx){const t=new THREE.CanvasTexture(hazardImg);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rx,1);return t}
 let ks=7;const kr=()=>{ks=(ks*16807)%2147483647;return(ks-1)/2147483646};
 const FLOORTEX={
-  checker:(w,d)=>{const t=ctex(16,16,g=>{for(let y=0;y<2;y++)for(let x=0;x<2;x++){g.fillStyle=(x+y)%2?"#5A5748":"#6E6A58";g.fillRect(x*8,y*8,8,8)}});t.magFilter=t.minFilter=THREE.NearestFilter;t.generateMipmaps=false;t.repeat.set(w,d);return t},
-  kraft:(w,d)=>{ks=7;const t=ctex(256,256,(g,W,H)=>{g.fillStyle="#C9A97A";g.fillRect(0,0,W,H);for(let i=0;i<900;i++){g.strokeStyle=kr()<.5?"rgba(120,85,45,.18)":"rgba(255,240,210,.22)";g.lineWidth=kr()*1.2+.3;const x=kr()*W,y=kr()*H,a=kr()*Math.PI,l=kr()*14+3;g.beginPath();g.moveTo(x,y);g.lineTo(x+Math.cos(a)*l,y+Math.sin(a)*l);g.stroke()}});t.repeat.set(w/4,d/4);return t},
   dots:(w,d)=>{const t=ctex(32,32,g=>{g.fillStyle="#FFE07A";g.fillRect(0,0,32,32);g.fillStyle="#F2B705";g.beginPath();g.arc(16,16,6,0,7);g.fill()});t.repeat.set(w/.3,d/.3);return t}
 };
+// Retro blocks: 16x16 grayscale pixel textures (multiplied by each part's color), sampled in world space so every
+// surface - instanced or not - tiles the same block grid, like a voxel game
+const PIX={};
+function pixTex(kind){
+  if(PIX[kind])return PIX[kind];
+  const c=document.createElement("canvas");c.width=c.height=16;const g=c.getContext("2d");let sd=kind.length*977+13;const r=()=>{sd=(sd*16807)%2147483647;return(sd-1)/2147483646};
+  for(let y=0;y<16;y++)for(let x=0;x<16;x++){let v;
+    if(kind==="planks"){const row=Math.floor(y/4),edge=y%4===3,seam=(x+row*5)%16===0;v=edge||seam?.6:.84+r()*.12-((x*3+y)%9===0?.07:0)}
+    else if(kind==="wool")v=.86+r()*.12-((x+y)%4===0?.05:0);
+    else if(kind==="leaves")v=r()<.2?.42:.72+r()*.26;
+    else if(kind==="bricks"){const row=Math.floor(y/4),off=row%2?4:0,mortar=y%4===3||(x+off)%8===7;v=mortar?.66:.86+r()*.1}
+    else{v=.7+r()*.26;if(r()<.09)v-=.16}
+    const q=Math.round(255*Math.min(1,v));g.fillStyle=`rgb(${q},${q},${q})`;g.fillRect(x,y,1,1)}
+  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.magFilter=THREE.NearestFilter;t.minFilter=THREE.NearestMipmapLinearFilter;SHARED.add(t);
+  return PIX[kind]=t;
+}
+const PIX_ROLE={desk:"planks",top:"planks",table:"planks",bench:"planks",counter:"planks",reception:"planks",board:"planks",panel:"planks",cabinet:"planks",shelf:"planks",locker:"planks",
+  carpet:"wool",sofa:"wool",plant:"leaves",wall:"bricks",bldg:"bricks",solid:"bricks",slab:"stone",roof:"stone",floor:"stone",rampSide:"stone",
+  trunk:"planks",pot:"stone",fridge:"stone",printer:"stone",chamber:"stone",probe:"stone",flag:"wool"};
+// inject world-space (triplanar-by-dominant-axis) texturing into a Phong material
+function applyPix(m,tex,scale){
+  m.onBeforeCompile=sh=>{
+    sh.uniforms.uPix={value:tex};sh.uniforms.uPixS={value:scale};
+    sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nvarying vec3 vPW;\nvarying vec3 vPN;")
+      .replace("#include <project_vertex>","#include <project_vertex>\n{vec4 pw=vec4(transformed,1.0);vec3 pn=objectNormal;\n#ifdef USE_INSTANCING\npw=instanceMatrix*pw;pn=mat3(instanceMatrix)*pn;\n#endif\npw=modelMatrix*pw;vPW=pw.xyz;vPN=normalize(mat3(modelMatrix)*pn);}");
+    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vPW;\nvarying vec3 vPN;\nuniform sampler2D uPix;\nuniform float uPixS;")
+      .replace("#include <map_fragment>","#include <map_fragment>\n{vec3 an=abs(vPN);vec2 tuv=an.y>max(an.x,an.z)?vPW.xz:(an.x>an.z?vPW.zy:vPW.xy);diffuseColor.rgb*=texture2D(uPix,tuv*uPixS).rgb;}");
+  };
+  m.customProgramCacheKey=()=>"pix"+tex.uuid+scale;
+}
+// Studio: a soft photo-studio environment (big warm softbox overhead, window light, dim floor) for reflections and ambient light
+let _env=null;
+// after a lost-and-restored WebGL context the old environment texture is gone: rebuild it and swap it into live materials
+cv.addEventListener("webglcontextrestored",()=>{if(!_env)return;const old=_env;_env=null;if(S&&S.mat==="pbr"){const e=studioEnv();scene.traverse(o=>{[].concat(o.material||[]).forEach(mm=>{if(mm&&mm.envMap===old){mm.envMap=e;mm.needsUpdate=true}})})}});
+function studioEnv(){
+  if(_env)return _env;
+  const pm=new THREE.PMREMGenerator(renderer),sc=new THREE.Scene();
+  const room=new THREE.Mesh(new THREE.BoxGeometry(24,12,24),new THREE.MeshBasicMaterial({color:0x7d7a75,side:THREE.BackSide}));room.position.y=5;sc.add(room);
+  const flr=new THREE.Mesh(new THREE.PlaneGeometry(24,24),new THREE.MeshBasicMaterial({color:0x4a4642}));flr.rotation.x=-Math.PI/2;flr.position.y=-.95;sc.add(flr);
+  const panel=(w,h,x,y,z,c,rx,ry)=>{const q=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({color:c,side:THREE.DoubleSide}));q.position.set(x,y,z);q.rotation.set(rx||0,ry||0,0);sc.add(q)};
+  panel(10,7,0,10.9,0,0xffffff,Math.PI/2);panel(6,4,-11.8,5,1,0xfff0d8,0,Math.PI/2);panel(5,3.5,11.8,4,-3,0xdce6ff,0,-Math.PI/2);panel(8,2,0,6,-11.8,0xf4efe6);
+  _env=pm.fromScene(sc,.03).texture;pm.dispose();sc.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose()});
+  return _env;
+}
+// per-role physically based finish for Studio: [roughness, metalness, clearcoat, env intensity]
+const PBR={_:[.7,0,0,1],floor:[.38,0,0,.9],carpet:[.95,0,0,.35],desk:[.42,0,0,.8],top:[.42,0],table:[.42,0],bench:[.5,0],counter:[.3,0,0,1.1],reception:[.3,0,0,1.1],board:[.12,0,0,1.2],
+  panel:[.85,0,0,.6],cabinet:[.55,.05],locker:[.5,.3],leg:[.3,.85],frame:[.3,.85],shelf:[.4,.7],metal:[.2,.95],rim:[.18,.95],elevdoor:[.2,.95],
+  mon:[.3,.3],rack:[.45,.4],scope:[.4,.3],chamber:[.45,.2],probe:[.45,.3],printer:[.5,0],fridge:[.25,.45],machine:[.25,.6],
+  chair:[.82,0,0,.5],sofa:[.9,0,0,.4],body:[.8,0],head:[.6,0],fur:[.92,0,0,.35],wall:[.9,0,0,.7],solid:[.85,0],bldg:[.6,0],slab:[.5,.1],roof:[.75,0],
+  glass:[.05,.25,0,1.6],win:[.06,.1,0,1.4],glassRoom:[.04,.1,0,1.3],bwin:[.08,.35,0,1.7],booth:[.05,.1,0,1.3],cabin:[.08,.4,0,1.5],
+  plant:[.7,0,0,.5],pot:[.45,0],trunk:[.9,0],ramp:[.5,0],rampSide:[.6,0],cup:[.25,0],lid:[.5,0],tire:[.85,0,0,.4],
+  car:[.36,.12,1,.6],carbody:[.34,.25,1,.7],screen:[.2,0],post:[.35,.7],flag:[.8,0]};
 const GRAD=(()=>{const t=new THREE.DataTexture(new Uint8Array([135,135,135,200,200,200,255,255,255]),3,1,THREE.RGBFormat);t.minFilter=t.magFilter=THREE.NearestFilter;t.generateMipmaps=false;t.needsUpdate=true;return t})();
 
-/* ---------- the 10 styles ---------- */
+/* ---------- the 7 styles ---------- */
 const BASE={floor:"#D9D5CB",carpet:"#CFE0EE",desk:"#F7F5EF",panel:"#9AA09A",leg:"#6E736C",mon:"#23272B",screen:"#3d6fb0",chair:"#3E7CB1",car:"#E4572E",glass:"#16202a",tire:"#1E1F21",rim:"#C9CCD1",wall:"#F4F3EF",win:"#BFD3DE",plant:"#4F9D69",pot:"#E9E2D0",ramp:"#F2C14E",light:"#FFF6D8",tail:"#ff2a2a",cup:"#FFFFFF",lid:"#5A3A22"};
 // roles used by v4 furniture/equipment/campus map onto the 21 base palette roles every style defines
 const ALIAS={counter:"panel",top:"desk",table:"desk",frame:"leg",machine:"mon",glassRoom:"win",rampSide:"leg",body:"chair",head:"pot",
   bench:"desk",cabinet:"panel",shelf:"leg",rack:"mon",led:"screen",scope:"mon",chamber:"wall",probe:"panel",sofa:"chair",reception:"panel",
-  fridge:"wall",printer:"wall",board:"desk",metal:"rim",booth:"win",locker:"panel",solid:"wall",roof:"panel",trunk:"pot",bldg:"wall",bwin:"win",slab:"panel",carbody:"car",cabin:"glass",post:"leg",flag:"ramp",stripe:"light",pad:"ramp"};
+  fridge:"wall",printer:"wall",board:"desk",metal:"rim",booth:"win",locker:"panel",solid:"wall",roof:"panel",trunk:"pot",bldg:"wall",bwin:"win",slab:"panel",carbody:"car",cabin:"glass",fur:"car",post:"leg",flag:"ramp",stripe:"light",pad:"ramp"};
 const PAL=o=>Object.assign({},BASE,o);
 const NEON_TEAM=["#3DA5FF","#B26BFF","#FFB547","#39FF9E","#FF2E97"],COMIC_TEAM=["#3B8BFF","#A35BFF","#FF9F1C","#2BD97C","#FF4FA0"];
 const ST=[
-{n:"Toy showroom",d:"Glossy plastic cars in bright daylight with soft shadows. Clean and cheerful.",bg:"#EEF0EA",mat:"phong",light:"day",shadows:true,ramp:"hazard",ui:"light",acc:"#E4572E",tc:1,td:.35,tcar:.3,fog:[34,110],skid:["#3a3a3a",.35,0],smoke:["#ffffff",.55,0],pal:PAL({})},
+{n:"Studio",d:"Real materials in soft studio light: polished concrete, warm oak desks, glass that reflects and glossy cars.",bg:"#D6CFC4",mat:"pbr",light:"studio",shadows:true,round:true,roundR:.016,ao:true,tone:true,exposure:.94,vignette:true,ramp:"hazard",ui:"light",acc:"#E4572E",tc:.62,td:0,tcar:.5,fog:[55,170],skid:["#2a2a2a",.32,0],smoke:["#ffffff",.5,0],pal:PAL({floor:"#A49D92",carpet:"#B9B0A2",desk:"#C99B5F",panel:"#E4DED4",leg:"#24272B",mon:"#121315",screen:"#6E9EF2",chair:"#2F3339",car:"#E4572E",glass:"#0B1015",tire:"#151618",rim:"#D6D9DD",wall:"#ECE7DE",win:"#AFCBE0",plant:"#2F7D47",pot:"#DCD4C6",ramp:"#F2B33D",light:"#FFF7E4",counter:"#2B3833",cup:"#FFFFFF",lid:"#3A2A1E"})},
 {n:"Neon night",d:"Lights off. A dark floor with a glowing grid, lit edges and screens, and car underglow.",bg:"#07071A",mat:"basic",light:"none",edges:{c:"#2DE2E6",o:.95},carEdge:true,carFace:true,teamEdges:true,teamPal:NEON_TEAM,edgeRole:{plant:"#7CFF6B",pot:"#7CFF6B",ramp:"#FFB547",rampSide:"#FFB547",win:"#5B4BFF",glassRoom:"#5B4BFF",bwin:"#5B4BFF",led:"#FF2E97",stripe:"#FFB547",pad:"#FFB547"},grid:{c:"#FF2E97",o:.45},glow:true,ui:"dark",acc:"#FFB547",tc:0,td:0,tcar:0,fog:[18,90],skid:["paint",.85,1],smoke:["paint",.4,1],pal:PAL({floor:"#0B0A20",carpet:"#0E0C26",desk:"#100E2A",panel:"#100E2A",leg:"#100E2A",mon:"#100E2A",screen:"#2DE2E6",chair:"#100E2A",car:"#140B2A",glass:"#0b0820",tire:"#07071A",rim:"#140B2A",wall:"#0B0A20",win:"#120d3a",plant:"#0B0A20",pot:"#0B0A20",ramp:"#120d30",light:"#E8FFFF",tail:"#FF2E97",cup:"#E8FFFF",lid:"#100E2A"})},
 {n:"Blueprint",d:"A white technical drawing on drafting blue, with each car picked out in its own color.",bg:"#123A6B",mat:"basic",faceIsBg:true,light:"none",edges:{c:"#E8F1FF",o:.9},carEdge:true,grid:{c:"#E8F1FF",o:.13},ui:"dark",label:{bg:"rgba(18,58,107,.94)",fg:"#E8F1FF",sub:"#A9C6EE"},acc:"#FFB547",fog:null,skid:["#E8F1FF",.3,0],smoke:["#E8F1FF",.3,0],pal:PAL({})},
 {n:"Comic cel-shade",d:"Flat bold colors, thick ink outlines and halftone dots on the floor.",bg:"#FFF1C9",mat:"toon",light:"cel",outline:"#111111",floorTex:"dots",ramp:"hazard",ui:"light",acc:"#FF3B3B",tc:1,td:0,tcar:.55,teamPal:COMIC_TEAM,fog:null,skid:["#111111",.5,0],smoke:["#ffffff",.85,0],pal:PAL({floor:"#FFFFFF",carpet:"#7FD1FF",desk:"#FFFFFF",panel:"#FF7A3D",leg:"#2B2B2B",mon:"#2B2B2B",screen:"#5CC8FF",chair:"#FF3B3B",car:"#FF3B3B",glass:"#1A1A1A",tire:"#1A1A1A",rim:"#FFE14D",wall:"#FFFDF5",win:"#9FE0FF",plant:"#3FC35A",pot:"#FF9F1C",ramp:"#FFFFFF",counter:"#3FA7D6"})},
-{n:"Low-res retro 3D",d:"Chunky pixels, flat polygons and a foggy checkerboard floor, like an early 3D console.",bg:"#3B4A6B",mat:"flat",light:"retro",pixel:true,lowpoly:true,fog:[7,32],floorTex:"checker",blob:true,ui:"dark",acc:"#F2C14E",tc:.85,td:.2,tcar:.5,skid:["#1b1b1b",.45,0],smoke:["#d8d8d8",.6,0],pal:PAL({floor:"#FFFFFF",carpet:"#4E6E5D",desk:"#B8A882",panel:"#7A6A55",leg:"#3C3A36",mon:"#2A2A33",screen:"#4FD1C5",chair:"#A23B3B",car:"#E0452B",glass:"#1A1A22",tire:"#141414",rim:"#BFBFBF",wall:"#8C8A84",win:"#7FA6C9",plant:"#3E8E41",pot:"#9C5B3B",ramp:"#E2B33C"})},
-{n:"Claymation",d:"Soft matte clay with rounded, slightly squashed shapes in warm light.",bg:"#F3E3D3",mat:"lambert",light:"soft",shadows:true,round:true,jitter:.03,ui:"light",acc:"#E85D4A",tc:.7,td:.2,tcar:.35,fog:[36,110],skid:["#8C6B5A",.35,0],smoke:["#fff4e6",.6,0],pal:PAL({floor:"#E8C39E",carpet:"#B9D8C2",desk:"#F7DDB0",panel:"#C98B6B",leg:"#8C6B5A",mon:"#5B4B49",screen:"#8FD3E8",chair:"#E86A50",car:"#E85D4A",glass:"#4A3F45",tire:"#3E3236",rim:"#F2E2C4",wall:"#F6E7D6",win:"#BFE1EA",plant:"#6DBE6A",pot:"#D9824E",ramp:"#F4C95D",counter:"#7FB3A0"})},
-{n:"Papercraft",d:"Folded paper facets and crisp creases on a kraft-paper floor.",bg:"#EFE6D2",mat:"flat",light:"soft",shadows:true,lowpoly:true,floorTex:"kraft",edges:{c:"#8a6b45",o:.35},carEdgeColor:"#1d5e57",jitter:.02,ui:"light",acc:"#E76F51",tc:.8,td:.15,tcar:.4,fog:[36,110],skid:["#5b4630",.3,0],smoke:["#fbf8f1",.7,0],pal:PAL({floor:"#FFFFFF",carpet:"#E9C46A",desk:"#FBF8F1",panel:"#E76F51",leg:"#D8D2C4",mon:"#264653",screen:"#8ECAE6",chair:"#F4A261",car:"#2A9D8F",glass:"#264653",tire:"#3A3A3A",rim:"#FBF8F1",wall:"#F6F1E6",win:"#CFE6EE",plant:"#5FA26B",pot:"#C1694F",ramp:"#E9C46A"})},
+{n:"Retro blocks",d:"A blocky world made of crisp pixel textures, like a voxel game: stone floors, plank desks, wool carpets and cube trees.",bg:"#8EC3EE",mat:"flat",light:"retro",blocky:true,lowpoly:true,pixTex:true,blob:true,ui:"light",acc:"#D9822B",tc:.9,td:.3,tcar:.7,fog:[40,150],skid:["#3b3b3b",.4,0],smoke:["#ececec",.6,0],pal:PAL({floor:"#A7A7A7",carpet:"#D9D9D9",desk:"#BC8F55",panel:"#8A6239",leg:"#4E3B2A",mon:"#2C2C34",screen:"#55D6C8",chair:"#9C7A4E",car:"#D8452B",glass:"#2B3A4A",tire:"#1E1E1E",rim:"#BDBDBD",wall:"#D6CDB8",win:"#9FD3F2",plant:"#4C9A33",pot:"#8E5A3B",ramp:"#E2B33C",counter:"#7A7A7A",light:"#FFF3B0"})},
 {n:"Tilt-shift miniature",d:"A realistic office seen from above with blurred edges, so it reads as a scale model.",bg:"#DDE3E6",mat:"phong",light:"day",shadows:true,tilt:true,cam:"high",ramp:"hazard",ui:"light",acc:"#D7263D",tc:.5,td:0,tcar:.25,fog:[40,130],skid:["#222222",.35,0],smoke:["#ffffff",.5,0],pal:PAL({floor:"#A9A49B",carpet:"#7F8A8F",desk:"#C9A27A",panel:"#E8E6E1",leg:"#2E3135",mon:"#1E2124",screen:"#5d87b5",chair:"#2B2E33",car:"#F2C14E",glass:"#121820",tire:"#1A1B1C",rim:"#D0D3D6",wall:"#EDEBE6",win:"#A9C6DA",plant:"#3F7F4F",pot:"#F0EEE9",ramp:"#E8B33A",counter:"#4A5A54"})},
-{n:"Architect's model",d:"An all-white scale model, with only the cars in color.",bg:"#F4F4F2",mat:"lambert",light:"soft",shadows:true,edges:{c:"#B9B9B2",o:.6},noCarEdge:true,ui:"light",acc:"#FF5A1F",tc:0,td:0,tcar:0,fog:[45,140],skid:["#9a9a94",.3,0],smoke:["#ffffff",.6,0],pal:PAL({floor:"#ECECE8",carpet:"#E4E4DF",desk:"#FAFAF8",panel:"#F0F0EC",leg:"#E6E6E1",mon:"#EDEDE9",screen:"#E3E3DE",chair:"#F4F4F1",glass:"#DADAD4",tire:"#CFCFC9",rim:"#FFFFFF",wall:"#F7F7F4",win:"#E1E6E8",plant:"#EDEDE8",pot:"#F2F2EE",ramp:"#EFEFEB",light:"#FFFFFF",tail:"#FFFFFF",lid:"#E6E6E1"})},
 {n:"Vector arcade",d:"Glowing green line art on black, with old-monitor scanlines.",bg:"#030703",mat:"basic",faceIsBg:true,depthOnly:true,light:"none",edges:{c:"#39FF6A",o:.95},carEdge:true,grid:{c:"#39FF6A",o:.22},scan:true,glowCss:"drop-shadow(0 0 1.5px #39FF6A) drop-shadow(0 0 5px rgba(57,255,106,.6))",ui:"dark",label:{bg:"rgba(3,12,4,.92)",fg:"#9CFFB4",sub:"#39FF6A"},acc:"#F2FFF4",fog:null,skid:["paint",.6,1],smoke:["#39FF6A",.3,1],pal:PAL({})}
 ];
 const LABEL={light:{bg:"rgba(250,251,248,.93)",fg:"#1F2421",sub:"#5D655F"},dark:{bg:"rgba(12,13,30,.9)",fg:"#F2F4FA",sub:"#9FB0C8"}};
@@ -77,14 +124,22 @@ function mat(role,co){
   if(glassy&&(S.depthOnly||S.faceIsBg))return INVIS;
   if(S.depthOnly)return new THREE.MeshBasicMaterial({colorWrite:false,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1});
   const off=(S.faceIsBg||S.edges)?{polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1}:{};
-  if(role==="light"||role==="tail"||role==="led"||role==="stripe")return new THREE.MeshBasicMaterial(Object.assign({color:S.faceIsBg?S.bg:(co||pal(role))},off));
+  if(role==="light"||role==="tail"||role==="led"||role==="stripe")return new THREE.MeshBasicMaterial(Object.assign({color:S.faceIsBg?S.bg:(co||pal(role)),toneMapped:false},off)); // self-lit: never dimmed by tone mapping
   const base=Object.assign({color:color(role,co)},off);
   if(glassy){base.transparent=true;base.opacity=S.mat==="basic"?.4:.26;base.depthWrite=false}
   if(role==="bwin"&&!S.faceIsBg){base.transparent=true;base.opacity=.85}
   if(S.mat==="basic")return new THREE.MeshBasicMaterial(base);
+  if(S.mat==="pbr"){
+    const q=PBR[role]||PBR[ALIAS[role]]||PBR._;base.envMap=studioEnv();base.envMapIntensity=(q[3]==null?.75:q[3])*.8;
+    if(role==="screen")base.emissive=new THREE.Color(base.color).multiplyScalar(.85);
+    if(glassy||role==="bwin"){base.transparent=true;base.opacity=role==="bwin"?.9:.22;base.depthWrite=role==="bwin"}
+    if(q[2])return new THREE.MeshPhysicalMaterial(Object.assign(base,{roughness:q[0],metalness:q[1],clearcoat:q[2],clearcoatRoughness:.06}));
+    return new THREE.MeshStandardMaterial(Object.assign(base,{roughness:q[0],metalness:q[1]}));
+  }
   if(role==="screen")base.emissive=new THREE.Color(base.color).multiplyScalar(.55);
   if(S.mat==="phong"){const gl=role==="car"||role==="carbody"||role==="glass"||role==="rim"||role==="metal"||role==="bwin";return new THREE.MeshPhongMaterial(Object.assign(base,{shininess:role==="glass"?130:role==="car"||role==="carbody"?95:gl?80:10,specular:gl?0x888888:0x151515}))}
-  if(S.mat==="flat")return new THREE.MeshPhongMaterial(Object.assign(base,{flatShading:true,shininess:0,specular:0x000000}));
+  if(S.mat==="flat"){const fm=new THREE.MeshPhongMaterial(Object.assign(base,{flatShading:true,shininess:0,specular:0x000000}));
+    if(S.pixTex&&PIX_ROLE[role]&&!CAR_BUILD)applyPix(fm,pixTex(PIX_ROLE[role]),WKIND==="campus"?1:2);return fm}
   if(S.mat==="toon")return new THREE.MeshToonMaterial(Object.assign(base,{gradientMap:GRAD}));
   return new THREE.MeshLambertMaterial(base);
 }
@@ -108,13 +163,19 @@ function part(geo,role,x,y,z,parent,o){
   return m;
 }
 function rr(w,h,rad){const s=new THREE.Shape(),x=-w/2,y=-h/2;s.moveTo(x+rad,y);s.lineTo(x+w-rad,y);s.quadraticCurveTo(x+w,y,x+w,y+rad);s.lineTo(x+w,y+h-rad);s.quadraticCurveTo(x+w,y+h,x+w-rad,y+h);s.lineTo(x+rad,y+h);s.quadraticCurveTo(x,y+h,x,y+h-rad);s.lineTo(x,y+rad);s.quadraticCurveTo(x,y,x+rad,y);return s}
+// instanced pieces are scaled per instance, so rounded edges would stretch (and cost ~26x the triangles): keep them square in Studio
+function ibx(w,h,d){return S.mat==="pbr"?new THREE.BoxGeometry(w,h,d):bx(w,h,d)}
 function bx(w,h,d){
   if(!S.round)return new THREE.BoxGeometry(w,h,d);
-  const r=Math.min(.035,w*.3,h*.3,d*.3),iw=Math.max(.002,w-2*r),ih=Math.max(.002,h-2*r),id=Math.max(.002,d-2*r);
-  const g=new THREE.ExtrudeGeometry(rr(iw,ih,Math.min(iw,ih)*.25),{depth:id,bevelEnabled:true,bevelThickness:r,bevelSize:r,bevelSegments:3,curveSegments:4});g.translate(0,0,-id/2);return g;
+  const r=Math.min(S.roundR||.035,w*.3,h*.3,d*.3),iw=Math.max(.002,w-2*r),ih=Math.max(.002,h-2*r),id=Math.max(.002,d-2*r);
+  const g=new THREE.ExtrudeGeometry(rr(iw,ih,S.roundR?Math.min(r,Math.min(iw,ih)*.25):Math.min(iw,ih)*.25),{depth:id,bevelEnabled:true,bevelThickness:r,bevelSize:r,bevelSegments:3,curveSegments:4});g.translate(0,0,-id/2);return g;
 }
 const seg=n=>S.lowpoly?Math.max(5,Math.round(n/3)):n;
-const cyl=(rt,rb,h,n)=>new THREE.CylinderGeometry(rt,rb,h,seg(n||18));
+let CAR_BUILD=false; // true while a car or animal is being built: those keep round wheels/legs and flat colors
+function cyl(rt,rb,h,n){
+  if(S.blocky&&!CAR_BUILD){const g=new THREE.CylinderGeometry(rt*Math.SQRT2,rb*Math.SQRT2,h,4);g.rotateY(Math.PI/4);return g}
+  return new THREE.CylinderGeometry(rt,rb,h,seg(n||18));
+}
 
 /* instanced groups: faces + optional outline hulls + optional baked edge lines, all moved together.
    count may be 0 (an empty group whose methods do nothing). */
@@ -165,14 +226,16 @@ function textCanvas(lines,opts){
 }
 function spriteFrom(canvas,h,top){
   const tex=new THREE.CanvasTexture(canvas);tex.minFilter=THREE.LinearFilter;
-  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:!top,transparent:true,fog:false}));
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:!top,transparent:true,fog:false,toneMapped:false}));
   s.scale.set(h*canvas.width/canvas.height,h,1);s.userData.h=h;s.userData.ar=canvas.width/canvas.height;if(top)s.renderOrder=10;return s;
 }
 function disposeSprite(s){if(!s)return;if(s.parent)s.parent.remove(s);s.material.map.dispose();s.material.dispose()}
 function addSign(lines,x,y,z,h,stripe){const s=spriteFrom(textCanvas(lines,{stripe}),h);s.position.set(x,y,z);root.add(s);signs.push({s,lines,stripe,h});return s}
 
 /* ---------- car + walker models ---------- */
-function makeCar(paint){
+// cars and animals keep round wheels/legs and flat colors in every style
+function makeCar(paint){CAR_BUILD=true;try{return buildCarModel(paint)}finally{CAR_BUILD=false}}
+function buildCarModel(paint){
   const g=new THREE.Group(),tilt=new THREE.Group();g.add(tilt);root.add(g);
   const face=S.carFace?pal("car"):paint,oc={car:true,paint};
   const rb=S.round?{t:.026,s:.022,n:4}:{t:.014,s:.012,n:S.lowpoly?1:3};
@@ -199,7 +262,7 @@ function makeCar(paint){
   const cup=new THREE.Group();cup.position.set(0,.166,.0);tilt.add(cup);cup.visible=false;
   part(cyl(.03,.026,.075,12),"cup",0,.04,0,cup,oc);part(cyl(.032,.032,.012,12),"lid",0,.082,0,cup,oc);
   const flame=new THREE.Group();tilt.add(flame);flame.visible=false;
-  const fmO=new THREE.MeshBasicMaterial({color:S.glow||S.depthOnly?bright(paint):"#FF9A3C",transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthWrite:false}),fmI=new THREE.MeshBasicMaterial({color:"#FFF4C2",transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false});
+  const fmO=new THREE.MeshBasicMaterial({color:S.glow||S.depthOnly?bright(paint):"#FF9A3C",transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}),fmI=new THREE.MeshBasicMaterial({color:"#FFF4C2",transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false});
   [-.05,.05].forEach(x=>{const o=new THREE.ConeGeometry(.024,.13,10);o.rotateX(Math.PI/2);const mo=new THREE.Mesh(o,fmO);mo.position.set(x,.075,.32);flame.add(mo);const i=new THREE.ConeGeometry(.012,.07,8);i.rotateX(Math.PI/2);const mi=new THREE.Mesh(i,fmI);mi.position.set(x,.075,.29);flame.add(mi)});
   let under=null,beam=null;
   if(S.glow){
@@ -259,7 +322,10 @@ const GATE_N=40,gateGeo=new THREE.TorusGeometry(1.15,.06,8,40),gateMat=new THREE
 const gateMesh=new THREE.InstancedMesh(gateGeo,gateMat,GATE_N);gateMesh.frustumCulled=false;gateMesh.count=0;fx.add(gateMesh);
 const gateNext=new THREE.Mesh(new THREE.TorusGeometry(1.2,.11,10,48),new THREE.MeshBasicMaterial({transparent:true,opacity:1}));gateNext.visible=false;fx.add(gateNext);
 // pads on the floor: elevator / exit / building door (rendered per world)
+// route arrows, gates, beacons and particles are signals, not scenery: keep them out of Studio's tone mapping
+[beamM,ringM,mBeamM,mRingM,chevMat,gateMat,gateNext.material,skMat].forEach(m=>m.toneMapped=false);
 function fxRestyle(){
+  smoke.concat(sparks).forEach(p=>p.s.material.toneMapped=false);
   const add=S.skid[2]?THREE.AdditiveBlending:THREE.NormalBlending;skMat.blending=add;skMat.opacity=S.skid[1];skMat.needsUpdate=true;
   smoke.forEach(p=>{p.s.material.blending=S.smoke[2]?THREE.AdditiveBlending:THREE.NormalBlending;p.s.material.needsUpdate=true});
   sparks.forEach(p=>{p.s.material.blending=THREE.AdditiveBlending;p.s.material.needsUpdate=true});
@@ -269,34 +335,86 @@ function fxRestyle(){
 }
 const tags=new THREE.Group();scene.add(tags);
 
-/* ---------- audio ---------- */
-let AC=null,master,engO1,engO2,engF,engG,sqG,noiseBuf,muted=store.get("rc-mute")==="1";
+/* ---------- audio: a small synth (no samples) behind a soft master chain ---------- */
+// everything plays into `bus` -> gentle low-pass (no fizz) -> compressor (overlapping sounds never clip) -> volume.
+// A short, filtered echo adds a little room so sounds don't feel dry and clicky.
+let AC=null,master,bus,noiseBuf,brownBuf,muted=store.get("rc-mute")==="1";
+const VOL=.9;
+let motor=null; // the RC car's continuous sounds: motor, gear whine, tyre roll, slide
 function audio(){
   if(AC){if(AC.state==="suspended")AC.resume().catch(()=>{});return AC}
   const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;
   try{AC=new C()}catch(_){return null}
-  master=AC.createGain();master.gain.value=muted?0:.55;master.connect(AC.destination);
-  engO1=AC.createOscillator();engO1.type="sawtooth";engO2=AC.createOscillator();engO2.type="square";
-  const g2=AC.createGain();g2.gain.value=.3;engF=AC.createBiquadFilter();engF.type="lowpass";engF.Q.value=5;engF.frequency.value=600;
-  engG=AC.createGain();engG.gain.value=0;engO1.connect(engF);engO2.connect(g2);g2.connect(engF);engF.connect(engG);engG.connect(master);engO1.frequency.value=60;engO2.frequency.value=120;engO1.start();engO2.start();
-  noiseBuf=AC.createBuffer(1,AC.sampleRate,AC.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
-  const ns=AC.createBufferSource();ns.buffer=noiseBuf;ns.loop=true;const sf=AC.createBiquadFilter();sf.type="bandpass";sf.frequency.value=2300;sf.Q.value=3;sqG=AC.createGain();sqG.gain.value=0;ns.connect(sf);sf.connect(sqG);sqG.connect(master);ns.start();
+  master=AC.createGain();master.gain.value=muted?0:VOL;master.connect(AC.destination);
+  const comp=AC.createDynamicsCompressor();comp.threshold.value=-22;comp.knee.value=20;comp.ratio.value=3.5;comp.attack.value=.004;comp.release.value=.22;comp.connect(master);
+  const tame=AC.createBiquadFilter();tame.type="lowpass";tame.frequency.value=7000;tame.Q.value=.5;tame.connect(comp);
+  bus=AC.createGain();bus.gain.value=1;bus.connect(tame);
+  const dl=AC.createDelay(.5),fb=AC.createGain(),wet=AC.createGain(),dlf=AC.createBiquadFilter();
+  dl.delayTime.value=.09;fb.gain.value=.24;wet.gain.value=.14;dlf.type="lowpass";dlf.frequency.value=2000;
+  bus.connect(dl);dl.connect(dlf);dlf.connect(fb);fb.connect(dl);dlf.connect(wet);wet.connect(comp);
+  // white noise for clicks and air, brown noise (deep, soft) for rumble
+  const n=AC.sampleRate*2;noiseBuf=AC.createBuffer(1,n,AC.sampleRate);brownBuf=AC.createBuffer(1,n,AC.sampleRate);
+  const wd=noiseBuf.getChannelData(0),bd=brownBuf.getChannelData(0);let b=0;
+  for(let i=0;i<n;i++){const w=Math.random()*2-1;wd[i]=w;b=(b+.02*w)/1.02;bd[i]=b*3.5}
+  // RC car: a triangle motor tone with a sine an octave down, a faint gear whine, tyre roll and a slide hiss
+  const mk=(type,f)=>{const o=AC.createOscillator();o.type=type;o.frequency.value=f;o.start();return o};
+  const gain=(v,to)=>{const g=AC.createGain();g.gain.value=v;if(to)g.connect(to);return g};
+  const filt=(type,f,q,to)=>{const x=AC.createBiquadFilter();x.type=type;x.frequency.value=f;x.Q.value=q;if(to)x.connect(to);return x};
+  const loop=(buf,to)=>{const s=AC.createBufferSource();s.buffer=buf;s.loop=true;s.connect(to);s.start(0,Math.random()*1.5);return s};
+  const mG=gain(0,bus),mF=filt("lowpass",900,.7,mG),o1=mk("triangle",120),o2=mk("sine",60);o1.connect(mF);o2.connect(gain(.7,mF));
+  const wG=gain(0,bus),wF=filt("bandpass",900,6,wG),o3=mk("sine",360);o3.connect(wF);
+  const rG=gain(0,bus),rF=filt("lowpass",220,.6,rG);loop(brownBuf,rF);
+  const sG=gain(0,bus),sF=filt("bandpass",1400,1.1,sG);loop(noiseBuf,sF);
+  motor={o1,o2,o3,mG,mF,wG,wF,rG,rF,sG,sF};
   return AC;
 }
-function tone(type,f0,f1,dur,vol,delay){if(!AC||muted)return;const t=AC.currentTime+(delay||0),o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.setValueAtTime(f0,t);if(f1)o.frequency.exponentialRampToValueAtTime(f1,t+dur);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+.01);g.gain.exponentialRampToValueAtTime(.0001,t+dur);o.connect(g);g.connect(master);o.start(t);o.stop(t+dur+.05)}
-function noise(dur,freq,vol,type){if(!AC||muted)return;const t=AC.currentTime,s=AC.createBufferSource();s.buffer=noiseBuf;const f=AC.createBiquadFilter();f.type=type||"lowpass";f.frequency.value=freq;const g=AC.createGain();g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f);f.connect(g);g.connect(master);s.start(t,Math.random()*.4);s.stop(t+dur+.05)}
+const live=()=>AC&&!muted&&bus;
+// one shaped note: oscillator -> optional filter -> envelope (soft attack, exponential tail)
+function note(o){
+  if(!live())return;const t=AC.currentTime+(o.at||0),dur=o.dur||.2,v=o.vol||.08;
+  const osc=AC.createOscillator(),g=AC.createGain();osc.type=o.type||"sine";
+  osc.frequency.setValueAtTime(o.f,t);if(o.to)osc.frequency.exponentialRampToValueAtTime(o.to,t+(o.glide||dur));
+  if(o.vib){const l=AC.createOscillator(),lg=AC.createGain();l.frequency.value=o.vib[0];lg.gain.value=o.vib[1];l.connect(lg);lg.connect(osc.frequency);l.start(t);l.stop(t+dur+.1)}
+  let tail=osc;if(o.lp){const f=AC.createBiquadFilter();f.type=o.bp?"bandpass":"lowpass";f.frequency.value=o.lp;f.Q.value=o.q||.7;osc.connect(f);tail=f}
+  tail.connect(g);g.connect(bus);
+  const a=o.atk||.008;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+a);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  osc.start(t);osc.stop(t+dur+.05);
+}
+// a burst of filtered noise (optionally sweeping its filter)
+function hiss(o){
+  if(!live())return;const t=AC.currentTime+(o.at||0),dur=o.dur||.1,v=o.vol||.05;
+  const s=AC.createBufferSource();s.buffer=o.brown?brownBuf:noiseBuf;const f=AC.createBiquadFilter(),g=AC.createGain();
+  f.type=o.type||"lowpass";f.frequency.setValueAtTime(o.f||800,t);if(o.to)f.frequency.exponentialRampToValueAtTime(o.to,t+dur);f.Q.value=o.q||.8;
+  s.connect(f);f.connect(g);g.connect(bus);const a=o.atk||.004;
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+a);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  s.start(t,Math.random()*1.2);s.stop(t+dur+.05);
+}
+const bell=(f,at,vol,dur)=>{note({f,at,vol,dur:dur||.7,atk:.004});note({f:f*2.01,at,vol:(vol||.08)*.25,dur:(dur||.7)*.6,atk:.004})};
 const SFX={
-  horn:v=>{v=v==null?1:v;tone("square",392,0,.15,.1*v);tone("square",494,0,.15,.08*v);tone("square",392,0,.22,.1*v,.19);tone("square",494,0,.22,.08*v,.19)},
-  bump:s=>{const v=Math.min(1,s/6);noise(.12,900,.35*v);tone("sine",160,60,.14,.3*v)},
-  land:s=>{const v=Math.min(1,s/5);tone("sine",110,45,.16,.35*v);noise(.08,500,.2*v)},
-  chime:()=>[660,880,1320].forEach((f,i)=>tone("sine",f,0,.28,.12,i*.08)),
-  beep:hi=>tone("square",hi?880:440,0,hi?.45:.14,.08),
-  turbo:()=>{noise(.35,1800,.18,"bandpass");tone("sawtooth",300,900,.3,.05)},
-  whoosh:()=>noise(1.3,500,.12,"bandpass"),
-  fanfare:()=>[523,659,784,1047].forEach((f,i)=>tone("triangle",f,0,.35,.13,i*.11)),
-  ding:()=>{tone("sine",1175,0,.9,.09);tone("sine",880,0,1.1,.07,.18)},
-  doors:()=>noise(.6,300,.1,"lowpass"),
-  gate:()=>tone("triangle",988,1480,.12,.08)
+  // a friendly two-note toy-car "meep meep"
+  horn:v=>{v=v==null?1:v;[0,.17].forEach(at=>{note({type:"sawtooth",f:640,to:610,dur:.14,vol:.07*v,lp:1500,at,atk:.012});note({f:320,dur:.14,vol:.05*v,at,atk:.012})})},
+  bump:s=>{const v=Math.min(1,s/6);note({f:130,to:55,dur:.14,vol:.17*v});hiss({f:320,dur:.05,vol:.07*v,brown:true})},
+  land:s=>{const v=Math.min(1,s/5);note({f:95,to:48,dur:.18,vol:.18*v});hiss({f:260,dur:.07,vol:.06*v,brown:true})},
+  chime:()=>{bell(880,0,.06);bell(1318.5,.07,.05);bell(1760,.14,.04,.9)},
+  beep:hi=>hi?(note({f:988,dur:.4,vol:.07,atk:.006}),note({f:1480,dur:.32,vol:.035,atk:.006})):note({f:660,dur:.14,vol:.06,atk:.006}),
+  turbo:()=>{hiss({type:"bandpass",f:500,to:2600,dur:.35,vol:.11,q:1.2});note({type:"triangle",f:300,to:620,dur:.3,vol:.035,lp:1800})},
+  whoosh:()=>hiss({type:"bandpass",f:280,to:900,dur:1.1,vol:.08,q:.9,atk:.25}),
+  fanfare:()=>{[[523.25,0],[659.25,.11],[783.99,.22],[1046.5,.33]].forEach(([f,at],i)=>{note({type:"triangle",f,at,vol:.06,dur:i===3?.75:.3,lp:2600});note({f:f*2,at,vol:.018,dur:i===3?.6:.25})})},
+  ding:()=>{bell(1174.66,0,.06,1.1);bell(880,.2,.06,1.4)},
+  doors:()=>{hiss({f:420,to:200,dur:.55,vol:.045,brown:true,atk:.08});note({f:70,dur:.12,vol:.08,at:.5})},
+  gate:()=>{note({f:988,to:1480,dur:.1,vol:.07,glide:.08});note({f:1480,dur:.2,vol:.05,at:.07})},
+  jump:k=>k==="cat"?note({f:620,to:1150,dur:.12,vol:.045,glide:.1}):k==="dog"?note({type:"triangle",f:330,to:640,dur:.13,vol:.05,lp:2000}):note({f:250,to:560,dur:.16,vol:.05}),
+  // bark: a pitch-dropping voiced tone through a mouth-like band-pass, with a breathy burst on the attack; usually two
+  bark:v=>{v=v==null?1:v;[0,.2].forEach((at,i)=>{const s=i?.85:1;note({type:"sawtooth",f:420,to:190,glide:.12,dur:.15,vol:.11*v*s,lp:750,bp:true,q:2.2,at,atk:.006});note({type:"triangle",f:210,to:110,glide:.12,dur:.13,vol:.07*v*s,at,atk:.006});hiss({type:"bandpass",f:1100,dur:.06,vol:.06*v*s,q:1.5,at})})},
+  // meow: rising then falling pitch with a little vibrato through two vowel-like formants
+  meow:v=>{v=v==null?1:v;[[950,.15],[2300,.06]].forEach(([fm,g])=>{if(!live())return;const t=AC.currentTime,o=AC.createOscillator(),f=AC.createBiquadFilter(),e=AC.createGain(),l=AC.createOscillator(),lg=AC.createGain();
+    o.type="sawtooth";o.frequency.setValueAtTime(480,t);o.frequency.linearRampToValueAtTime(820,t+.2);o.frequency.linearRampToValueAtTime(520,t+.55);
+    l.frequency.value=6.5;lg.gain.value=12;l.connect(lg);lg.connect(o.frequency);
+    f.type="bandpass";f.frequency.setValueAtTime(fm*.85,t);f.frequency.linearRampToValueAtTime(fm,t+.2);f.frequency.linearRampToValueAtTime(fm*.7,t+.55);f.Q.value=3;
+    o.connect(f);f.connect(e);e.connect(bus);e.gain.setValueAtTime(0,t);e.gain.linearRampToValueAtTime(g*v,t+.06);e.gain.linearRampToValueAtTime(g*v*.7,t+.38);e.gain.exponentialRampToValueAtTime(.0001,t+.62);
+    o.start(t);l.start(t);o.stop(t+.66);l.stop(t+.66)})},
+  // soft paw steps: a dull tap for dogs, a lighter one for cats
+  step:k=>hiss({type:"bandpass",f:k==="cat"?2200:1400,dur:.035,vol:k==="cat"?.012:.02,q:1.3})
 };
-function setMuted(m){muted=m;store.set("rc-mute",m?"1":"0");if(master)master.gain.value=m?0:.55;$("bSound").setAttribute("aria-pressed",String(!m))}
+function setMuted(m){muted=m;store.set("rc-mute",m?"1":"0");if(master)master.gain.setTargetAtTime(m?0:VOL,AC.currentTime,.02);$("bSound").setAttribute("aria-pressed",String(!m))}
 document.addEventListener("visibilitychange",()=>{if(!AC)return;if(document.hidden)AC.suspend().catch(()=>{});else AC.resume().catch(()=>{})});

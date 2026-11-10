@@ -1,29 +1,47 @@
 /* ===================== game part 3: play (cars, modes, camera, input, worlds, elevator, doors, routes, races, coffee) ===================== */
-function newCar(x,z,h,paint){return{x,z,y:0,vy:0,h,camH:h,vx:0,vz:0,vF:0,lat:0,air:false,pitch:0,roll:0,steer:0,thr:0,boost:1,boosting:false,drift:false,driftDir:0,driftT:0,gPrev:0,squash:0,paint,vis:null,cup:false,sk:[null,null],stuck:0,rev:0,wi:0,lastHit:0,airT:0}}
+function newCar(x,z,h,paint,kind){return{kind:kind||"car",jumpReq:false,jumpCd:0,phase:0,x,z,y:0,vy:0,h,camH:h,vx:0,vz:0,vF:0,lat:0,air:false,pitch:0,roll:0,steer:0,thr:0,boost:1,boosting:false,drift:false,driftDir:0,driftT:0,gPrev:0,squash:0,paint,vis:null,cup:false,sk:[null,null],stuck:0,rev:0,wi:0,lastHit:0,airT:0}}
 const PAINTS=[["#E4572E","Tomato"],["#2F6FED","Cobalt"],["#F2C14E","Taxi"],["#2E9C7A","Racing green"],["#8E6FBF","Grape"],["#FF2E97","Hot pink"],["#22B8CF","Teal"],["#F4F1EA","Pearl"],["#1F2421","Carbon"]];
 let paint=store.get("rc-paint");if(!PAINTS.some(p=>p[0]===paint))paint=PAINTS[Math.floor(Math.random()*7)][0];
-const me=newCar(0,0,0,paint);
+const me=newCar(0,0,0,paint,(()=>{const a=store.get("rc-av");return a==="dog"||a==="cat"?a:"car"})());
+if(me.kind!=="car"){const c=store.get("rc-coat-"+me.kind),list=COATS[me.kind];paint=me.paint=list.some(x=>x[0]===c)?c:list[0][0]}
 const bot=newCar(0,0,0,"#22B8CF");bot.name="Mailbot";
 let BOTPATH=[[0,0]];
-function spawn(c,x,z,h){c.x=x;c.z=z;c.h=c.camH=h;c.vx=c.vz=c.vF=c.vy=c.lat=0;c.y=groundY(x,z);c.gPrev=c.y;c.air=false;c.drift=false;c.boost=1;c.sk=[null,null];c.pitch=c.roll=0}
+function spawn(c,x,z,h){c.x=x;c.z=z;c.h=c.camH=h;c.vx=c.vz=c.vF=c.vy=c.lat=0;c.hop=false;c.jumpReq=false;c.y=groundY(x,z);c.gPrev=c.y;c.air=false;c.drift=false;c.boost=1;c.sk=[null,null];c.pitch=c.roll=0}
 const G=12,CRAD=.155,AX=.13,IDLE={thr:0,steer:0,boost:false,drift:false,park:true};
+// handling per avatar: top speed, boost speed, acceleration, turn rate, side grip, reverse speed, jump speed (m/s), body radius
+const AVP={car:{max:7.2,bmax:11.5,acc:11,bacc:20,turn:3.3,grip:13,rev:3.2,jump:3.4,drift:true,r:.155,ax:.13},
+  dog:{max:6.2,bmax:9.2,acc:15,bacc:22,turn:4.4,grip:22,rev:2.2,jump:3.8,drift:false,r:.15,ax:.12},
+  cat:{max:6.6,bmax:9.8,acc:17,bacc:24,turn:5,grip:24,rev:2.4,jump:5,drift:false,r:.12,ax:.1}};
+// how tall each avatar is (for ceilings: the underside of a desk, table, parked car or bench above you)
+const BODY_H={car:.2,dog:.52,cat:.45};
+// the ground under (x,z): ramps for everyone; animals can also stand on desk tops, tables, sofas, counters, parked cars...
+// A surface counts only if your feet were already at or above it at the start of this step (y0), so jumping up from
+// underneath never pops you through it.
+function surfaceY(c,x,z,y0){
+  let g=groundY(x,z);if(c.kind==="car")return g;
+  const top=Math.max(y0,c.gPrev)+.04,l=query(x,z,.1,8);
+  for(let i=0;i<l.length;i++){const p=l[i];if(p.h>g&&p.h<=top&&x>=p.x0-.06&&x<=p.x1+.06&&z>=p.z0-.06&&z<=p.z1+.06)g=p.h}
+  return g;
+}
 let shake=0;
 function carStep(c,ctl,dt,isMe){
-  const fx_=-Math.sin(c.h),fz_=-Math.cos(c.h),rx=-fz_,rz=fx_;
-  let vF=c.vx*fx_+c.vz*fz_;const vR=c.vx*rx+c.vz*rz,sp=Math.abs(vF),ground=!c.air;
+  const P=AVP[c.kind]||AVP.car,fx_=-Math.sin(c.h),fz_=-Math.cos(c.h),rx=-fz_,rz=fx_;
+  let vF=c.vx*fx_+c.vz*fz_;const vR=c.vx*rx+c.vz*rz,sp=Math.abs(vF);let ground=!c.air;
+  c.jumpCd=Math.max(0,c.jumpCd-dt);
+  if(c.jumpReq){c.jumpReq=false;if(ground&&c.jumpCd<=0&&!ctl.park){c.vy=Math.max(P.jump,Math.max(c.vy,0)+P.jump*.6);c.hop=true;c.y+=.01;c.air=true;ground=false;c.jumpCd=.3;c.squash=.4;if(isMe){SFX.jump(c.kind);for(let k=0;k<3;k++)puff(c.x+(Math.random()-.5)*.2,.03,c.z+(Math.random()-.5)*.2,smokeCol(c))}}}
   c.boosting=!!ctl.boost&&c.boost>.02&&ctl.thr>=0&&!ctl.park;
   if(c.boosting)c.boost=Math.max(0,c.boost-.42*dt);else c.boost=Math.min(1,c.boost+.11*dt);
   let thr=ctl.park?0:(c.boosting?1:ctl.thr);c.thr=thr;
-  const maxF=c.boosting?11.5:7.2,acc=c.boosting?20:11;
+  const maxF=c.boosting?P.bmax:P.max,acc=c.boosting?P.bacc:P.acc;
   if(ground){
     if(ctl.park){const r=12*dt;vF=Math.abs(vF)<r?0:vF-Math.sign(vF)*r}
     else if(thr>0){if(vF<-.3)vF=Math.min(0,vF+18*dt);else if(vF<maxF)vF=Math.min(maxF,vF+acc*thr*dt*(1-.5*Math.max(0,vF)/maxF))}
-    else if(thr<0){if(vF>.3)vF=Math.max(0,vF+18*thr*dt);else if(vF>-3.2)vF=Math.max(-3.2,vF+8*thr*dt)}
+    else if(thr<0){if(vF>.3)vF=Math.max(0,vF+18*thr*dt);else if(vF>-P.rev)vF=Math.max(-P.rev,vF+8*thr*dt)}
     else{const r=2.2*dt;vF=Math.abs(vF)<r?0:vF-Math.sign(vF)*r}
-    if(vF>maxF)vF=Math.max(maxF,vF-6*dt);if(vF<-3.2)vF=Math.min(-3.2,vF+6*dt);
-  }
+    if(vF>maxF)vF=Math.max(maxF,vF-6*dt);if(vF<-P.rev)vF=Math.min(-P.rev,vF+6*dt);
+  }else if(!P.drift&&thr>0&&!ctl.park&&vF<maxF*.75)vF=Math.min(maxF*.75,vF+P.acc*.45*thr*dt); // animals can push forward mid-leap
   c.steer+=((ctl.park?0:ctl.steer)-c.steer)*Math.min(1,dt*10);
-  const want=ctl.drift&&ground&&sp>2.4&&Math.abs(ctl.steer)>.2;
+  const want=P.drift&&ctl.drift&&ground&&sp>2.4&&Math.abs(ctl.steer)>.2;
   if(want&&!c.drift){c.drift=true;c.driftDir=Math.sign(ctl.steer);c.driftT=0}
   if(c.drift&&(!ctl.drift||sp<1.4)){
     if(c.driftT>.8&&ground&&!ctl.park&&vF>0){vF+=2.6*Math.sign(vF||1);c.boost=Math.min(1,c.boost+.2);if(isMe){SFX.turbo();for(let k=0;k<10;k++)spark(c.x-fx_*.25,.05,c.z-fz_*.25,"#5BC0FF",2.2)}}
@@ -32,7 +50,7 @@ function carStep(c,ctl,dt,isMe){
   if(c.drift)c.driftT+=dt;
   let yaw;
   if(c.drift&&ground)yaw=(c.driftDir+c.steer*.6)*1.55*clamp(sp/2.5,0,1);
-  else yaw=c.steer*(ground?3.3:.7)*clamp(sp/1.3,0,1)*(1-.3*clamp(sp/11,0,1))*(vF<0?-1:1);
+  else yaw=c.steer*(ground?P.turn:.7)*(P.drift?clamp(sp/1.3,0,1):Math.max(.5,clamp(sp/.8,0,1)))*(1-.3*clamp(sp/11,0,1))*(vF<0?-1:1); // animals can turn on the spot
   c.h+=yaw*dt;
   const nfx=-Math.sin(c.h),nfz=-Math.cos(c.h),nrx=-nfz,nrz=nfx;
   const wx=fx_*vF+rx*vR,wz=fz_*vF+rz*vR;
@@ -41,7 +59,7 @@ function carStep(c,ctl,dt,isMe){
     const spd=Math.hypot(wx,wz)*(1-.06*dt);let va=Math.atan2(-wx,-wz);va+=angDiff(va,c.h-c.driftDir*.2)*Math.min(1,dt*6);
     c.vx=-Math.sin(va)*spd;c.vz=-Math.cos(va)*spd;c.vF=c.vx*nfx+c.vz*nfz;c.lat=c.vx*nrx+c.vz*nrz;
   }else{
-    const f2=wx*nfx+wz*nfz;let r2=wx*nrx+wz*nrz;if(ground)r2*=Math.exp(-13*dt);
+    const f2=wx*nfx+wz*nfz;let r2=wx*nrx+wz*nrz;if(ground)r2*=Math.exp(-P.grip*dt);
     c.lat=r2;c.vF=f2;c.vx=nfx*f2+nrx*r2;c.vz=nfz*f2+nrz*r2;
   }
   const px0=c.x,pz0=c.z;c.x+=c.vx*dt;c.z+=c.vz*dt;
@@ -55,25 +73,34 @@ function carStep(c,ctl,dt,isMe){
      if(gl>1e-6){const dx=gx/gl,dz=gz/gl,vn=c.vx*dx+c.vz*dz;if(vn>0){c.vx-=1.3*vn*dx;c.vz-=1.3*vn*dz;if(isMe&&vn>1.4){SFX.bump(vn);shake=Math.max(shake,Math.min(.6,vn*.08))}}}else{c.vx*=-.3;c.vz*=-.3}
    }}
   // vertical
-  c.vy-=G*dt;c.y+=c.vy*dt;const g=groundY(c.x,c.z);
+  const y0=c.y;c.vy-=G*dt;c.y+=c.vy*dt;
+  // ceilings: rising into the underside of something above you stops the jump
+  if(c.vy>0){const bh=BODY_H[c.kind]||.2,l=query(c.x,c.z,.05,8);for(let i=0;i<l.length;i++){const p=l[i];if(p.u==null||c.x<p.x0||c.x>p.x1||c.z<p.z0||c.z>p.z1)continue;if(y0+bh<=p.u+.02&&c.y+bh>p.u){c.y=Math.max(y0,p.u-bh);c.vy=0}}}
+  const g=surfaceY(c,c.x,c.z,y0);
   if(c.y<=g){
-    if(c.air&&c.vy<-1.5){c.squash=Math.min(1,-c.vy/5);if(isMe){SFX.land(-c.vy);shake=Math.max(shake,Math.min(.6,-c.vy*.08))}for(let k=0;k<4;k++)puff(c.x+(Math.random()-.5)*.3,.03,c.z+(Math.random()-.5)*.3,smokeCol(c))}
-    c.vy=dt>0?Math.min(4.5,(g-c.gPrev)/dt,.4*Math.hypot(c.vx,c.vz)):0;c.y=g;if(c.air&&c.airT>.35&&isMe)toastAir(c.airT);c.air=false;c.airT=0;
+    // a fall longer than your own hop lands hard (thud, dust, a little shake); a plain hop lands softly
+    const heavy=c.air&&c.vy<-1.5&&(!c.hop||-c.vy>P.jump+.6);
+    if(heavy){c.squash=Math.min(1,-c.vy/5);if(isMe){SFX.land(-c.vy);shake=Math.max(shake,Math.min(.6,-c.vy*.08))}for(let k=0;k<4;k++)puff(c.x+(Math.random()-.5)*.3,.03,c.z+(Math.random()-.5)*.3,smokeCol(c))}
+    else if(c.air&&c.vy<-1){c.squash=Math.min(.5,-c.vy/9);if(isMe&&c.kind!=="car")SFX.step(c.kind)}
+    c.vy=dt>0?Math.min(4.5,(g-c.gPrev)/dt,.4*Math.hypot(c.vx,c.vz)):0;c.y=g;if(c.air&&!c.hop&&c.airT>.35&&isMe)toastAir(c.airT);c.air=false;c.airT=0;c.hop=false;
   }else{c.air=(c.y-g)>.012;if(c.air)c.airT+=dt}
   c.gPrev=g;
   // static collisions (two circles along the body)
   let hit=0,hx=0,hz=0;
   for(let it=0;it<2;it++)for(const s of[1,-1]){
-    const ox=nfx*AX*s,oz=nfz*AX*s,list=query(c.x+ox,c.z+oz,CRAD+.05,1);
-    for(let q=0;q<list.length;q++){const col=list[q];if(c.y>.7&&!col.tall)continue;
-      if(circleVs(col,c.x+ox,c.z+oz,CRAD)){c.x+=HIT.nx*HIT.pen;c.z+=HIT.nz*HIT.pen;const vn=c.vx*HIT.nx+c.vz*HIT.nz;
-        if(vn<0){c.vx-=1.3*vn*HIT.nx;c.vz-=1.3*vn*HIT.nz;c.vx*=.94;c.vz*=.94;if(-vn>hit){hit=-vn;hx=c.x+ox-HIT.nx*CRAD;hz=c.z+oz-HIT.nz*CRAD}}}}
+    const ox=nfx*P.ax*s,oz=nfz*P.ax*s,bh=BODY_H[c.kind]||.2;
+    const touch=col=>{if(circleVs(col,c.x+ox,c.z+oz,P.r)){c.x+=HIT.nx*HIT.pen;c.z+=HIT.nz*HIT.pen;const vn=c.vx*HIT.nx+c.vz*HIT.nz;
+        if(vn<0){c.vx-=1.3*vn*HIT.nx;c.vz-=1.3*vn*HIT.nz;c.vx*=.94;c.vz*=.94;if(-vn>hit){hit=-vn;hx=c.x+ox-HIT.nx*P.r;hz=c.z+oz-HIT.nz*P.r}}}};
+    let list=query(c.x+ox,c.z+oz,P.r+.05,1);
+    for(let q=0;q<list.length;q++){const col=list[q];if((c.y>.7&&!col.tall)||(col.top!=null&&c.y>=col.top-.03)||(col.minY!=null&&c.y<col.minY))continue;touch(col)}
+    list=query(c.x+ox,c.z+oz,P.r+.05,8);
+    for(let q=0;q<list.length;q++){const p=list[q];if(p.u!=null&&p.u<c.y+bh&&c.y<p.h-.03)touch(p)}
   }
   // chairs
   if(c.y<.5)for(const s of[1,-1]){
-    const px=c.x+nfx*AX*s,pz=c.z+nfz*AX*s;
+    const px=c.x+nfx*P.ax*s,pz=c.z+nfz*P.ax*s;
     for(const ch of chairsNear(px,pz,.5)){
-      const dx=px-ch.x,dz=pz-ch.z,rs=CRAD+CHR,d2=dx*dx+dz*dz;if(d2>=rs*rs)continue;
+      const dx=px-ch.x,dz=pz-ch.z,rs=P.r+CHR,d2=dx*dx+dz*dz;if(d2>=rs*rs)continue;
       const d=Math.sqrt(d2)||1e-4,nx=dx/d,nz=dz/d,pen=rs-d;
       c.x+=nx*pen*.4;c.z+=nz*pen*.4;ch.x-=nx*pen*.6;ch.z-=nz*pen*.6;
       const rvx=c.vx-ch.vx,rvz=c.vz-ch.vz,vn=rvx*nx+rvz*nz;
@@ -123,6 +150,7 @@ function syncCar(c,dt,remote){
   }
   c.squash=Math.max(0,c.squash-dt*4);
   v.tilt.rotation.set(c.pitch,0,c.roll);v.tilt.position.y=-c.squash*.025;
+  if(v.legs){animateAnimal(c,v,dt);v.head.visible=!(c===me&&mode==="drive"&&!fly&&camMode==="bumper");if(v.under)v.under.rotation.x=c.pitch;v.cup.visible=!!c.cup;return}
   v.wheels.forEach(w=>{w.sp.rotation.x-=c.vF/.055*dt;if(w.f)w.pv.rotation.y=c.drift?-c.driftDir*.32:c.steer*.42});
   v.ap.rotation.z=Math.sin(T*9)*.05*Math.min(1,sp/3)-c.steer*.06;v.ap.rotation.x=clamp(c.thr*-.12,-.2,.2);
   if(v.under&&S.glow){v.under.material.opacity=.65+Math.sin(T*4+c.x)*.15}
@@ -138,7 +166,7 @@ function syncCar(c,dt,remote){
   if(c.drift&&c.driftT>.8&&Math.random()<dt*20){const [wx,wz]=wheelPos(c,c.driftDir*.13,.14);spark(wx,.03,wz,"#5BC0FF",.8)}
 }
 function buildCars(){
-  me.vis=makeCar(me.paint);bot.vis=makeCar(bot.paint);
+  me.vis=makeAvatar(me.kind,me.paint);bot.vis=makeCar(bot.paint);
   for(const r of remotes.values()){r.car.vis=null;r.wvis=null}
 }
 
@@ -174,18 +202,20 @@ function ovPose(P,L){
 function walkPose(P,L){const arc=tour?Math.sin(easeIO(Math.min(1,tour.t))*Math.PI)*Math.min(6,Math.hypot(tour.to.x-tour.from.x,tour.to.z-tour.from.z)*.15):0;P.set(walker.x,1.62+arc,walker.z);L.set(walker.x-Math.sin(walker.yaw)*Math.cos(walker.pitch),P.y+Math.sin(walker.pitch),walker.z-Math.cos(walker.yaw)*Math.cos(walker.pitch))}
 function drivePose(c,P,L){
   const h=c.camH+camYawOff,fx_=-Math.sin(h),fz_=-Math.cos(h),sp=Math.min(11,Math.hypot(c.vx,c.vz));
-  if(camMode==="bumper"){P.set(c.x-Math.sin(c.h)*.04,c.y+.17,c.z-Math.cos(c.h)*.04);L.set(c.x-Math.sin(c.h)*3,c.y+.12,c.z-Math.cos(c.h)*3);return}
+  const ah=c.kind==="dog"?.16:c.kind==="cat"?.08:0;
+  if(camMode==="bumper"){const ey=c.kind==="dog"?.45:c.kind==="cat"?.34:.17,ez=c.kind==="car"?.04:Math.min(c.kind==="dog"?.34:.27,(AVP[c.kind]||AVP.car).ax+(AVP[c.kind]||AVP.car).r-.04);P.set(c.x-Math.sin(c.h)*ez,c.y+ey,c.z-Math.cos(c.h)*ez);L.set(c.x-Math.sin(c.h)*3,c.y+ey-.05,c.z-Math.cos(c.h)*3);return}
   if(camMode==="high"){P.set(c.x-fx_*3.6,c.y+3.4,c.z-fz_*3.6);L.set(c.x+fx_*1.2,c.y,c.z+fz_*1.2);return}
   if(camMode==="top"){const lx=c.x+c.vx*.3,lz=c.z+c.vz*.3;L.set(lx,c.y*.3,lz);P.set(lx,topH,lz+topH*.03);return}
-  const dist=1.05+sp*.035;P.set(c.x-fx_*dist,c.y+.42+sp*.008,c.z-fz_*dist);L.set(c.x+fx_*.9,c.y+.12,c.z+fz_*.9);
+  const dist=1.05+ah*1.2+sp*.035;P.set(c.x-fx_*dist,c.y+.42+ah*1.3+sp*.008,c.z-fz_*dist);L.set(c.x+fx_*.9,c.y+.12+ah,c.z+fz_*.9);
 }
 function fovFor(m){if(m==="overview")return camera.aspect<1?50:42;if(m==="walk")return 70;return camMode==="bumper"?76:camMode==="high"?55:camMode==="top"?50:62}
 function poseFor(m,P,L){if(m==="overview")ovPose(P,L);else if(m==="walk")walkPose(P,L);else drivePose(me,P,L)}
 const CAMNAMES={chase:"Chase cam",bumper:"Bumper cam",high:"High cam",top:"Top-down"};
+const camName=m=>m==="bumper"&&me.kind!=="car"?"Eye-level cam":CAMNAMES[m];
 function setMode(m){
   const was=mode;mode=m;document.body.dataset.mode=m;
   $("bSwap").innerHTML=m==="walk"?'Drive <kbd>C</kbd>':(WKIND==="campus"?'Walk <kbd>C</kbd>':'Walk <kbd>C</kbd>');
-  $("bCam").innerHTML=CAMNAMES[camMode]+' <kbd>V</kbd>';
+  $("bCam").innerHTML=camName(camMode)+' <kbd>V</kbd>';
   if(m!=="walk"){tour=null;if(document.pointerLockElement)document.exitPointerLock()}
   if(m!=="drive"){if(run)runCancel();if(race)raceCancel();closeResult()}
   if(m!=="overview"){closeTimes();tip.hidden=true;cv.style.cursor=""}
@@ -218,7 +248,7 @@ function camFrame(dt,now){
     camPos.set(lerp(p0.x,_PP.x,e),lerp(p0.y,_PP.y,ey),lerp(p0.z,_PP.z,e));
     camLook.lerpVectors(fly.l0,_LL,easeIO(Math.min(1,t*1.15)));
     camera.fov=lerp(fly.f0,fovFor(fly.to),e);
-    if(t>=1){fly=null;document.body.dataset.fly="0";if(mode==="drive"&&!camHintShown){camHintShown=true;toast(document.body.classList.contains("touch")?(camMode==="top"?"Push the stick the way you want to go.":"Steer with the stick, press Go to drive."):"W A S D to drive · Space drift · Shift boost · V camera")}}
+    if(t>=1){fly=null;document.body.dataset.fly="0";if(mode==="drive"&&!camHintShown){camHintShown=true;toast(document.body.classList.contains("touch")?(camMode==="top"?"Push the stick the way you want to go.":"Steer with the stick, press Go to drive."):me.kind==="car"?"W A S D to drive · Space drift · J jump · Shift boost · V camera":"W A S D to run · Space jump · Shift sprint · V camera")}}
   }else if(mode==="overview"){
     if(!REDUCED&&now-ov.lastUser>6000)ov.a+=dt*.035;
     ovPose(_PP,_LL);const k=1-Math.exp(-dt*6);camPos.lerp(_PP,k);camLook.lerp(_LL,k);camera.fov+=(fovFor("overview")-camera.fov)*k;

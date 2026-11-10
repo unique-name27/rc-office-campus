@@ -7,13 +7,21 @@ import sys, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODULES = ["layout.js", "campus.js", "nav.js", "importers.js", "editor.js"]
-GAME = ["game-1-core.js", "game-2-world.js", "game-3-play.js", "game-4-ui.js"]
+GAME = ["game-1-core.js", "game-1b-avatars.js", "game-2-world.js", "game-3-play.js", "game-4-ui.js"]
 THREE = '<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>'
 
 TEST_HOOK = """
 window.__rc={get me(){return me},get bot(){return bot},get WKEY(){return WKEY},get WM(){return WM},get DATA(){return DATA},get mode(){return mode},get route(){return route},get race(){return race},get run(){return run},
   enterWorld,goWorld,goFloor,goCampus,routeTo,startRace,runStart,applyStyle,setCam,buildIndex,modelFor,floorKeys,ride,flyTo,spawnNear,openEditor,openSetup,
-  readImportText:(name,text)=>readImport(new File([text],name,{type:"text/csv"})),get elevAt(){return elevAt},get remotes(){return remotes},syncPeers,walker,get chairs(){return chairs},carStep,groundY,LAYOUT,CAMPUS,NAV,IMPORT,EDITOR};
+  readImportText:(name,text)=>readImport(new File([text],name,{type:"text/csv"})),
+  snap:()=>{fly=null;document.body.dataset.fly="0";poseFor(mode,camPos,camLook);camera.position.copy(camPos);camera.lookAt(camLook);camera.updateProjectionMatrix();renderer.render(scene,camera)},
+  renderMs:n=>{n=n||5;const gl=renderer.getContext();renderer.render(scene,camera);gl.finish();const t=performance.now();for(let i=0;i<n;i++)renderer.render(scene,camera);gl.finish();return (performance.now()-t)/n},
+  measureSfx:async(name,arg)=>{audio();const sv={AC,bus,noiseBuf,brownBuf,muted},sr=44100,off=new OfflineAudioContext(1,sr*2,sr);
+    try{AC=off;bus=off.createGain();bus.connect(off.destination);const cp=b0=>{const b=off.createBuffer(1,Math.min(b0.length,sr*2),sr);b.copyToChannel(b0.getChannelData(0).slice(0,b.length),0);return b};noiseBuf=cp(sv.noiseBuf);brownBuf=cp(sv.brownBuf);muted=false;SFX[name](arg)}
+    finally{AC=sv.AC;bus=sv.bus;noiseBuf=sv.noiseBuf;brownBuf=sv.brownBuf;muted=sv.muted}
+    const d=(await off.startRendering()).getChannelData(0);let pk=0,ss=0,last=0;for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;ss+=d[i]*d[i];if(a>.001)last=i}
+    const db=x=>x>0?(20*Math.log10(x)).toFixed(1):"-inf";return{peakDb:db(pk),rmsDb:db(Math.sqrt(ss/Math.max(1,last))),ms:Math.round(last/sr*1000)}},
+  get renderer(){return renderer},get scene(){return scene},get camera(){return camera},ST,get elevAt(){return elevAt},get remotes(){return remotes},syncPeers,walker,get chairs(){return chairs},carStep,groundY,setAvatar,LAYOUT,CAMPUS,NAV,IMPORT,EDITOR};
 """
 
 

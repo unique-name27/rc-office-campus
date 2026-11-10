@@ -6,7 +6,7 @@ const q=$("q"),typing=()=>{const a=document.activeElement;return!!a&&(a.tagName=
 let edOpen=false;
 function readDrive(){
   const k=keys,up=k.KeyW||k.ArrowUp,dn=k.KeyS||k.ArrowDown,lf=k.KeyA||k.ArrowLeft,rt=k.KeyD||k.ArrowRight;
-  const boost=!!(k.ShiftLeft||k.ShiftRight||tc.boost),drift=!!(k.Space||tc.drift);let thr=0,steer=0;
+  const boost=!!(k.ShiftLeft||k.ShiftRight||tc.boost),drift=me.kind==="car"&&!!(k.Space||tc.drift);let thr=0,steer=0;
   if(camMode==="top"){
     let dx=(rt?1:0)-(lf?1:0),dz=(dn?1:0)-(up?1:0);if(tc.joy){dx+=tc.jx;dz+=tc.jy}
     const m=Math.min(1,Math.hypot(dx,dz));
@@ -33,7 +33,7 @@ addEventListener("keydown",e=>{
   keys[e.code]=true;
   if(tour&&/^(Key[WASD]|Arrow)/.test(e.code))tour=null;
   if(e.repeat)return;
-  if(/^Digit[0-9]$/.test(e.code)){const n=+e.code.slice(5);if(elevAt){const b=bldgOfKey(WKEY);if(b&&n>=1&&n<=b.floors)ride(n);return}applyStyle(n===0?9:n-1);return}
+  if(/^Digit[0-9]$/.test(e.code)){const n=+e.code.slice(5);if(elevAt){const b=bldgOfKey(WKEY);if(b&&n>=1&&n<=b.floors)ride(n);return}if(n>=1&&n<=ST.length)applyStyle(n-1);return}
   switch(e.code){
     case"KeyO":overviewKey();break;
     case"KeyC":if(fly||trans)break;if(mode==="overview")flyTo(WKIND==="floor"?"walk":"drive",2.2);else flyTo(mode==="walk"?"drive":"walk",1.1);break;
@@ -44,14 +44,16 @@ addEventListener("keydown",e=>{
     case"KeyR":if(mode==="drive"&&!fly&&!trans){if(run)runStart();else if(race)startRace(race.dest);else{const s=WM.spawn||{x:0,z:0,a:0};spawnNear(s.x,s.z,s.a||0);toast("Back at the start")}}break;
     case"KeyT":tidyChairs();toast("Chairs tidied");break;
     case"KeyX":if(route||target){clearRoute();toast("Route cleared")}break;
-    case"KeyJ":joinRace();break;
+    case"KeyJ":if(mode==="drive"&&!fly&&!trans)me.jumpReq=true;break;
+    case"Space":if(mode==="drive"&&!fly&&!trans&&me.kind!=="car")me.jumpReq=true;break;
+    case"KeyY":joinRace();break;
     case"Enter":if(elevAt&&tag!=="BUTTON"){const f=routeNextFloor();if(f){ride(f);break}}if(mode==="drive"&&!fly&&tag!=="BUTTON"){if(run)runCancel("Coffee run cancelled");else if(race)raceCancel("Race cancelled");else runStart()}break;
   }
 });
 addEventListener("keyup",e=>{keys[e.code]=false;if(e.key==="Meta")stopKeys();if(mode==="drive"&&e.code==="Space")e.preventDefault()});
 addEventListener("blur",()=>stopKeys());
 function cycleCam(){const order=["chase","bumper","high","top"];setCam(order[(order.indexOf(camMode)+1)%order.length])}
-function setCam(m){camMode=m;$("bCam").innerHTML=CAMNAMES[m]+' <kbd>V</kbd>';$("joyHint").textContent=m==="top"?"Drive":"Steer";camYawOff=0;toast(CAMNAMES[m]+(m==="top"?": push the way you want to go":""))}
+function setCam(m){camMode=m;$("bCam").innerHTML=camName(m)+' <kbd>V</kbd>';$("joyHint").textContent=m==="top"?"Drive":"Steer";camYawOff=0;toast(camName(m)+(m==="top"?": push the way you want to go":""))}
 // canvas pointer: overview orbit/zoom + picking, drive look-around, walk look/stick
 const ptrs=new Map();let pinch=0,stick=null;
 const pickRay=new THREE.Raycaster(),_ndc=new THREE.Vector2();
@@ -118,10 +120,11 @@ $("pHorn").addEventListener("pointerdown",e=>{e.preventDefault();audio();honk()}
 let prevStyle=null;
 function styleUI(i){
   const root_=document.documentElement;root_.dataset.theme=S.ui;root_.style.setProperty("--ground",S.bg);root_.style.setProperty("--accent",S.acc);root_.style.setProperty("--on-accent",(()=>{const a=lum(S.acc),d=lum("#14161f");return(a+.05)/(d+.05)>1.05/(a+.05)?"#14161f":"#ffffff"})());
-  $("tiltT").hidden=$("tiltB").hidden=!S.tilt;$("scan").hidden=!S.scan;
+  $("tiltT").hidden=$("tiltB").hidden=!S.tilt;$("scan").hidden=!S.scan;$("vig").hidden=!S.vignette;
+  renderer.toneMapping=S.tone?THREE.ACESFilmicToneMapping:THREE.NoToneMapping;renderer.toneMappingExposure=S.exposure||1;
   cv.style.imageRendering=S.pixel?"pixelated":"";cv.style.filter=S.glowCss||(S.tilt?"saturate(1.35) contrast(1.05)":"");
   document.querySelectorAll(".chip[data-i]").forEach(c=>c.setAttribute("aria-pressed",String(+c.dataset.i===i)));
-  $("styleName").textContent=S.n;$("styleDescA").textContent=$("styleDescB").textContent=S.d;store.set("rc-style",String(i));
+  $("styleName").textContent=S.n;$("styleDescA").textContent=$("styleDescB").textContent=S.d;store.set("rc-style",String(i));store.set("rc-style-v","2");
 }
 function applyStyle(i){
   if(i===cur&&root)return;if(i!==1&&cur!==1)prevStyle=null;if(i===1&&cur!==1)prevStyle=cur;
@@ -132,16 +135,30 @@ function applyStyle(i){
   resize();drawMapBase();labelsClear();
   if(markerTag){disposeSprite(markerTag);markerTag=null;markerFor=-1}
 }
-["chipsA","chipsB"].forEach(id=>{const box=$(id);ST.forEach((s,i)=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.i=i;b.textContent=(i===9?0:i+1)+". "+s.n;b.setAttribute("aria-pressed","false");b.onclick=()=>applyStyle(i);box.appendChild(b)})});
+["chipsA","chipsB"].forEach(id=>{const box=$(id);ST.forEach((s,i)=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.i=i;b.textContent=(i+1)+". "+s.n;b.setAttribute("aria-pressed","false");b.onclick=()=>applyStyle(i);box.appendChild(b)})});
 function openStyle(){$("stylePop").hidden=false;$("bStyle").setAttribute("aria-expanded","true");const p=$("stylePop").querySelector('.chip[aria-pressed="true"]');(p||$("styleClose")).focus()}
 function closeStyle(){$("stylePop").hidden=true;$("bStyle").setAttribute("aria-expanded","false")}
 $("bStyle").onclick=()=>{$("stylePop").hidden?openStyle():closeStyle()};
 $("styleClose").onclick=closeStyle;
-function setPaint(p){paint=p;me.paint=p;store.set("rc-paint",p);if(root){dropVis(me.vis);me.vis=makeCar(p)}if(meTag){disposeSprite(meTag);meTag=tagSprite(myName||"You",p);tags.add(meTag)}document.querySelectorAll(".sw").forEach(s=>s.setAttribute("aria-checked",String(s.dataset.p===p)));$("paintName").textContent=(PAINTS.find(x=>x[0]===p)||[0,""])[1];presDirty=true}
-PAINTS.forEach(([p,n])=>{const b=document.createElement("button");b.type="button";b.className="sw";b.style.background=p;b.dataset.p=p;b.setAttribute("role","radio");b.setAttribute("aria-label",n);b.onclick=()=>setPaint(p);$("paints").appendChild(b)});
-$("paints").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const i=PAINTS.findIndex(x=>x[0]===paint),n=(i+(/Right|Down/.test(e.key)?1:-1)+PAINTS.length)%PAINTS.length;setPaint(PAINTS[n][0]);$("paints").children[n].focus()});
+const swatches=()=>me.kind==="car"?PAINTS:COATS[me.kind];
+function setPaint(p){paint=p;me.paint=p;store.set(me.kind==="car"?"rc-paint":"rc-coat-"+me.kind,p);if(root){dropVis(me.vis);me.vis=makeAvatar(me.kind,p)}if(meTag){disposeSprite(meTag);meTag=tagSprite(myName||"You",p);tags.add(meTag)}document.querySelectorAll(".sw").forEach(s=>s.setAttribute("aria-checked",String(s.dataset.p===p)));$("paintName").textContent=(swatches().find(x=>x[0]===p)||[0,""])[1];presDirty=true}
+function renderSwatches(){const box=$("paints");box.innerHTML="";box.setAttribute("aria-label",me.kind==="car"?"Car paint":"Coat color");$("paintLbl").textContent=me.kind==="car"?"Paint":"Coat";
+  swatches().forEach(([p,n])=>{const b=document.createElement("button");b.type="button";b.className="sw";b.style.background=p;b.dataset.p=p;b.setAttribute("role","radio");b.setAttribute("aria-label",n);b.onclick=()=>setPaint(p);box.appendChild(b)})}
+$("paints").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const L=swatches(),i=L.findIndex(x=>x[0]===paint),n=(i+(/Right|Down/.test(e.key)?1:-1)+L.length)%L.length;setPaint(L[n][0]);$("paints").children[n].focus()});
+// play as an RC car, a dog or a cat
+function setAvatar(av){
+  if(!AV_KINDS.has(av))av="car";me.kind=av;store.set("rc-av",av);document.body.classList.toggle("animal",av!=="car");
+  document.querySelectorAll("#avChips .chip").forEach(c=>c.setAttribute("aria-checked",String(c.dataset.av===av)));
+  $("avName").textContent=(AVATARS.find(x=>x[0]===av)||[0,""])[1];
+  $("pBoost").textContent=av==="car"?"Boost":"Sprint";$("pHorn").textContent=av==="dog"?"Bark":av==="cat"?"Meow":"Horn";
+  renderSwatches();const L=swatches(),saved=store.get(av==="car"?"rc-paint":"rc-coat-"+av);setPaint(L.some(x=>x[0]===saved)?saved:L.some(x=>x[0]===paint)?paint:L[0][0]);
+  $("bCam").innerHTML=camName(camMode)+' <kbd>V</kbd>';setHelp();
+}
+AVATARS.forEach(([k,n])=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.av=k;b.textContent=n;b.setAttribute("role","radio");b.setAttribute("aria-checked","false");b.onclick=()=>setAvatar(k);$("avChips").appendChild(b)});
+$("avChips").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const i=AVATARS.findIndex(x=>x[0]===me.kind),n=(i+(/Right|Down/.test(e.key)?1:-1)+AVATARS.length)%AVATARS.length;setAvatar(AVATARS[n][0]);$("avChips").children[n].focus()});
+$("pJump").addEventListener("pointerdown",e=>{e.preventDefault();audio();if(mode==="drive")me.jumpReq=true});
 $("go").onclick=()=>{if(camMode==="top")setCam("chase");flyTo("drive",2.4)};
-$("goTop").onclick=()=>{camMode="top";$("bCam").innerHTML=CAMNAMES.top+' <kbd>V</kbd>';$("joyHint").textContent="Drive";flyTo("drive",2.2)};
+$("goTop").onclick=()=>{camMode="top";$("bCam").innerHTML=camName("top")+' <kbd>V</kbd>';$("joyHint").textContent="Drive";flyTo("drive",2.2)};
 $("goWalk").onclick=()=>flyTo("walk",2.4);
 $("bOver").onclick=()=>{if(!fly&&!trans)flyTo("overview")};
 $("bUp").onclick=$("bUp2").onclick=()=>{if(!fly&&!trans)goCampus()};
@@ -302,7 +319,9 @@ const pops=[];
 function pop(x,y,z,txt,col){const s=spriteFrom(textCanvas([txt],{size:52,pad:14,stripe:col}),.12,true);s.position.set(x,y,z);tags.add(s);pops.push({s,t:0})}
 function popsFrame(dt){for(let i=pops.length-1;i>=0;i--){const p=pops[i];p.t+=dt;p.s.position.y+=dt*.5;const d=camera.position.distanceTo(p.s.position),k=clamp(d/3.2,1,26)*p.s.userData.h*(1+Math.min(1,p.t*6)*.3);p.s.scale.set(k*p.s.userData.ar,k,1);p.s.material.opacity=1-Math.max(0,(p.t-.5)/.4);if(p.t>.9){disposeSprite(p.s);pops.splice(i,1)}}}
 let hornCount=0,lastHonk=0;
-function honk(){const n=performance.now();if(n-lastHonk<350)return;lastHonk=n;hornCount++;SFX.horn(1);pop(me.x,me.y+.5,me.z,"HONK",paint);presDirty=true}
+const HONK={car:["horn","HONK"],dog:["bark","WOOF"],cat:["meow","MEOW"]};
+function honk(){const n=performance.now();if(n-lastHonk<350)return;lastHonk=n;hornCount++;const h=HONK[me.kind]||HONK.car;SFX[h[0]](1);pop(me.x,me.y+.5+tagH(me.kind)-.36,me.z,h[1],paint);presDirty=true}
+const tagH=k=>k==="dog"?.66:k==="cat"?.52:.36;
 
 /* ---------- look card (walk: who you're looking at; drive: whose desk you're under / whose chair you bumped) ---------- */
 const ray=new THREE.Raycaster(),lookEl=$("look");ray.far=9;let lastLook=-2,bumpMsg=null;
@@ -319,7 +338,7 @@ function updateLookCard(force){
     if(di>=0){const{d,p}=deskInfo(di);i=di;title=p?p.name:"Open desk";meta=p?`${p.title?p.title+" · ":""}${p.team||""} · ${d.id}`:`${d.id} · Bookable desk`}}
   else if(WKIND==="floor"&&mode==="drive"&&!fly){
     if(bumpMsg&&performance.now()-bumpMsg.t<1800){i=1e6+bumpMsg.i;title=bumpMsg.txt;const{d,p}=deskInfo(bumpMsg.i);meta=p?`${p.title?p.title+" · ":""}${d.id}`:d.id}
-    else{const k=underDesk(me.x,me.z);if(k>=0){const{d,p}=deskInfo(k);i=k;title=p?"Under "+p.name+"'s desk":"Under an open desk";meta=p?`${p.title?p.title+" · ":""}${p.team||""}`:d.id}}
+    else{const k=underDesk(me.x,me.z);if(k>=0){const{d,p}=deskInfo(k);i=k;const on=me.y>.5;title=p?(on?"On ":"Under ")+p.name+"'s desk":(on?"On an open desk":"Under an open desk");meta=p?`${p.title?p.title+" · ":""}${p.team||""}`:d.id}}
   }
   if(i===lastLook&&!force)return;lastLook=i;
   if(i==null){lookEl.hidden=true;return}
@@ -376,7 +395,7 @@ function hudFrame(){
   if(mode==="overview"){if(!statusEl.hidden)statusEl.hidden=true;statusKey="";return}
   if(joinable&&performance.now()<joinable.until&&mode==="drive"&&!run&&!race){ // a coworker just started a race here: offer a tappable Join
     const key="join|"+joinable.rc.t0;
-    if(key!==statusKey){statusKey=key;statusEl.innerHTML='<span class="tx"><em></em> is racing to <em></em></span><button class="tb" type="button" id="joinB">Join race <kbd>J</kbd></button>';const ems=statusEl.querySelectorAll("em");ems[0].textContent=joinable.r.name||"A coworker";ems[1].textContent=joinable.rc.n;$("joinB").onclick=joinRace}
+    if(key!==statusKey){statusKey=key;statusEl.innerHTML='<span class="tx"><em></em> is racing to <em></em></span><button class="tb" type="button" id="joinB">Join race <kbd>Y</kbd></button>';const ems=statusEl.querySelectorAll("em");ems[0].textContent=joinable.r.name||"A coworker";ems[1].textContent=joinable.rc.n;$("joinB").onclick=joinRace}
     statusEl.hidden=false;return;
   }
   const p=mode==="walk"?walker:me;let kind=null,tx,tz,txt,em="",dist,clock=null,closable=false;
@@ -399,7 +418,8 @@ function hudFrame(){
 }
 function setHelp(){
   const h=$("help");
-  if(mode==="drive")h.innerHTML="<kbd>W A S D</kbd> drive · <kbd>Space</kbd> drift · <kbd>Shift</kbd> boost · <kbd>H</kbd> horn · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route";
+  if(mode==="drive")h.innerHTML=me.kind==="car"?"<kbd>W A S D</kbd> drive · <kbd>Space</kbd> drift · <kbd>J</kbd> jump · <kbd>Shift</kbd> boost · <kbd>H</kbd> horn · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route"
+    :"<kbd>W A S D</kbd> run · <kbd>Space</kbd> jump · <kbd>Shift</kbd> sprint · <kbd>H</kbd> "+(me.kind==="dog"?"bark":"meow")+" · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route"+(me.kind==="cat"?" · cats can jump onto desks":"");
   else if(mode==="walk")h.innerHTML="<kbd>Click</kbd> to look around · <kbd>W A S D</kbd> walk · <kbd>Shift</kbd> run · <kbd>/</kbd> find · <kbd>Esc</kbd> free mouse";
   else h.innerHTML="";
 }
@@ -478,6 +498,7 @@ function syncPeers(peers){
     if(!r){r={peer:p.peer,uid:null,car:newCar(0,0,0,"#9AA0A6"),paint:"#9AA0A6",name:"",m:"o",w:"",has:false,tx:0,tz:0,ty:0,th:0,tp:0,tr:0,vx:0,vz:0,t:0,pres:null,tag:null,wvis:null,isMe:p.isMe,rc:null};remotes.set(p.peer,r)}
     if(r.pres===p.presence)continue;r.pres=p.presence;const pr=p.presence||{};
     r.uid=p.by||(typeof pr.u==="string"&&pr.u.length<200?pr.u:null);
+    const av=pr.av==="dog"||pr.av==="cat"?pr.av:"car";if(av!==r.car.kind){r.car.kind=av;dropVis(r.car.vis);r.car.vis=null}
     r.m=pr.m==="d"||pr.m==="w"?pr.m:"o";
     const w=typeof pr.w==="string"&&WKEY_RE.test(pr.w)?pr.w:"";
     if(w!==r.w){r.w=w;r.has=false;if(r.car.vis){dropVis(r.car.vis);r.car.vis=null}if(r.wvis){dropVis(r.wvis);r.wvis=null}}
@@ -486,14 +507,14 @@ function syncPeers(peers){
     if(x!=null&&z!=null&&h!=null){
       if(r.has){const dtm=Math.max(.04,(now-r.t)/1000);r.vx=lerp(r.vx,clamp((x-r.tx)/dtm,-15,15),.5);r.vz=lerp(r.vz,clamp((z-r.tz)/dtm,-15,15),.5)}else{r.car.x=x;r.car.z=z;r.car.h=h}
       r.tx=x;r.tz=z;r.ty=num(pr.y,0,6)||0;r.th=h;r.t=now;r.has=true;r.tp=num(pr.p,-1.5,1.5)||0;r.tr=num(pr.r,-1.5,1.5)||0;
-      r.car.vF=num(pr.s,-20,20)||0;r.car.steer=num(pr.st,-1,1)||0;r.car.boosting=pr.b===1;r.car.drift=pr.d===1;r.car.driftDir=Math.sign(r.car.steer)||1;
+      r.car.air=pr.a===1;r.car.vF=num(pr.s,-20,20)||0;r.car.steer=num(pr.st,-1,1)||0;r.car.boosting=pr.b===1;r.car.drift=pr.d===1;r.car.driftDir=Math.sign(r.car.steer)||1;
     }
     if(r.m!=="d"){r.vx=r.vz=0}
     r.wx=num(pr.wx,-400,400);r.wz=num(pr.wz,-400,400);r.wy=num(pr.wy,-1e5,1e5)||0;
     const rc=pr.rc&&typeof pr.rc==="object"&&typeof pr.rc.k==="string"&&pr.rc.k.length<140&&num(pr.rc.t0,0,1e15)!=null?{k:pr.rc.k,t0:pr.rc.t0,n:typeof pr.rc.n==="string"?pr.rc.n.slice(0,60):"a race"}:null;
-    if(rc&&(!r.rc||r.rc.t0!==rc.t0)&&r.w===WKEY&&mode==="drive"&&!race&&!run&&Date.now()-rc.t0<2600&&rc.t0<Date.now()+1500){joinable={r,rc,until:performance.now()+3000};toast(`${r.name||"A coworker"} is racing to ${rc.n} · ${document.body.classList.contains("touch")?"tap Join race":"press J to join"}`)}
+    if(rc&&(!r.rc||r.rc.t0!==rc.t0)&&r.w===WKEY&&mode==="drive"&&!race&&!run&&Date.now()-rc.t0<2600&&rc.t0<Date.now()+1500){joinable={r,rc,until:performance.now()+3000};toast(`${r.name||"A coworker"} is racing to ${rc.n} · ${document.body.classList.contains("touch")?"tap Join race":"press Y to join"}`)}
     r.rc=rc;
-    const hk=typeof pr.hk==="number"?pr.hk:0;if(r.hk!==undefined&&hk>r.hk&&r.has&&r.w===WKEY){const d=camera.position.distanceTo(_P.set(r.car.x,r.car.y,r.car.z));SFX.horn(clamp(1-d/30,.12,1));pop(r.car.x,r.car.y+.5,r.car.z,"HONK",r.paint)}r.hk=hk;
+    const hk=typeof pr.hk==="number"?pr.hk:0;if(r.hk!==undefined&&hk>r.hk&&r.has&&r.w===WKEY){const d=camera.position.distanceTo(_P.set(r.car.x,r.car.y,r.car.z));const h=HONK[r.car.kind]||HONK.car;SFX[h[0]](clamp(1-d/30,.12,1));pop(r.car.x,r.car.y+.5,r.car.z,h[1],r.paint)}r.hk=hk;
   }
   for(const [k,r] of remotes)if(!seen.has(k)){removeRemote(r);remotes.delete(k)}
   resolveNames();
@@ -521,14 +542,14 @@ function remoteFrame(dt,now){
     // only people driving or walking on this floor get a car; viewers in the overview stay in the roster only
     if(!r.has)continue;const c=r.car,here=r.w===WKEY&&r.m!=="o"&&drawn<16;if(here)drawn++;
     if(!here){if(c.vis)c.vis.g.visible=false;if(r.wvis)r.wvis.visible=false;if(r.tag)r.tag.visible=false;continue}
-    if(!c.vis&&root)c.vis=makeCar(r.paint);if(c.vis)c.vis.g.visible=true;
+    if(!c.vis&&root)c.vis=makeAvatar(c.kind,r.paint);if(c.vis)c.vis.g.visible=true;
     const lead=Math.min(.3,(now-r.t)/1000),px=r.tx+r.vx*lead,pz=r.tz+r.vz*lead;
     if(Math.hypot(px-c.x,pz-c.z)>4){c.x=px;c.z=pz}
     const k=1-Math.exp(-dt*10);c.x+=(px-c.x)*k;c.z+=(pz-c.z)*k;c.y+=(r.ty-c.y)*k;c.h+=angDiff(c.h,r.th)*k;c.pitch+=(r.tp-c.pitch)*k;c.roll+=(r.tr-c.roll)*k;c.vx=r.vx;c.vz=r.vz;c.lat=0;
     syncCar(c,dt,true);
     if(!r.tag){r.tag=tagSprite(r.name||"Coworker",r.paint);tags.add(r.tag)}r.tag.visible=true;
     if(r.m==="w"&&r.wx!=null){if(!r.wvis&&root)r.wvis=makeWalker(r.paint);if(r.wvis){r.wvis.visible=true;r.wvis.position.set(r.wx,0,r.wz);r.wvis.rotation.y=r.wy}placeTag(r.tag,r.wx,1.75,r.wz)}
-    else{if(r.wvis)r.wvis.visible=false;placeTag(r.tag,c.x,c.y+.36,c.z)}
+    else{if(r.wvis)r.wvis.visible=false;placeTag(r.tag,c.x,c.y+tagH(c.kind),c.z)}
   }
 }
 function renderRoster(){
@@ -546,6 +567,7 @@ function sendPresence(){
   if(myId)o.u=myId;
   if(mode==="walk"){o.wx=r2(walker.x);o.wz=r2(walker.z);o.wy=r2(walker.yaw)}else{o.wx=null;o.wz=null;o.wy=null}
   o.rc=race?{k:race.key,t0:race.t0,n:race.dest.name.slice(0,60)}:null;
+  if(me.kind!=="car")o.av=me.kind;if(me.air)o.a=1;
   const key=JSON.stringify(o);if(key===lastPres)return;lastPres=key;
   room.presence(o).catch(()=>{});
 }
@@ -887,7 +909,7 @@ function frame(now){
   fxFrame(dt);popsFrame(dt);
   if(beacon.visible){const s=1+Math.sin(now/300)*.12;beacon.userData.ring.scale.set(s,s,s);beamM.opacity=.25+Math.sin(now/300)*.1}
   if(S.scan)lineMats.forEach(m=>m.opacity=.82+Math.random()*.16);
-  if(mode==="drive"&&camMode==="top")placeTag(meTag,me.x,me.y+.3,me.z-.5);else placeTag(meTag,me.x,me.y+.36,me.z);if(meTag)meTag.visible=!(mode==="drive"&&!fly&&(camMode==="chase"||camMode==="bumper"));
+  if(mode==="drive"&&camMode==="top")placeTag(meTag,me.x,me.y+.3,me.z-.5);else placeTag(meTag,me.x,me.y+tagH(me.kind),me.z);if(meTag)meTag.visible=!(mode==="drive"&&!fly&&(camMode==="chase"||camMode==="bumper"));
   placeTag(botTag,bot.x,bot.y+.36,bot.z);if(botTag)botTag.visible=BOTPATH.length>0;
   if(joinable&&now>joinable.until)joinable=null;
   lblAcc+=dt;if(lblAcc>.2){lblAcc=0;updateLabels()}
@@ -898,20 +920,28 @@ function frame(now){
   rosterAcc+=dt;if(rosterAcc>1){rosterAcc=0;if(mode==="overview")renderRoster()}
   renderer.render(scene,camera);
 }
+// continuous sounds follow the car (motor pitch rises with speed; tyre roll; a soft hiss when sliding); dogs and cats patter
+let stepPh=0;
 function audioFrame(){
-  if(!AC)return;const t=AC.currentTime,drv=mode==="drive"&&!fly,sp=Math.abs(me.vF);
-  engG.gain.setTargetAtTime(muted||!drv?0:.03+Math.abs(me.thr)*.035+Math.min(sp,12)*.004,t,.08);
-  const f=58+sp*34+(me.boosting?60:0)+(me.air?45:0);engO1.frequency.setTargetAtTime(f,t,.05);engO2.frequency.setTargetAtTime(f*2.02,t,.05);engF.frequency.setTargetAtTime(500+sp*230,t,.08);
-  sqG.gain.setTargetAtTime(muted||!drv||me.air||!(me.drift||Math.abs(me.lat)>1.6)?0:Math.min(.08,.025+Math.abs(me.lat)*.02),t,.05);
+  if(!AC||!motor)return;const t=AC.currentTime,M=motor,drv=mode==="drive"&&!fly&&!trans,car=drv&&me.kind==="car"&&!muted,sp=Math.abs(me.vF);
+  const f=115+sp*36+(me.boosting?80:0)+(me.air?55:0);
+  M.o1.frequency.setTargetAtTime(f,t,.06);M.o2.frequency.setTargetAtTime(f*.5,t,.06);M.o3.frequency.setTargetAtTime(f*3,t,.06);M.wF.frequency.setTargetAtTime(f*3,t,.06);
+  M.mF.frequency.setTargetAtTime(600+sp*240,t,.08);
+  M.mG.gain.setTargetAtTime(car?.03+Math.abs(me.thr)*.025+Math.min(sp,12)*.003:0,t,.1);
+  M.wG.gain.setTargetAtTime(car?Math.min(.025,sp*.0022)+(me.boosting?.012:0):0,t,.1);
+  M.rG.gain.setTargetAtTime(car&&!me.air?Math.min(.09,sp*.011):0,t,.08);M.rF.frequency.setTargetAtTime(160+sp*35,t,.1);
+  const slide=car&&!me.air&&(me.drift||Math.abs(me.lat)>1.6);
+  M.sG.gain.setTargetAtTime(slide?Math.min(.03,.01+Math.abs(me.lat)*.008):0,t,.05);
+  if(drv&&me.kind!=="car"&&!me.air&&Math.hypot(me.vx,me.vz)>.6){const st=Math.floor((me.phase||0)/Math.PI);if(st!==stepPh){stepPh=st;SFX.step(me.kind)}}
 }
 
 /* ---------- boot ---------- */
 try{DEMO=CAMPUS.demo(LAYOUT)}catch(e){console.error(e);fatal("The campus couldn't be built. Reload the page to try again.");return}
 DATA=null;mergeData(true);
-{const saved=parseInt(store.get("rc-style"),10),i=Number.isInteger(saved)&&saved>=0&&saved<ST.length?saved:(matchMedia("(prefers-color-scheme: dark)").matches?1:0);S=ST[i];cur=i;fxRestyle();styleUI(i)}
+{const OLD=[0,1,2,3,4,0,0,5,0,6];let saved=parseInt(store.get("rc-style"),10);if(store.get("rc-style-v")!=="2"&&Number.isInteger(saved))saved=OLD[saved];const i=Number.isInteger(saved)&&saved>=0&&saved<ST.length?saved:(matchMedia("(prefers-color-scheme: dark)").matches?1:0);S=ST[i];cur=i;fxRestyle();styleUI(i)}
 resize();
 {const last_=store.get("rc-world");enterWorld(last_&&(last_==="campus"||floorKeys().includes(last_))?last_:"campus")}
-setPaint(paint);setMuted(muted);setMode("overview");updateRunBtn();
+setAvatar(me.kind);setMuted(muted);setMode("overview");updateRunBtn();
 ovPose(camPos,camLook);camera.fov=fovFor("overview");
 addEventListener("pagehide",()=>store.set("rc-world",WKEY));
 setInterval(()=>store.set("rc-world",WKEY),5000);

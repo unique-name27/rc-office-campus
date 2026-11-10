@@ -23,6 +23,7 @@ button,input,select{font-family:inherit}
 .ov{position:fixed;left:0;right:0;pointer-events:none;z-index:1}
 #tiltT{top:0;height:34%;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);-webkit-mask-image:linear-gradient(#000 25%,transparent);mask-image:linear-gradient(#000 25%,transparent)}
 #tiltB{bottom:0;height:24%;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);-webkit-mask-image:linear-gradient(transparent,#000 75%);mask-image:linear-gradient(transparent,#000 75%)}
+#vig{top:0;bottom:0;background:radial-gradient(ellipse 75% 70% at 50% 46%,transparent 55%,rgba(40,28,14,.2) 100%)}
 #scan{top:0;bottom:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.32) 0 1px,transparent 1px 3px)}
 .glass{background:var(--glass);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 .hud{transition:opacity .35s}
@@ -61,7 +62,7 @@ kbd{font:500 10px var(--mono);color:var(--muted);border:1px solid var(--line);bo
 .sw[aria-checked="true"]{box-shadow:0 0 0 2px var(--glass2),0 0 0 4px var(--ink)}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .chip{font:500 12px var(--display);padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--btn);color:var(--ink);cursor:pointer}
-.chip[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.chip[aria-pressed="true"],.chip[aria-checked="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
 .sdesc{font-size:13px;color:var(--muted);line-height:1.4;margin:0}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .keys{font:400 11px var(--mono);color:var(--muted);line-height:1.6}
@@ -198,17 +199,19 @@ body.touch[data-fly="1"] #touch{display:none}
 #joy{position:fixed;z-index:6;left:max(16px,env(safe-area-inset-left,0px));bottom:calc(22px + env(safe-area-inset-bottom,0px));width:128px;height:128px;border-radius:50%;touch-action:none}
 #knob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;background:var(--ink);opacity:.5;pointer-events:none}
 #joy .hint{position:absolute;left:0;right:0;top:-18px;text-align:center;font:500 10px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-.pedals{position:fixed;z-index:6;right:max(14px,env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:58px 58px 76px;grid-template-rows:54px 54px;gap:8px}
+.pedals{position:fixed;z-index:6;right:max(14px,env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:58px 58px 76px;grid-template-rows:46px 54px 54px;gap:8px}
+#pHorn{grid-column:1;grid-row:1}#pJump{grid-column:2/4;grid-row:1}#pDrift{grid-column:1;grid-row:2}#pBoost{grid-column:2;grid-row:2}#pBrake{grid-column:1/3;grid-row:3}
+body.animal #pDrift{display:none}body.animal #pBoost{grid-column:1/3}
 .pd{touch-action:none;-webkit-user-select:none;user-select:none;border-radius:14px;border:1px solid var(--line);background:var(--glass2);color:var(--ink);font:700 12px var(--display);padding:0}
-.pd.go{grid-column:3;grid-row:1/3;background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-size:15px}
+.pd.go{grid-column:3;grid-row:2/4;background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-size:15px}
 .pd[data-on="1"]{filter:brightness(1.3);transform:scale(.95)}
 body.touch #speedo{right:auto;bottom:auto;left:max(12px,env(safe-area-inset-left,0px));top:calc(64px + env(safe-area-inset-top,0px));min-width:112px;padding:6px 10px}
 body.touch #speedo .v{font-size:26px}
 body.touch #speedo .tags{display:none}
 body.touch #status{top:calc(250px + env(safe-area-inset-top,0px))}
 body.touch #toast{top:calc(176px + env(safe-area-inset-top,0px))}
-body.touch #look{bottom:calc(170px + env(safe-area-inset-bottom,0px))}
-body.touch #elev{bottom:calc(178px + env(safe-area-inset-bottom,0px))}
+body.touch #look{bottom:calc(202px + env(safe-area-inset-bottom,0px))}
+body.touch #elev{bottom:calc(210px + env(safe-area-inset-bottom,0px))}
 body.touch #help{display:none}
 @media (max-width:760px){
   .phone{display:inline-flex!important}
@@ -239,7 +242,7 @@ body.touch #help{display:none}
 </style>
 
 <div id="stage" aria-label="3D campus you can drive an RC car around"></div>
-<div class="ov" id="tiltT" hidden></div><div class="ov" id="tiltB" hidden></div><div class="ov" id="scan" hidden></div>
+<div class="ov" id="tiltT" hidden></div><div class="ov" id="tiltB" hidden></div><div class="ov" id="scan" hidden></div><div class="ov" id="vig" hidden></div>
 <div id="cross" class="no-o no-d"></div>
 
 <header id="bar">
@@ -251,7 +254,7 @@ body.touch #help{display:none}
     <button class="tb no-o" id="bSwap" type="button">Walk <kbd>C</kbd></button>
     <button class="tb no-o no-w no-c" id="bRun" type="button">Coffee run <kbd>Enter</kbd></button>
     <button class="tb" id="bFind" type="button" aria-expanded="false">Find <kbd>/</kbd></button>
-    <button class="tb" id="bStyle" type="button" aria-expanded="false">Style <kbd>1–0</kbd></button>
+    <button class="tb" id="bStyle" type="button" aria-expanded="false">Style <kbd>1–7</kbd></button>
     <button class="tb" id="bSound" type="button" aria-pressed="true">Sound <kbd>M</kbd></button>
     <button class="tb no-d no-w" id="bSetup" type="button" hidden>Set up</button>
     <button class="tb phone no-d no-w" id="bTimes" type="button" aria-expanded="false">Times</button>
@@ -265,7 +268,9 @@ body.touch #help{display:none}
   <p id="stP"></p>
   <div id="banner" hidden></div>
   <div class="bldgs no-f" id="bldgs"></div>
-  <div class="lbl">Paint <b id="paintName"></b></div>
+  <div class="lbl">Play as <b id="avName"></b></div>
+  <div class="chips" id="avChips" role="radiogroup" aria-label="Play as"></div>
+  <div class="lbl"><span id="paintLbl">Paint</span> <b id="paintName"></b></div>
   <div class="paints" id="paints" role="radiogroup" aria-label="Car paint"></div>
   <div class="lbl">Style <b id="styleName"></b></div>
   <div class="chips" id="chipsA" role="group" aria-label="Graphic style"></div>
@@ -308,7 +313,7 @@ body.touch #help{display:none}
   <div class="row" style="justify-content:space-between"><h2 id="styleH">Graphic style</h2><button class="tb" id="styleClose" type="button">Done</button></div>
   <div class="chips" id="chipsB" role="group" aria-label="Graphic style"></div>
   <p class="sdesc" id="styleDescB"></p>
-  <div class="keys">Number keys 1–9 and 0 switch styles while you drive · N toggles Neon night</div>
+  <div class="keys">Number keys 1–7 switch styles while you drive · N toggles Neon night</div>
 </section>
 
 <div id="mapwrap" class="glass hud no-o"><canvas id="map" width="440" height="280" aria-label="Top view of where you are"></canvas><div class="cap"><span id="mapCap">Top view</span><span id="coords">—</span></div></div>
@@ -325,6 +330,7 @@ body.touch #help{display:none}
 <div id="touch" class="hud" aria-hidden="true">
   <div id="joy" class="glass"><span class="hint" id="joyHint">Steer</span><i id="knob"></i></div>
   <div class="pedals">
+    <button class="pd" id="pJump" type="button">Jump</button>
     <button class="pd" id="pDrift" type="button">Drift</button>
     <button class="pd" id="pBoost" type="button">Boost</button>
     <button class="pd go" id="pGas" type="button">Go</button>
