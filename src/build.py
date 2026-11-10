@@ -21,7 +21,7 @@ window.__rc={get me(){return me},get bot(){return bot},get WKEY(){return WKEY},g
     finally{AC=sv.AC;bus=sv.bus;noiseBuf=sv.noiseBuf;brownBuf=sv.brownBuf;muted=sv.muted}
     const d=(await off.startRendering()).getChannelData(0);let pk=0,ss=0,last=0;for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;ss+=d[i]*d[i];if(a>.001)last=i}
     const db=x=>x>0?(20*Math.log10(x)).toFixed(1):"-inf";return{peakDb:db(pk),rmsDb:db(Math.sqrt(ss/Math.max(1,last))),ms:Math.round(last/sr*1000)}},
-  get renderer(){return renderer},get scene(){return scene},get camera(){return camera},ST,get elevAt(){return elevAt},get remotes(){return remotes},syncPeers,walker,get chairs(){return chairs},carStep,groundY,setAvatar,LAYOUT,CAMPUS,NAV,IMPORT,EDITOR};
+  get renderer(){return renderer},get scene(){return scene},get camera(){return camera},ST,get elevAt(){return elevAt},get remotes(){return remotes},syncPeers,walker,get chairs(){return chairs},carStep,groundY,roomFor,onPlat,setAvatar,LAYOUT,CAMPUS,NAV,IMPORT,EDITOR};
 """
 
 
@@ -46,7 +46,7 @@ def main():
     html = shell.rstrip() + "\n\n" + pre + THREE + "\n<script>\n(function(){\n\"use strict\";\n" + body + "\n})();\n</script>\n"
     if "--standalone" in sys.argv:
         html = html.replace("<title>Floor 4 Walkthrough</title>",
-                            '<title>RC Office Campus</title>\n<meta name="description" content="Drive a remote-control car around a two-building office campus: routes to coworkers and rooms, races, coffee runs and ten graphic styles.">', 1)
+                            '<title>RC Office Campus</title>\n<meta name="description" content="Drive a remote-control car around a two-building office campus: routes to coworkers and rooms, races, coffee runs and five graphic styles.">', 1)
     if test or "--standalone" in sys.argv:
         # a full document for local servers / GitHub Pages (the artifact platform adds this skeleton itself)
         html = ('<!doctype html>\n<html lang="en">\n<meta charset="utf-8">\n'

@@ -133,7 +133,7 @@ function buildRamp(r){
 }
 function lights(){
   if(S.light==="none")return;
-  const RIG={day:[.5,0xd6d2c8,.6,0xffffff],soft:[.55,0xe2d4c6,.5,0xfff1e0],retro:[.66,0xa39c8e,.58,0xfffbea],cel:[.3,0xffffff,.7,0xffffff],studio:[.24,0xb8ab99,1.6,0xffeed6]}[S.light];
+  const RIG={day:[.5,0xd6d2c8,.6,0xffffff],soft:[.55,0xe2d4c6,.5,0xfff1e0],cel:[.3,0xffffff,.7,0xffffff],studio:[.24,0xb8ab99,1.6,0xffeed6]}[S.light];
   root.add(new THREE.HemisphereLight(0xffffff,RIG[1],RIG[0]));
   sun=new THREE.DirectionalLight(RIG[3],RIG[2]);root.add(sun);root.add(sun.target);
   // Studio: a cool fill from the opposite side keeps shadowed faces readable (the environment map does the rest)
@@ -156,7 +156,7 @@ function padDecal(x,z,r,label){
   if(label)addSign([label],x,2.45,z,.3,S.acc);
 }
 // generic instanced furniture: each item type is a list of unit-shape parts placed in the item's local frame
-const UNIT={b:()=>ibx(1,1,1),c:()=>cyl(.5,.5,1,16),s:()=>S.blocky?new THREE.BoxGeometry(1,1,1):S.lowpoly||S.mat==="basic"?new THREE.IcosahedronGeometry(.5,0):new THREE.SphereGeometry(.5,S.mat==="pbr"?20:14,S.mat==="pbr"?14:10),cx:()=>{const g=cyl(.5,.5,1,14);g.rotateZ(Math.PI/2);return g}};
+const UNIT={b:()=>ibx(1,1,1),c:()=>cyl(.5,.5,1,16),s:()=>S.lowpoly||S.mat==="basic"?new THREE.IcosahedronGeometry(.5,0):new THREE.SphereGeometry(.5,S.mat==="pbr"?20:14,S.mat==="pbr"?14:10),cx:()=>{const g=cyl(.5,.5,1,14);g.rotateZ(Math.PI/2);return g}};
 const IDEF={panel:[4.74,.03,.42],table:[1.2,1.2,.74],rtable:[1.8,.9,.74],bench:[3,.9,.9],shelf:[3,.3,.5],rack:[.6,1,2],scope:[.4,.35,.22],chamber:[1,1,1.8],probe:[1.2,1,1.4],cabinet:[1.2,.5,1],locker:[1,.5,1.8],plant:[.5,.5,1.2],counter:[3,.7,1],coffee:[.45,.4,.55],fridge:[.8,.75,1.8],screen:[1.6,.05,.9],sofa:[2,.9,.8],reception:[3,1,1.1],printer:[.9,.7,1.1],whiteboard:[2,.04,1.2],elevdoor:[1.6,.1,2.2],booth:[1.4,1.4,2.3],
   tree:[4,4,4.5],lamp:[.4,.4,5],car:[1.8,4.4,1.45],bench_o:[1.8,.5,.8],bollard:[.2,.2,.9],planter:[2,1,.6],bikerack:[3,.6,.8],flag:[1.5,.1,8],sign:[4,.6,1.2]};
 const IPARTS={

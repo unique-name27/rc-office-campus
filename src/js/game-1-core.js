@@ -40,36 +40,6 @@ let ks=7;const kr=()=>{ks=(ks*16807)%2147483647;return(ks-1)/2147483646};
 const FLOORTEX={
   dots:(w,d)=>{const t=ctex(32,32,g=>{g.fillStyle="#FFE07A";g.fillRect(0,0,32,32);g.fillStyle="#F2B705";g.beginPath();g.arc(16,16,6,0,7);g.fill()});t.repeat.set(w/.3,d/.3);return t}
 };
-// Retro blocks: 16x16 grayscale pixel textures (multiplied by each part's color), sampled in world space so every
-// surface - instanced or not - tiles the same block grid, like a voxel game
-const PIX={};
-function pixTex(kind){
-  if(PIX[kind])return PIX[kind];
-  const c=document.createElement("canvas");c.width=c.height=16;const g=c.getContext("2d");let sd=kind.length*977+13;const r=()=>{sd=(sd*16807)%2147483647;return(sd-1)/2147483646};
-  for(let y=0;y<16;y++)for(let x=0;x<16;x++){let v;
-    if(kind==="planks"){const row=Math.floor(y/4),edge=y%4===3,seam=(x+row*5)%16===0;v=edge||seam?.6:.84+r()*.12-((x*3+y)%9===0?.07:0)}
-    else if(kind==="wool")v=.86+r()*.12-((x+y)%4===0?.05:0);
-    else if(kind==="leaves")v=r()<.2?.42:.72+r()*.26;
-    else if(kind==="bricks"){const row=Math.floor(y/4),off=row%2?4:0,mortar=y%4===3||(x+off)%8===7;v=mortar?.66:.86+r()*.1}
-    else{v=.7+r()*.26;if(r()<.09)v-=.16}
-    const q=Math.round(255*Math.min(1,v));g.fillStyle=`rgb(${q},${q},${q})`;g.fillRect(x,y,1,1)}
-  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.magFilter=THREE.NearestFilter;t.minFilter=THREE.NearestMipmapLinearFilter;SHARED.add(t);
-  return PIX[kind]=t;
-}
-const PIX_ROLE={desk:"planks",top:"planks",table:"planks",bench:"planks",counter:"planks",reception:"planks",board:"planks",panel:"planks",cabinet:"planks",shelf:"planks",locker:"planks",
-  carpet:"wool",sofa:"wool",plant:"leaves",wall:"bricks",bldg:"bricks",solid:"bricks",slab:"stone",roof:"stone",floor:"stone",rampSide:"stone",
-  trunk:"planks",pot:"stone",fridge:"stone",printer:"stone",chamber:"stone",probe:"stone",flag:"wool"};
-// inject world-space (triplanar-by-dominant-axis) texturing into a Phong material
-function applyPix(m,tex,scale){
-  m.onBeforeCompile=sh=>{
-    sh.uniforms.uPix={value:tex};sh.uniforms.uPixS={value:scale};
-    sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nvarying vec3 vPW;\nvarying vec3 vPN;")
-      .replace("#include <project_vertex>","#include <project_vertex>\n{vec4 pw=vec4(transformed,1.0);vec3 pn=objectNormal;\n#ifdef USE_INSTANCING\npw=instanceMatrix*pw;pn=mat3(instanceMatrix)*pn;\n#endif\npw=modelMatrix*pw;vPW=pw.xyz;vPN=normalize(mat3(modelMatrix)*pn);}");
-    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vPW;\nvarying vec3 vPN;\nuniform sampler2D uPix;\nuniform float uPixS;")
-      .replace("#include <map_fragment>","#include <map_fragment>\n{vec3 an=abs(vPN);vec2 tuv=an.y>max(an.x,an.z)?vPW.xz:(an.x>an.z?vPW.zy:vPW.xy);diffuseColor.rgb*=texture2D(uPix,tuv*uPixS).rgb;}");
-  };
-  m.customProgramCacheKey=()=>"pix"+tex.uuid+scale;
-}
 // Studio: a soft photo-studio environment (big warm softbox overhead, window light, dim floor) for reflections and ambient light
 let _env=null;
 // after a lost-and-restored WebGL context the old environment texture is gone: rebuild it and swap it into live materials
@@ -94,7 +64,7 @@ const PBR={_:[.7,0,0,1],floor:[.38,0,0,.9],carpet:[.95,0,0,.35],desk:[.42,0,0,.8
   car:[.36,.12,1,.6],carbody:[.34,.25,1,.7],screen:[.2,0],post:[.35,.7],flag:[.8,0]};
 const GRAD=(()=>{const t=new THREE.DataTexture(new Uint8Array([135,135,135,200,200,200,255,255,255]),3,1,THREE.RGBFormat);t.minFilter=t.magFilter=THREE.NearestFilter;t.generateMipmaps=false;t.needsUpdate=true;return t})();
 
-/* ---------- the 7 styles ---------- */
+/* ---------- the 5 styles ---------- */
 const BASE={floor:"#D9D5CB",carpet:"#CFE0EE",desk:"#F7F5EF",panel:"#9AA09A",leg:"#6E736C",mon:"#23272B",screen:"#3d6fb0",chair:"#3E7CB1",car:"#E4572E",glass:"#16202a",tire:"#1E1F21",rim:"#C9CCD1",wall:"#F4F3EF",win:"#BFD3DE",plant:"#4F9D69",pot:"#E9E2D0",ramp:"#F2C14E",light:"#FFF6D8",tail:"#ff2a2a",cup:"#FFFFFF",lid:"#5A3A22"};
 // roles used by v4 furniture/equipment/campus map onto the 21 base palette roles every style defines
 const ALIAS={counter:"panel",top:"desk",table:"desk",frame:"leg",machine:"mon",glassRoom:"win",rampSide:"leg",body:"chair",head:"pot",
@@ -107,8 +77,6 @@ const ST=[
 {n:"Neon night",d:"Lights off. A dark floor with a glowing grid, lit edges and screens, and car underglow.",bg:"#07071A",mat:"basic",light:"none",edges:{c:"#2DE2E6",o:.95},carEdge:true,carFace:true,teamEdges:true,teamPal:NEON_TEAM,edgeRole:{plant:"#7CFF6B",pot:"#7CFF6B",ramp:"#FFB547",rampSide:"#FFB547",win:"#5B4BFF",glassRoom:"#5B4BFF",bwin:"#5B4BFF",led:"#FF2E97",stripe:"#FFB547",pad:"#FFB547"},grid:{c:"#FF2E97",o:.45},glow:true,ui:"dark",acc:"#FFB547",tc:0,td:0,tcar:0,fog:[18,90],skid:["paint",.85,1],smoke:["paint",.4,1],pal:PAL({floor:"#0B0A20",carpet:"#0E0C26",desk:"#100E2A",panel:"#100E2A",leg:"#100E2A",mon:"#100E2A",screen:"#2DE2E6",chair:"#100E2A",car:"#140B2A",glass:"#0b0820",tire:"#07071A",rim:"#140B2A",wall:"#0B0A20",win:"#120d3a",plant:"#0B0A20",pot:"#0B0A20",ramp:"#120d30",light:"#E8FFFF",tail:"#FF2E97",cup:"#E8FFFF",lid:"#100E2A"})},
 {n:"Blueprint",d:"A white technical drawing on drafting blue, with each car picked out in its own color.",bg:"#123A6B",mat:"basic",faceIsBg:true,light:"none",edges:{c:"#E8F1FF",o:.9},carEdge:true,grid:{c:"#E8F1FF",o:.13},ui:"dark",label:{bg:"rgba(18,58,107,.94)",fg:"#E8F1FF",sub:"#A9C6EE"},acc:"#FFB547",fog:null,skid:["#E8F1FF",.3,0],smoke:["#E8F1FF",.3,0],pal:PAL({})},
 {n:"Comic cel-shade",d:"Flat bold colors, thick ink outlines and halftone dots on the floor.",bg:"#FFF1C9",mat:"toon",light:"cel",outline:"#111111",floorTex:"dots",ramp:"hazard",ui:"light",acc:"#FF3B3B",tc:1,td:0,tcar:.55,teamPal:COMIC_TEAM,fog:null,skid:["#111111",.5,0],smoke:["#ffffff",.85,0],pal:PAL({floor:"#FFFFFF",carpet:"#7FD1FF",desk:"#FFFFFF",panel:"#FF7A3D",leg:"#2B2B2B",mon:"#2B2B2B",screen:"#5CC8FF",chair:"#FF3B3B",car:"#FF3B3B",glass:"#1A1A1A",tire:"#1A1A1A",rim:"#FFE14D",wall:"#FFFDF5",win:"#9FE0FF",plant:"#3FC35A",pot:"#FF9F1C",ramp:"#FFFFFF",counter:"#3FA7D6"})},
-{n:"Retro blocks",d:"A blocky world made of crisp pixel textures, like a voxel game: stone floors, plank desks, wool carpets and cube trees.",bg:"#8EC3EE",mat:"flat",light:"retro",blocky:true,lowpoly:true,pixTex:true,blob:true,ui:"light",acc:"#D9822B",tc:.9,td:.3,tcar:.7,fog:[40,150],skid:["#3b3b3b",.4,0],smoke:["#ececec",.6,0],pal:PAL({floor:"#A7A7A7",carpet:"#D9D9D9",desk:"#BC8F55",panel:"#8A6239",leg:"#4E3B2A",mon:"#2C2C34",screen:"#55D6C8",chair:"#9C7A4E",car:"#D8452B",glass:"#2B3A4A",tire:"#1E1E1E",rim:"#BDBDBD",wall:"#D6CDB8",win:"#9FD3F2",plant:"#4C9A33",pot:"#8E5A3B",ramp:"#E2B33C",counter:"#7A7A7A",light:"#FFF3B0"})},
-{n:"Tilt-shift miniature",d:"A realistic office seen from above with blurred edges, so it reads as a scale model.",bg:"#DDE3E6",mat:"phong",light:"day",shadows:true,tilt:true,cam:"high",ramp:"hazard",ui:"light",acc:"#D7263D",tc:.5,td:0,tcar:.25,fog:[40,130],skid:["#222222",.35,0],smoke:["#ffffff",.5,0],pal:PAL({floor:"#A9A49B",carpet:"#7F8A8F",desk:"#C9A27A",panel:"#E8E6E1",leg:"#2E3135",mon:"#1E2124",screen:"#5d87b5",chair:"#2B2E33",car:"#F2C14E",glass:"#121820",tire:"#1A1B1C",rim:"#D0D3D6",wall:"#EDEBE6",win:"#A9C6DA",plant:"#3F7F4F",pot:"#F0EEE9",ramp:"#E8B33A",counter:"#4A5A54"})},
 {n:"Vector arcade",d:"Glowing green line art on black, with old-monitor scanlines.",bg:"#030703",mat:"basic",faceIsBg:true,depthOnly:true,light:"none",edges:{c:"#39FF6A",o:.95},carEdge:true,grid:{c:"#39FF6A",o:.22},scan:true,glowCss:"drop-shadow(0 0 1.5px #39FF6A) drop-shadow(0 0 5px rgba(57,255,106,.6))",ui:"dark",label:{bg:"rgba(3,12,4,.92)",fg:"#9CFFB4",sub:"#39FF6A"},acc:"#F2FFF4",fog:null,skid:["paint",.6,1],smoke:["#39FF6A",.3,1],pal:PAL({})}
 ];
 const LABEL={light:{bg:"rgba(250,251,248,.93)",fg:"#1F2421",sub:"#5D655F"},dark:{bg:"rgba(12,13,30,.9)",fg:"#F2F4FA",sub:"#9FB0C8"}};
@@ -138,8 +106,7 @@ function mat(role,co){
   }
   if(role==="screen")base.emissive=new THREE.Color(base.color).multiplyScalar(.55);
   if(S.mat==="phong"){const gl=role==="car"||role==="carbody"||role==="glass"||role==="rim"||role==="metal"||role==="bwin";return new THREE.MeshPhongMaterial(Object.assign(base,{shininess:role==="glass"?130:role==="car"||role==="carbody"?95:gl?80:10,specular:gl?0x888888:0x151515}))}
-  if(S.mat==="flat"){const fm=new THREE.MeshPhongMaterial(Object.assign(base,{flatShading:true,shininess:0,specular:0x000000}));
-    if(S.pixTex&&PIX_ROLE[role]&&!CAR_BUILD)applyPix(fm,pixTex(PIX_ROLE[role]),WKIND==="campus"?1:2);return fm}
+  if(S.mat==="flat")return new THREE.MeshPhongMaterial(Object.assign(base,{flatShading:true,shininess:0,specular:0x000000}));
   if(S.mat==="toon")return new THREE.MeshToonMaterial(Object.assign(base,{gradientMap:GRAD}));
   return new THREE.MeshLambertMaterial(base);
 }
@@ -173,7 +140,6 @@ function bx(w,h,d){
 const seg=n=>S.lowpoly?Math.max(5,Math.round(n/3)):n;
 let CAR_BUILD=false; // true while a car or animal is being built: those keep round wheels/legs and flat colors
 function cyl(rt,rb,h,n){
-  if(S.blocky&&!CAR_BUILD){const g=new THREE.CylinderGeometry(rt*Math.SQRT2,rb*Math.SQRT2,h,4);g.rotateY(Math.PI/4);return g}
   return new THREE.CylinderGeometry(rt,rb,h,seg(n||18));
 }
 

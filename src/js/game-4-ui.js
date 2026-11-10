@@ -47,6 +47,7 @@ addEventListener("keydown",e=>{
     case"KeyJ":if(mode==="drive"&&!fly&&!trans)me.jumpReq=true;break;
     case"Space":if(mode==="drive"&&!fly&&!trans&&me.kind!=="car")me.jumpReq=true;break;
     case"KeyY":joinRace();break;
+    case"KeyP":cycleAvatar();break;
     case"Enter":if(elevAt&&tag!=="BUTTON"){const f=routeNextFloor();if(f){ride(f);break}}if(mode==="drive"&&!fly&&tag!=="BUTTON"){if(run)runCancel("Coffee run cancelled");else if(race)raceCancel("Race cancelled");else runStart()}break;
   }
 });
@@ -120,18 +121,17 @@ $("pHorn").addEventListener("pointerdown",e=>{e.preventDefault();audio();honk()}
 let prevStyle=null;
 function styleUI(i){
   const root_=document.documentElement;root_.dataset.theme=S.ui;root_.style.setProperty("--ground",S.bg);root_.style.setProperty("--accent",S.acc);root_.style.setProperty("--on-accent",(()=>{const a=lum(S.acc),d=lum("#14161f");return(a+.05)/(d+.05)>1.05/(a+.05)?"#14161f":"#ffffff"})());
-  $("tiltT").hidden=$("tiltB").hidden=!S.tilt;$("scan").hidden=!S.scan;$("vig").hidden=!S.vignette;
+  $("scan").hidden=!S.scan;$("vig").hidden=!S.vignette;
   renderer.toneMapping=S.tone?THREE.ACESFilmicToneMapping:THREE.NoToneMapping;renderer.toneMappingExposure=S.exposure||1;
-  cv.style.imageRendering=S.pixel?"pixelated":"";cv.style.filter=S.glowCss||(S.tilt?"saturate(1.35) contrast(1.05)":"");
+  cv.style.filter=S.glowCss||"";
   document.querySelectorAll(".chip[data-i]").forEach(c=>c.setAttribute("aria-pressed",String(+c.dataset.i===i)));
-  $("styleName").textContent=S.n;$("styleDescA").textContent=$("styleDescB").textContent=S.d;store.set("rc-style",String(i));store.set("rc-style-v","2");
+  $("styleName").textContent=S.n;$("styleDescA").textContent=$("styleDescB").textContent=S.d;store.set("rc-style",String(i));store.set("rc-style-v","3");
 }
 function applyStyle(i){
   if(i===cur&&root)return;if(i!==1&&cur!==1)prevStyle=null;if(i===1&&cur!==1)prevStyle=cur;
   clearRoot();S=ST[i];cur=i;buildWorld();buildCars();fxRestyle();rebuildTags();restoreCups();
   setTarget(target);routeVisuals(true);updateGates();
   styleUI(i);
-  if(S.cam&&mode==="drive"&&camMode==="chase")setCam(S.cam);
   resize();drawMapBase();labelsClear();
   if(markerTag){disposeSprite(markerTag);markerTag=null;markerFor=-1}
 }
@@ -147,13 +147,25 @@ function renderSwatches(){const box=$("paints");box.innerHTML="";box.setAttribut
 $("paints").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const L=swatches(),i=L.findIndex(x=>x[0]===paint),n=(i+(/Right|Down/.test(e.key)?1:-1)+L.length)%L.length;setPaint(L[n][0]);$("paints").children[n].focus()});
 // play as an RC car, a dog or a cat
 function setAvatar(av){
-  if(!AV_KINDS.has(av))av="car";me.kind=av;store.set("rc-av",av);document.body.classList.toggle("animal",av!=="car");
+  if(!AV_KINDS.has(av))av="car";me.kind=av;store.set("rc-av",av);makeRoomFor(av);document.body.classList.toggle("animal",av!=="car");
   document.querySelectorAll("#avChips .chip").forEach(c=>c.setAttribute("aria-checked",String(c.dataset.av===av)));
   $("avName").textContent=(AVATARS.find(x=>x[0]===av)||[0,""])[1];
   $("pBoost").textContent=av==="car"?"Boost":"Sprint";$("pHorn").textContent=av==="dog"?"Bark":av==="cat"?"Meow":"Horn";
   renderSwatches();const L=swatches(),saved=store.get(av==="car"?"rc-paint":"rc-coat-"+av);setPaint(L.some(x=>x[0]===saved)?saved:L.some(x=>x[0]===paint)?paint:L[0][0]);
   $("bCam").innerHTML=camName(camMode)+' <kbd>V</kbd>';setHelp();
+  const nx=AV_WHO[AV_NEXT[av]],b=$("bAv");b.innerHTML=AV_LBL[av]+' <kbd>P</kbd>';b.title=`Switch to the ${nx} (P)`;b.setAttribute("aria-label",`Playing as the ${AV_WHO[av]}. Switch to the ${nx}`);
 }
+const AV_LBL={car:"Car",dog:"Dog",cat:"Cat"},AV_WHO={car:"RC car",dog:"dog",cat:"cat"},AV_NEXT={car:"dog",dog:"cat",cat:"car"};
+const AV_TIP={car:"RC car: Space drifts, J jumps, H honks",dog:"Dog: Space jumps, Shift sprints, H barks",cat:"Cat: Space jumps (onto desks too), H meows"};
+// P or the toolbar button: car -> dog -> cat, right where you are
+function cycleAvatar(){
+  if(fly||trans||mode==="walk")return;
+  if((run&&run.phase!=="done")||race){toast(`Finish or cancel the ${race?"race":"coffee run"} first (Enter), then switch`);return}
+  const next=AV_NEXT[me.kind]||"car";
+  setAvatar(next);toast(AV_TIP[next]);
+  if(mode==="drive")for(let k=0;k<6;k++)puff(me.x+(Math.random()-.5)*.3,me.y+.05,me.z+(Math.random()-.5)*.3,"#ffffff");
+}
+$("bAv").onclick=()=>cycleAvatar();
 AVATARS.forEach(([k,n])=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.av=k;b.textContent=n;b.setAttribute("role","radio");b.setAttribute("aria-checked","false");b.onclick=()=>setAvatar(k);$("avChips").appendChild(b)});
 $("avChips").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const i=AVATARS.findIndex(x=>x[0]===me.kind),n=(i+(/Right|Down/.test(e.key)?1:-1)+AVATARS.length)%AVATARS.length;setAvatar(AVATARS[n][0]);$("avChips").children[n].focus()});
 $("pJump").addEventListener("pointerdown",e=>{e.preventDefault();audio();if(mode==="drive")me.jumpReq=true});
@@ -877,7 +889,7 @@ function openEditor(key){
 
 /* ---------- main loop ---------- */
 function resize(){
-  const w=innerWidth,h=innerHeight;renderer.setPixelRatio(S&&S.pixel?Math.min(1,520/w):DPR);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
+  const w=innerWidth,h=innerHeight;renderer.setPixelRatio(DPR);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
 }
 addEventListener("resize",resize);
 let last=performance.now(),lblAcc=0,lookAcc=0,mapAcc=0,rosterAcc=0;
@@ -938,7 +950,7 @@ function audioFrame(){
 /* ---------- boot ---------- */
 try{DEMO=CAMPUS.demo(LAYOUT)}catch(e){console.error(e);fatal("The campus couldn't be built. Reload the page to try again.");return}
 DATA=null;mergeData(true);
-{const OLD=[0,1,2,3,4,0,0,5,0,6];let saved=parseInt(store.get("rc-style"),10);if(store.get("rc-style-v")!=="2"&&Number.isInteger(saved))saved=OLD[saved];const i=Number.isInteger(saved)&&saved>=0&&saved<ST.length?saved:(matchMedia("(prefers-color-scheme: dark)").matches?1:0);S=ST[i];cur=i;fxRestyle();styleUI(i)}
+{const V1=[0,1,2,3,0,0,0,0,0,4],V2=[0,1,2,3,0,0,4],ver=store.get("rc-style-v");let saved=parseInt(store.get("rc-style"),10);if(Number.isInteger(saved)&&ver!=="3")saved=(ver==="2"?V2:V1)[saved];const i=Number.isInteger(saved)&&saved>=0&&saved<ST.length?saved:(matchMedia("(prefers-color-scheme: dark)").matches?1:0);S=ST[i];cur=i;fxRestyle();styleUI(i)}
 resize();
 {const last_=store.get("rc-world");enterWorld(last_&&(last_==="campus"||floorKeys().includes(last_))?last_:"campus")}
 setAvatar(me.kind);setMuted(muted);setMode("overview");updateRunBtn();

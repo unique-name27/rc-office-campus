@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>RC Office Campus</title>
-<meta name="description" content="Drive a remote-control car around a two-building office campus: routes to coworkers and rooms, races, coffee runs and ten graphic styles.">
+<meta name="description" content="Drive a remote-control car around a two-building office campus: routes to coworkers and rooms, races, coffee runs and five graphic styles.">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -26,8 +26,6 @@ button,input,select{font-family:inherit}
 #stage{position:fixed;inset:0;touch-action:none}
 #stage canvas{display:block;width:100%;height:100%;outline:none}
 .ov{position:fixed;left:0;right:0;pointer-events:none;z-index:1}
-#tiltT{top:0;height:34%;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);-webkit-mask-image:linear-gradient(#000 25%,transparent);mask-image:linear-gradient(#000 25%,transparent)}
-#tiltB{bottom:0;height:24%;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);-webkit-mask-image:linear-gradient(transparent,#000 75%);mask-image:linear-gradient(transparent,#000 75%)}
 #vig{top:0;bottom:0;background:radial-gradient(ellipse 75% 70% at 50% 46%,transparent 55%,rgba(40,28,14,.2) 100%)}
 #scan{top:0;bottom:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.32) 0 1px,transparent 1px 3px)}
 .glass{background:var(--glass);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
@@ -247,7 +245,7 @@ body.touch #help{display:none}
 </style>
 
 <div id="stage" aria-label="3D campus you can drive an RC car around"></div>
-<div class="ov" id="tiltT" hidden></div><div class="ov" id="tiltB" hidden></div><div class="ov" id="scan" hidden></div><div class="ov" id="vig" hidden></div>
+<div class="ov" id="scan" hidden></div><div class="ov" id="vig" hidden></div>
 <div id="cross" class="no-o no-d"></div>
 
 <header id="bar">
@@ -255,11 +253,12 @@ body.touch #help{display:none}
   <nav class="tools glass hud" aria-label="Controls">
     <button class="tb no-o" id="bOver" type="button">Overview <kbd>O</kbd></button>
     <button class="tb no-d no-w no-c" id="bUp" type="button">Campus <kbd>O</kbd></button>
+    <button class="tb no-w" id="bAv" type="button" title="Switch between the RC car, the dog and the cat">Car <kbd>P</kbd></button>
     <button class="tb no-o no-w" id="bCam" type="button">Chase cam <kbd>V</kbd></button>
     <button class="tb no-o" id="bSwap" type="button">Walk <kbd>C</kbd></button>
     <button class="tb no-o no-w no-c" id="bRun" type="button">Coffee run <kbd>Enter</kbd></button>
     <button class="tb" id="bFind" type="button" aria-expanded="false">Find <kbd>/</kbd></button>
-    <button class="tb" id="bStyle" type="button" aria-expanded="false">Style <kbd>1–7</kbd></button>
+    <button class="tb" id="bStyle" type="button" aria-expanded="false">Style <kbd>1–5</kbd></button>
     <button class="tb" id="bSound" type="button" aria-pressed="true">Sound <kbd>M</kbd></button>
     <button class="tb no-d no-w" id="bSetup" type="button" hidden>Set up</button>
     <button class="tb phone no-d no-w" id="bTimes" type="button" aria-expanded="false">Times</button>
@@ -318,7 +317,7 @@ body.touch #help{display:none}
   <div class="row" style="justify-content:space-between"><h2 id="styleH">Graphic style</h2><button class="tb" id="styleClose" type="button">Done</button></div>
   <div class="chips" id="chipsB" role="group" aria-label="Graphic style"></div>
   <p class="sdesc" id="styleDescB"></p>
-  <div class="keys">Number keys 1–7 switch styles while you drive · N toggles Neon night</div>
+  <div class="keys">Number keys 1–5 switch styles while you drive · N toggles Neon night</div>
 </section>
 
 <div id="mapwrap" class="glass hud no-o"><canvas id="map" width="440" height="280" aria-label="Top view of where you are"></canvas><div class="cap"><span id="mapCap">Top view</span><span id="coords">—</span></div></div>
@@ -5586,36 +5585,6 @@ let ks=7;const kr=()=>{ks=(ks*16807)%2147483647;return(ks-1)/2147483646};
 const FLOORTEX={
   dots:(w,d)=>{const t=ctex(32,32,g=>{g.fillStyle="#FFE07A";g.fillRect(0,0,32,32);g.fillStyle="#F2B705";g.beginPath();g.arc(16,16,6,0,7);g.fill()});t.repeat.set(w/.3,d/.3);return t}
 };
-// Retro blocks: 16x16 grayscale pixel textures (multiplied by each part's color), sampled in world space so every
-// surface - instanced or not - tiles the same block grid, like a voxel game
-const PIX={};
-function pixTex(kind){
-  if(PIX[kind])return PIX[kind];
-  const c=document.createElement("canvas");c.width=c.height=16;const g=c.getContext("2d");let sd=kind.length*977+13;const r=()=>{sd=(sd*16807)%2147483647;return(sd-1)/2147483646};
-  for(let y=0;y<16;y++)for(let x=0;x<16;x++){let v;
-    if(kind==="planks"){const row=Math.floor(y/4),edge=y%4===3,seam=(x+row*5)%16===0;v=edge||seam?.6:.84+r()*.12-((x*3+y)%9===0?.07:0)}
-    else if(kind==="wool")v=.86+r()*.12-((x+y)%4===0?.05:0);
-    else if(kind==="leaves")v=r()<.2?.42:.72+r()*.26;
-    else if(kind==="bricks"){const row=Math.floor(y/4),off=row%2?4:0,mortar=y%4===3||(x+off)%8===7;v=mortar?.66:.86+r()*.1}
-    else{v=.7+r()*.26;if(r()<.09)v-=.16}
-    const q=Math.round(255*Math.min(1,v));g.fillStyle=`rgb(${q},${q},${q})`;g.fillRect(x,y,1,1)}
-  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.magFilter=THREE.NearestFilter;t.minFilter=THREE.NearestMipmapLinearFilter;SHARED.add(t);
-  return PIX[kind]=t;
-}
-const PIX_ROLE={desk:"planks",top:"planks",table:"planks",bench:"planks",counter:"planks",reception:"planks",board:"planks",panel:"planks",cabinet:"planks",shelf:"planks",locker:"planks",
-  carpet:"wool",sofa:"wool",plant:"leaves",wall:"bricks",bldg:"bricks",solid:"bricks",slab:"stone",roof:"stone",floor:"stone",rampSide:"stone",
-  trunk:"planks",pot:"stone",fridge:"stone",printer:"stone",chamber:"stone",probe:"stone",flag:"wool"};
-// inject world-space (triplanar-by-dominant-axis) texturing into a Phong material
-function applyPix(m,tex,scale){
-  m.onBeforeCompile=sh=>{
-    sh.uniforms.uPix={value:tex};sh.uniforms.uPixS={value:scale};
-    sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nvarying vec3 vPW;\nvarying vec3 vPN;")
-      .replace("#include <project_vertex>","#include <project_vertex>\n{vec4 pw=vec4(transformed,1.0);vec3 pn=objectNormal;\n#ifdef USE_INSTANCING\npw=instanceMatrix*pw;pn=mat3(instanceMatrix)*pn;\n#endif\npw=modelMatrix*pw;vPW=pw.xyz;vPN=normalize(mat3(modelMatrix)*pn);}");
-    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vPW;\nvarying vec3 vPN;\nuniform sampler2D uPix;\nuniform float uPixS;")
-      .replace("#include <map_fragment>","#include <map_fragment>\n{vec3 an=abs(vPN);vec2 tuv=an.y>max(an.x,an.z)?vPW.xz:(an.x>an.z?vPW.zy:vPW.xy);diffuseColor.rgb*=texture2D(uPix,tuv*uPixS).rgb;}");
-  };
-  m.customProgramCacheKey=()=>"pix"+tex.uuid+scale;
-}
 // Studio: a soft photo-studio environment (big warm softbox overhead, window light, dim floor) for reflections and ambient light
 let _env=null;
 // after a lost-and-restored WebGL context the old environment texture is gone: rebuild it and swap it into live materials
@@ -5640,7 +5609,7 @@ const PBR={_:[.7,0,0,1],floor:[.38,0,0,.9],carpet:[.95,0,0,.35],desk:[.42,0,0,.8
   car:[.36,.12,1,.6],carbody:[.34,.25,1,.7],screen:[.2,0],post:[.35,.7],flag:[.8,0]};
 const GRAD=(()=>{const t=new THREE.DataTexture(new Uint8Array([135,135,135,200,200,200,255,255,255]),3,1,THREE.RGBFormat);t.minFilter=t.magFilter=THREE.NearestFilter;t.generateMipmaps=false;t.needsUpdate=true;return t})();
 
-/* ---------- the 7 styles ---------- */
+/* ---------- the 5 styles ---------- */
 const BASE={floor:"#D9D5CB",carpet:"#CFE0EE",desk:"#F7F5EF",panel:"#9AA09A",leg:"#6E736C",mon:"#23272B",screen:"#3d6fb0",chair:"#3E7CB1",car:"#E4572E",glass:"#16202a",tire:"#1E1F21",rim:"#C9CCD1",wall:"#F4F3EF",win:"#BFD3DE",plant:"#4F9D69",pot:"#E9E2D0",ramp:"#F2C14E",light:"#FFF6D8",tail:"#ff2a2a",cup:"#FFFFFF",lid:"#5A3A22"};
 // roles used by v4 furniture/equipment/campus map onto the 21 base palette roles every style defines
 const ALIAS={counter:"panel",top:"desk",table:"desk",frame:"leg",machine:"mon",glassRoom:"win",rampSide:"leg",body:"chair",head:"pot",
@@ -5653,8 +5622,6 @@ const ST=[
 {n:"Neon night",d:"Lights off. A dark floor with a glowing grid, lit edges and screens, and car underglow.",bg:"#07071A",mat:"basic",light:"none",edges:{c:"#2DE2E6",o:.95},carEdge:true,carFace:true,teamEdges:true,teamPal:NEON_TEAM,edgeRole:{plant:"#7CFF6B",pot:"#7CFF6B",ramp:"#FFB547",rampSide:"#FFB547",win:"#5B4BFF",glassRoom:"#5B4BFF",bwin:"#5B4BFF",led:"#FF2E97",stripe:"#FFB547",pad:"#FFB547"},grid:{c:"#FF2E97",o:.45},glow:true,ui:"dark",acc:"#FFB547",tc:0,td:0,tcar:0,fog:[18,90],skid:["paint",.85,1],smoke:["paint",.4,1],pal:PAL({floor:"#0B0A20",carpet:"#0E0C26",desk:"#100E2A",panel:"#100E2A",leg:"#100E2A",mon:"#100E2A",screen:"#2DE2E6",chair:"#100E2A",car:"#140B2A",glass:"#0b0820",tire:"#07071A",rim:"#140B2A",wall:"#0B0A20",win:"#120d3a",plant:"#0B0A20",pot:"#0B0A20",ramp:"#120d30",light:"#E8FFFF",tail:"#FF2E97",cup:"#E8FFFF",lid:"#100E2A"})},
 {n:"Blueprint",d:"A white technical drawing on drafting blue, with each car picked out in its own color.",bg:"#123A6B",mat:"basic",faceIsBg:true,light:"none",edges:{c:"#E8F1FF",o:.9},carEdge:true,grid:{c:"#E8F1FF",o:.13},ui:"dark",label:{bg:"rgba(18,58,107,.94)",fg:"#E8F1FF",sub:"#A9C6EE"},acc:"#FFB547",fog:null,skid:["#E8F1FF",.3,0],smoke:["#E8F1FF",.3,0],pal:PAL({})},
 {n:"Comic cel-shade",d:"Flat bold colors, thick ink outlines and halftone dots on the floor.",bg:"#FFF1C9",mat:"toon",light:"cel",outline:"#111111",floorTex:"dots",ramp:"hazard",ui:"light",acc:"#FF3B3B",tc:1,td:0,tcar:.55,teamPal:COMIC_TEAM,fog:null,skid:["#111111",.5,0],smoke:["#ffffff",.85,0],pal:PAL({floor:"#FFFFFF",carpet:"#7FD1FF",desk:"#FFFFFF",panel:"#FF7A3D",leg:"#2B2B2B",mon:"#2B2B2B",screen:"#5CC8FF",chair:"#FF3B3B",car:"#FF3B3B",glass:"#1A1A1A",tire:"#1A1A1A",rim:"#FFE14D",wall:"#FFFDF5",win:"#9FE0FF",plant:"#3FC35A",pot:"#FF9F1C",ramp:"#FFFFFF",counter:"#3FA7D6"})},
-{n:"Retro blocks",d:"A blocky world made of crisp pixel textures, like a voxel game: stone floors, plank desks, wool carpets and cube trees.",bg:"#8EC3EE",mat:"flat",light:"retro",blocky:true,lowpoly:true,pixTex:true,blob:true,ui:"light",acc:"#D9822B",tc:.9,td:.3,tcar:.7,fog:[40,150],skid:["#3b3b3b",.4,0],smoke:["#ececec",.6,0],pal:PAL({floor:"#A7A7A7",carpet:"#D9D9D9",desk:"#BC8F55",panel:"#8A6239",leg:"#4E3B2A",mon:"#2C2C34",screen:"#55D6C8",chair:"#9C7A4E",car:"#D8452B",glass:"#2B3A4A",tire:"#1E1E1E",rim:"#BDBDBD",wall:"#D6CDB8",win:"#9FD3F2",plant:"#4C9A33",pot:"#8E5A3B",ramp:"#E2B33C",counter:"#7A7A7A",light:"#FFF3B0"})},
-{n:"Tilt-shift miniature",d:"A realistic office seen from above with blurred edges, so it reads as a scale model.",bg:"#DDE3E6",mat:"phong",light:"day",shadows:true,tilt:true,cam:"high",ramp:"hazard",ui:"light",acc:"#D7263D",tc:.5,td:0,tcar:.25,fog:[40,130],skid:["#222222",.35,0],smoke:["#ffffff",.5,0],pal:PAL({floor:"#A9A49B",carpet:"#7F8A8F",desk:"#C9A27A",panel:"#E8E6E1",leg:"#2E3135",mon:"#1E2124",screen:"#5d87b5",chair:"#2B2E33",car:"#F2C14E",glass:"#121820",tire:"#1A1B1C",rim:"#D0D3D6",wall:"#EDEBE6",win:"#A9C6DA",plant:"#3F7F4F",pot:"#F0EEE9",ramp:"#E8B33A",counter:"#4A5A54"})},
 {n:"Vector arcade",d:"Glowing green line art on black, with old-monitor scanlines.",bg:"#030703",mat:"basic",faceIsBg:true,depthOnly:true,light:"none",edges:{c:"#39FF6A",o:.95},carEdge:true,grid:{c:"#39FF6A",o:.22},scan:true,glowCss:"drop-shadow(0 0 1.5px #39FF6A) drop-shadow(0 0 5px rgba(57,255,106,.6))",ui:"dark",label:{bg:"rgba(3,12,4,.92)",fg:"#9CFFB4",sub:"#39FF6A"},acc:"#F2FFF4",fog:null,skid:["paint",.6,1],smoke:["#39FF6A",.3,1],pal:PAL({})}
 ];
 const LABEL={light:{bg:"rgba(250,251,248,.93)",fg:"#1F2421",sub:"#5D655F"},dark:{bg:"rgba(12,13,30,.9)",fg:"#F2F4FA",sub:"#9FB0C8"}};
@@ -5684,8 +5651,7 @@ function mat(role,co){
   }
   if(role==="screen")base.emissive=new THREE.Color(base.color).multiplyScalar(.55);
   if(S.mat==="phong"){const gl=role==="car"||role==="carbody"||role==="glass"||role==="rim"||role==="metal"||role==="bwin";return new THREE.MeshPhongMaterial(Object.assign(base,{shininess:role==="glass"?130:role==="car"||role==="carbody"?95:gl?80:10,specular:gl?0x888888:0x151515}))}
-  if(S.mat==="flat"){const fm=new THREE.MeshPhongMaterial(Object.assign(base,{flatShading:true,shininess:0,specular:0x000000}));
-    if(S.pixTex&&PIX_ROLE[role]&&!CAR_BUILD)applyPix(fm,pixTex(PIX_ROLE[role]),WKIND==="campus"?1:2);return fm}
+  if(S.mat==="flat")return new THREE.MeshPhongMaterial(Object.assign(base,{flatShading:true,shininess:0,specular:0x000000}));
   if(S.mat==="toon")return new THREE.MeshToonMaterial(Object.assign(base,{gradientMap:GRAD}));
   return new THREE.MeshLambertMaterial(base);
 }
@@ -5719,7 +5685,6 @@ function bx(w,h,d){
 const seg=n=>S.lowpoly?Math.max(5,Math.round(n/3)):n;
 let CAR_BUILD=false; // true while a car or animal is being built: those keep round wheels/legs and flat colors
 function cyl(rt,rb,h,n){
-  if(S.blocky&&!CAR_BUILD){const g=new THREE.CylinderGeometry(rt*Math.SQRT2,rb*Math.SQRT2,h,4);g.rotateY(Math.PI/4);return g}
   return new THREE.CylinderGeometry(rt,rb,h,seg(n||18));
 }
 
@@ -6170,7 +6135,7 @@ function buildRamp(r){
 }
 function lights(){
   if(S.light==="none")return;
-  const RIG={day:[.5,0xd6d2c8,.6,0xffffff],soft:[.55,0xe2d4c6,.5,0xfff1e0],retro:[.66,0xa39c8e,.58,0xfffbea],cel:[.3,0xffffff,.7,0xffffff],studio:[.24,0xb8ab99,1.6,0xffeed6]}[S.light];
+  const RIG={day:[.5,0xd6d2c8,.6,0xffffff],soft:[.55,0xe2d4c6,.5,0xfff1e0],cel:[.3,0xffffff,.7,0xffffff],studio:[.24,0xb8ab99,1.6,0xffeed6]}[S.light];
   root.add(new THREE.HemisphereLight(0xffffff,RIG[1],RIG[0]));
   sun=new THREE.DirectionalLight(RIG[3],RIG[2]);root.add(sun);root.add(sun.target);
   // Studio: a cool fill from the opposite side keeps shadowed faces readable (the environment map does the rest)
@@ -6193,7 +6158,7 @@ function padDecal(x,z,r,label){
   if(label)addSign([label],x,2.45,z,.3,S.acc);
 }
 // generic instanced furniture: each item type is a list of unit-shape parts placed in the item's local frame
-const UNIT={b:()=>ibx(1,1,1),c:()=>cyl(.5,.5,1,16),s:()=>S.blocky?new THREE.BoxGeometry(1,1,1):S.lowpoly||S.mat==="basic"?new THREE.IcosahedronGeometry(.5,0):new THREE.SphereGeometry(.5,S.mat==="pbr"?20:14,S.mat==="pbr"?14:10),cx:()=>{const g=cyl(.5,.5,1,14);g.rotateZ(Math.PI/2);return g}};
+const UNIT={b:()=>ibx(1,1,1),c:()=>cyl(.5,.5,1,16),s:()=>S.lowpoly||S.mat==="basic"?new THREE.IcosahedronGeometry(.5,0):new THREE.SphereGeometry(.5,S.mat==="pbr"?20:14,S.mat==="pbr"?14:10),cx:()=>{const g=cyl(.5,.5,1,14);g.rotateZ(Math.PI/2);return g}};
 const IDEF={panel:[4.74,.03,.42],table:[1.2,1.2,.74],rtable:[1.8,.9,.74],bench:[3,.9,.9],shelf:[3,.3,.5],rack:[.6,1,2],scope:[.4,.35,.22],chamber:[1,1,1.8],probe:[1.2,1,1.4],cabinet:[1.2,.5,1],locker:[1,.5,1.8],plant:[.5,.5,1.2],counter:[3,.7,1],coffee:[.45,.4,.55],fridge:[.8,.75,1.8],screen:[1.6,.05,.9],sofa:[2,.9,.8],reception:[3,1,1.1],printer:[.9,.7,1.1],whiteboard:[2,.04,1.2],elevdoor:[1.6,.1,2.2],booth:[1.4,1.4,2.3],
   tree:[4,4,4.5],lamp:[.4,.4,5],car:[1.8,4.4,1.45],bench_o:[1.8,.5,.8],bollard:[.2,.2,.9],planter:[2,1,.6],bikerack:[3,.6,.8],flag:[1.5,.1,8],sign:[4,.6,1.2]};
 const IPARTS={
@@ -6420,6 +6385,8 @@ const AVP={car:{max:7.2,bmax:11.5,acc:11,bacc:20,turn:3.3,grip:13,rev:3.2,jump:3
   cat:{max:6.6,bmax:9.8,acc:17,bacc:24,turn:5,grip:24,rev:2.4,jump:5,drift:false,r:.12,ax:.1}};
 // how tall each avatar is (for ceilings: the underside of a desk, table, parked car or bench above you)
 const BODY_H={car:.2,dog:.52,cat:.45};
+// is there headroom for this avatar at (x,y,z)? (the RC car can sit under a bench that a dog would not fit under)
+function roomFor(kind,x,z,y){const bh=BODY_H[kind]||.2,l=query(x,z,.1,8);for(let i=0;i<l.length;i++){const p=l[i];if(p.u==null||x<p.x0||x>p.x1||z<p.z0||z>p.z1)continue;if(y<p.u-.02&&y+bh>p.u+.02)return false}return true}
 // the ground under (x,z): ramps for everyone; animals can also stand on desk tops, tables, sofas, counters, parked cars...
 // A surface counts only if your feet were already at or above it at the start of this step (y0), so jumping up from
 // underneath never pops you through it.
@@ -6638,12 +6605,26 @@ function flyTo(m,dur){
   stopKeys();
 }
 // put the car on a free spot near (x,z)
+const spotFree=(px,pz)=>{const l=query(px,pz,.3,1);for(let i=0;i<l.length;i++)if(circleVs(l[i],px,pz,.22))return false;return Math.abs(px)<PW/2-.4&&Math.abs(pz)<PD/2-.4};
 function spawnNear(x,z,h){
-  const free=(px,pz)=>{const l=query(px,pz,.3,1);for(let i=0;i<l.length;i++)if(circleVs(l[i],px,pz,.22))return false;return Math.abs(px)<PW/2-.4&&Math.abs(pz)<PD/2-.4};
+  const free=spotFree;
   const done=()=>lockPadAt(me.x,me.z);
   if(free(x,z)){spawn(me,x,z,h);done();return}
   for(const r of[.6,1,1.5,2.2,3,4.2,6])for(let a=0;a<16;a++){const px=x+Math.cos(a*Math.PI/8)*r,pz=z+Math.sin(a*Math.PI/8)*r;if(free(px,pz)){spawn(me,px,pz,h);done();return}}
   const s=WM.spawn||{x:0,z:0,a:0};spawn(me,s.x,s.z,s.a||0);done();
+}
+// Switching avatars in place. Two cases need a short step to the nearest good spot:
+//  - the low RC car becomes a dog or cat under something low (a bench, a parked car): find headroom
+//  - a dog or cat perched on a desk, counter or parked car becomes the RC car, which can only drive on the floor and
+//    ramps: step down beside it instead of dropping through the top
+const onPlat=(x,z)=>{const l=query(x,z,.1,8);for(let i=0;i<l.length;i++){const p=l[i];if(x>=p.x0-.06&&x<=p.x1+.06&&z>=p.z0-.06&&z<=p.z1+.06)return true}return false};
+function makeRoomFor(kind){
+  if(!root)return false;
+  const perched=kind==="car"&&me.y>groundY(me.x,me.z)+.05&&onPlat(me.x,me.z);
+  if(!perched&&roomFor(kind,me.x,me.z,me.y))return false;
+  for(const r of[.3,.6,1,1.5,2.2,3,4.2])for(let a=0;a<16;a++){const px=me.x+Math.cos(a*Math.PI/8)*r,pz=me.z+Math.sin(a*Math.PI/8)*r;if(spotFree(px,pz)&&(!perched||!onPlat(px,pz))&&roomFor(kind,px,pz,groundY(px,pz))){spawn(me,px,pz,me.h);lockPadAt(me.x,me.z);return true}}
+  if(perched){const s=WM.spawn||{x:0,z:0,a:0};spawnNear(s.x,s.z,s.a||0);return true}
+  return false;
 }
 function stopKeys(){for(const k in keys)keys[k]=false;tc.gas=tc.brake=tc.boost=tc.drift=false;tc.joy=false;tc.jx=tc.jy=0;setKnob(0,0)}
 let shadowHS=0,camHintShown=false,vShift=0;
@@ -6949,6 +6930,7 @@ addEventListener("keydown",e=>{
     case"KeyJ":if(mode==="drive"&&!fly&&!trans)me.jumpReq=true;break;
     case"Space":if(mode==="drive"&&!fly&&!trans&&me.kind!=="car")me.jumpReq=true;break;
     case"KeyY":joinRace();break;
+    case"KeyP":cycleAvatar();break;
     case"Enter":if(elevAt&&tag!=="BUTTON"){const f=routeNextFloor();if(f){ride(f);break}}if(mode==="drive"&&!fly&&tag!=="BUTTON"){if(run)runCancel("Coffee run cancelled");else if(race)raceCancel("Race cancelled");else runStart()}break;
   }
 });
@@ -7022,18 +7004,17 @@ $("pHorn").addEventListener("pointerdown",e=>{e.preventDefault();audio();honk()}
 let prevStyle=null;
 function styleUI(i){
   const root_=document.documentElement;root_.dataset.theme=S.ui;root_.style.setProperty("--ground",S.bg);root_.style.setProperty("--accent",S.acc);root_.style.setProperty("--on-accent",(()=>{const a=lum(S.acc),d=lum("#14161f");return(a+.05)/(d+.05)>1.05/(a+.05)?"#14161f":"#ffffff"})());
-  $("tiltT").hidden=$("tiltB").hidden=!S.tilt;$("scan").hidden=!S.scan;$("vig").hidden=!S.vignette;
+  $("scan").hidden=!S.scan;$("vig").hidden=!S.vignette;
   renderer.toneMapping=S.tone?THREE.ACESFilmicToneMapping:THREE.NoToneMapping;renderer.toneMappingExposure=S.exposure||1;
-  cv.style.imageRendering=S.pixel?"pixelated":"";cv.style.filter=S.glowCss||(S.tilt?"saturate(1.35) contrast(1.05)":"");
+  cv.style.filter=S.glowCss||"";
   document.querySelectorAll(".chip[data-i]").forEach(c=>c.setAttribute("aria-pressed",String(+c.dataset.i===i)));
-  $("styleName").textContent=S.n;$("styleDescA").textContent=$("styleDescB").textContent=S.d;store.set("rc-style",String(i));store.set("rc-style-v","2");
+  $("styleName").textContent=S.n;$("styleDescA").textContent=$("styleDescB").textContent=S.d;store.set("rc-style",String(i));store.set("rc-style-v","3");
 }
 function applyStyle(i){
   if(i===cur&&root)return;if(i!==1&&cur!==1)prevStyle=null;if(i===1&&cur!==1)prevStyle=cur;
   clearRoot();S=ST[i];cur=i;buildWorld();buildCars();fxRestyle();rebuildTags();restoreCups();
   setTarget(target);routeVisuals(true);updateGates();
   styleUI(i);
-  if(S.cam&&mode==="drive"&&camMode==="chase")setCam(S.cam);
   resize();drawMapBase();labelsClear();
   if(markerTag){disposeSprite(markerTag);markerTag=null;markerFor=-1}
 }
@@ -7049,13 +7030,25 @@ function renderSwatches(){const box=$("paints");box.innerHTML="";box.setAttribut
 $("paints").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const L=swatches(),i=L.findIndex(x=>x[0]===paint),n=(i+(/Right|Down/.test(e.key)?1:-1)+L.length)%L.length;setPaint(L[n][0]);$("paints").children[n].focus()});
 // play as an RC car, a dog or a cat
 function setAvatar(av){
-  if(!AV_KINDS.has(av))av="car";me.kind=av;store.set("rc-av",av);document.body.classList.toggle("animal",av!=="car");
+  if(!AV_KINDS.has(av))av="car";me.kind=av;store.set("rc-av",av);makeRoomFor(av);document.body.classList.toggle("animal",av!=="car");
   document.querySelectorAll("#avChips .chip").forEach(c=>c.setAttribute("aria-checked",String(c.dataset.av===av)));
   $("avName").textContent=(AVATARS.find(x=>x[0]===av)||[0,""])[1];
   $("pBoost").textContent=av==="car"?"Boost":"Sprint";$("pHorn").textContent=av==="dog"?"Bark":av==="cat"?"Meow":"Horn";
   renderSwatches();const L=swatches(),saved=store.get(av==="car"?"rc-paint":"rc-coat-"+av);setPaint(L.some(x=>x[0]===saved)?saved:L.some(x=>x[0]===paint)?paint:L[0][0]);
   $("bCam").innerHTML=camName(camMode)+' <kbd>V</kbd>';setHelp();
+  const nx=AV_WHO[AV_NEXT[av]],b=$("bAv");b.innerHTML=AV_LBL[av]+' <kbd>P</kbd>';b.title=`Switch to the ${nx} (P)`;b.setAttribute("aria-label",`Playing as the ${AV_WHO[av]}. Switch to the ${nx}`);
 }
+const AV_LBL={car:"Car",dog:"Dog",cat:"Cat"},AV_WHO={car:"RC car",dog:"dog",cat:"cat"},AV_NEXT={car:"dog",dog:"cat",cat:"car"};
+const AV_TIP={car:"RC car: Space drifts, J jumps, H honks",dog:"Dog: Space jumps, Shift sprints, H barks",cat:"Cat: Space jumps (onto desks too), H meows"};
+// P or the toolbar button: car -> dog -> cat, right where you are
+function cycleAvatar(){
+  if(fly||trans||mode==="walk")return;
+  if((run&&run.phase!=="done")||race){toast(`Finish or cancel the ${race?"race":"coffee run"} first (Enter), then switch`);return}
+  const next=AV_NEXT[me.kind]||"car";
+  setAvatar(next);toast(AV_TIP[next]);
+  if(mode==="drive")for(let k=0;k<6;k++)puff(me.x+(Math.random()-.5)*.3,me.y+.05,me.z+(Math.random()-.5)*.3,"#ffffff");
+}
+$("bAv").onclick=()=>cycleAvatar();
 AVATARS.forEach(([k,n])=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.av=k;b.textContent=n;b.setAttribute("role","radio");b.setAttribute("aria-checked","false");b.onclick=()=>setAvatar(k);$("avChips").appendChild(b)});
 $("avChips").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const i=AVATARS.findIndex(x=>x[0]===me.kind),n=(i+(/Right|Down/.test(e.key)?1:-1)+AVATARS.length)%AVATARS.length;setAvatar(AVATARS[n][0]);$("avChips").children[n].focus()});
 $("pJump").addEventListener("pointerdown",e=>{e.preventDefault();audio();if(mode==="drive")me.jumpReq=true});
@@ -7779,7 +7772,7 @@ function openEditor(key){
 
 /* ---------- main loop ---------- */
 function resize(){
-  const w=innerWidth,h=innerHeight;renderer.setPixelRatio(S&&S.pixel?Math.min(1,520/w):DPR);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
+  const w=innerWidth,h=innerHeight;renderer.setPixelRatio(DPR);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
 }
 addEventListener("resize",resize);
 let last=performance.now(),lblAcc=0,lookAcc=0,mapAcc=0,rosterAcc=0;
@@ -7840,7 +7833,7 @@ function audioFrame(){
 /* ---------- boot ---------- */
 try{DEMO=CAMPUS.demo(LAYOUT)}catch(e){console.error(e);fatal("The campus couldn't be built. Reload the page to try again.");return}
 DATA=null;mergeData(true);
-{const OLD=[0,1,2,3,4,0,0,5,0,6];let saved=parseInt(store.get("rc-style"),10);if(store.get("rc-style-v")!=="2"&&Number.isInteger(saved))saved=OLD[saved];const i=Number.isInteger(saved)&&saved>=0&&saved<ST.length?saved:(matchMedia("(prefers-color-scheme: dark)").matches?1:0);S=ST[i];cur=i;fxRestyle();styleUI(i)}
+{const V1=[0,1,2,3,0,0,0,0,0,4],V2=[0,1,2,3,0,0,4],ver=store.get("rc-style-v");let saved=parseInt(store.get("rc-style"),10);if(Number.isInteger(saved)&&ver!=="3")saved=(ver==="2"?V2:V1)[saved];const i=Number.isInteger(saved)&&saved>=0&&saved<ST.length?saved:(matchMedia("(prefers-color-scheme: dark)").matches?1:0);S=ST[i];cur=i;fxRestyle();styleUI(i)}
 resize();
 {const last_=store.get("rc-world");enterWorld(last_&&(last_==="campus"||floorKeys().includes(last_))?last_:"campus")}
 setAvatar(me.kind);setMuted(muted);setMode("overview");updateRunBtn();

@@ -14,6 +14,8 @@ const AVP={car:{max:7.2,bmax:11.5,acc:11,bacc:20,turn:3.3,grip:13,rev:3.2,jump:3
   cat:{max:6.6,bmax:9.8,acc:17,bacc:24,turn:5,grip:24,rev:2.4,jump:5,drift:false,r:.12,ax:.1}};
 // how tall each avatar is (for ceilings: the underside of a desk, table, parked car or bench above you)
 const BODY_H={car:.2,dog:.52,cat:.45};
+// is there headroom for this avatar at (x,y,z)? (the RC car can sit under a bench that a dog would not fit under)
+function roomFor(kind,x,z,y){const bh=BODY_H[kind]||.2,l=query(x,z,.1,8);for(let i=0;i<l.length;i++){const p=l[i];if(p.u==null||x<p.x0||x>p.x1||z<p.z0||z>p.z1)continue;if(y<p.u-.02&&y+bh>p.u+.02)return false}return true}
 // the ground under (x,z): ramps for everyone; animals can also stand on desk tops, tables, sofas, counters, parked cars...
 // A surface counts only if your feet were already at or above it at the start of this step (y0), so jumping up from
 // underneath never pops you through it.
@@ -232,12 +234,26 @@ function flyTo(m,dur){
   stopKeys();
 }
 // put the car on a free spot near (x,z)
+const spotFree=(px,pz)=>{const l=query(px,pz,.3,1);for(let i=0;i<l.length;i++)if(circleVs(l[i],px,pz,.22))return false;return Math.abs(px)<PW/2-.4&&Math.abs(pz)<PD/2-.4};
 function spawnNear(x,z,h){
-  const free=(px,pz)=>{const l=query(px,pz,.3,1);for(let i=0;i<l.length;i++)if(circleVs(l[i],px,pz,.22))return false;return Math.abs(px)<PW/2-.4&&Math.abs(pz)<PD/2-.4};
+  const free=spotFree;
   const done=()=>lockPadAt(me.x,me.z);
   if(free(x,z)){spawn(me,x,z,h);done();return}
   for(const r of[.6,1,1.5,2.2,3,4.2,6])for(let a=0;a<16;a++){const px=x+Math.cos(a*Math.PI/8)*r,pz=z+Math.sin(a*Math.PI/8)*r;if(free(px,pz)){spawn(me,px,pz,h);done();return}}
   const s=WM.spawn||{x:0,z:0,a:0};spawn(me,s.x,s.z,s.a||0);done();
+}
+// Switching avatars in place. Two cases need a short step to the nearest good spot:
+//  - the low RC car becomes a dog or cat under something low (a bench, a parked car): find headroom
+//  - a dog or cat perched on a desk, counter or parked car becomes the RC car, which can only drive on the floor and
+//    ramps: step down beside it instead of dropping through the top
+const onPlat=(x,z)=>{const l=query(x,z,.1,8);for(let i=0;i<l.length;i++){const p=l[i];if(x>=p.x0-.06&&x<=p.x1+.06&&z>=p.z0-.06&&z<=p.z1+.06)return true}return false};
+function makeRoomFor(kind){
+  if(!root)return false;
+  const perched=kind==="car"&&me.y>groundY(me.x,me.z)+.05&&onPlat(me.x,me.z);
+  if(!perched&&roomFor(kind,me.x,me.z,me.y))return false;
+  for(const r of[.3,.6,1,1.5,2.2,3,4.2])for(let a=0;a<16;a++){const px=me.x+Math.cos(a*Math.PI/8)*r,pz=me.z+Math.sin(a*Math.PI/8)*r;if(spotFree(px,pz)&&(!perched||!onPlat(px,pz))&&roomFor(kind,px,pz,groundY(px,pz))){spawn(me,px,pz,me.h);lockPadAt(me.x,me.z);return true}}
+  if(perched){const s=WM.spawn||{x:0,z:0,a:0};spawnNear(s.x,s.z,s.a||0);return true}
+  return false;
 }
 function stopKeys(){for(const k in keys)keys[k]=false;tc.gas=tc.brake=tc.boost=tc.drift=false;tc.joy=false;tc.jx=tc.jy=0;setKnob(0,0)}
 let shadowHS=0,camHintShown=false,vShift=0;

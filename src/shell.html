@@ -21,8 +21,6 @@ button,input,select{font-family:inherit}
 #stage{position:fixed;inset:0;touch-action:none}
 #stage canvas{display:block;width:100%;height:100%;outline:none}
 .ov{position:fixed;left:0;right:0;pointer-events:none;z-index:1}
-#tiltT{top:0;height:34%;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);-webkit-mask-image:linear-gradient(#000 25%,transparent);mask-image:linear-gradient(#000 25%,transparent)}
-#tiltB{bottom:0;height:24%;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);-webkit-mask-image:linear-gradient(transparent,#000 75%);mask-image:linear-gradient(transparent,#000 75%)}
 #vig{top:0;bottom:0;background:radial-gradient(ellipse 75% 70% at 50% 46%,transparent 55%,rgba(40,28,14,.2) 100%)}
 #scan{top:0;bottom:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.32) 0 1px,transparent 1px 3px)}
 .glass{background:var(--glass);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
@@ -242,7 +240,7 @@ body.touch #help{display:none}
 </style>
 
 <div id="stage" aria-label="3D campus you can drive an RC car around"></div>
-<div class="ov" id="tiltT" hidden></div><div class="ov" id="tiltB" hidden></div><div class="ov" id="scan" hidden></div><div class="ov" id="vig" hidden></div>
+<div class="ov" id="scan" hidden></div><div class="ov" id="vig" hidden></div>
 <div id="cross" class="no-o no-d"></div>
 
 <header id="bar">
@@ -250,11 +248,12 @@ body.touch #help{display:none}
   <nav class="tools glass hud" aria-label="Controls">
     <button class="tb no-o" id="bOver" type="button">Overview <kbd>O</kbd></button>
     <button class="tb no-d no-w no-c" id="bUp" type="button">Campus <kbd>O</kbd></button>
+    <button class="tb no-w" id="bAv" type="button" title="Switch between the RC car, the dog and the cat">Car <kbd>P</kbd></button>
     <button class="tb no-o no-w" id="bCam" type="button">Chase cam <kbd>V</kbd></button>
     <button class="tb no-o" id="bSwap" type="button">Walk <kbd>C</kbd></button>
     <button class="tb no-o no-w no-c" id="bRun" type="button">Coffee run <kbd>Enter</kbd></button>
     <button class="tb" id="bFind" type="button" aria-expanded="false">Find <kbd>/</kbd></button>
-    <button class="tb" id="bStyle" type="button" aria-expanded="false">Style <kbd>1–7</kbd></button>
+    <button class="tb" id="bStyle" type="button" aria-expanded="false">Style <kbd>1–5</kbd></button>
     <button class="tb" id="bSound" type="button" aria-pressed="true">Sound <kbd>M</kbd></button>
     <button class="tb no-d no-w" id="bSetup" type="button" hidden>Set up</button>
     <button class="tb phone no-d no-w" id="bTimes" type="button" aria-expanded="false">Times</button>
@@ -313,7 +312,7 @@ body.touch #help{display:none}
   <div class="row" style="justify-content:space-between"><h2 id="styleH">Graphic style</h2><button class="tb" id="styleClose" type="button">Done</button></div>
   <div class="chips" id="chipsB" role="group" aria-label="Graphic style"></div>
   <p class="sdesc" id="styleDescB"></p>
-  <div class="keys">Number keys 1–7 switch styles while you drive · N toggles Neon night</div>
+  <div class="keys">Number keys 1–5 switch styles while you drive · N toggles Neon night</div>
 </section>
 
 <div id="mapwrap" class="glass hud no-o"><canvas id="map" width="440" height="280" aria-label="Top view of where you are"></canvas><div class="cap"><span id="mapCap">Top view</span><span id="coords">—</span></div></div>

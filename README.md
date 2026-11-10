@@ -12,7 +12,7 @@ Drive a tiny remote-control car (or run around as a dog or a cat) on a two-build
 - **Floors arranged by team.** Each team sits the way it really works: open benches, cubicles, private offices (finance, legal), lab benches with racks, scopes and test chambers (validation, characterization, failure analysis), or hot desks.
 - **Routes.** Search anyone or any room. Chevrons on the floor lead you there, including elevator rides and walking between buildings.
 - **Races.** "Race there" sets up gates from a standard start to any desk or room. There's also a coffee run on every floor: kitchen, then five desks.
-- **Seven graphic styles.** Studio (realistic materials and soft light), Neon night, Blueprint, Comic, Retro blocks (voxel-style pixel textures), Tilt-shift and Vector arcade. Keys 1–7 switch them; N toggles Neon night.
+- **Five graphic styles.** Studio (realistic materials and soft light), Neon night, Blueprint, Comic and Vector arcade. Keys 1–5 switch them; N toggles Neon night.
 - **Play as a car, a dog or a cat.** Everyone can jump. Cats jump high enough to land on desks, counters and parked cars.
 - **Driving.** Drift (Space), boost (Shift), ramps, pushable chairs, a Mailbot, and chase, bumper, high and top-down cameras.
 - **Setup.** Load seating from a facilities CSV, then edit each floor: load a PNG, JPG or PDF plan and set its scale, trace rooms, import CAD walls (DXF), draw team areas, or place desks from facilities X/Y coordinates.
