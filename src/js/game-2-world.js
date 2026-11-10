@@ -113,7 +113,7 @@ function clearRoot(){
     if(o.geometry)o.geometry.dispose();
     if(o.material){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(m===INVIS)return;if(m.map&&!SHARED.has(m.map))m.map.dispose();m.dispose()})}
   });
-  scene.remove(root);root=null;if(HULL){HULL.dispose();HULL=null}lineMats=[];glowMats=[];signs=[];sun=null;cupsMeshes=[];deskG=legG=monG=scrG=standG=null;chairG=[];deskInst=[];instDesk=[];bldgMeshes=[];planMesh=null;
+  scene.remove(root);root=null;if(HULL){HULL.dispose();HULL=null}lineMats=[];glowMats=[];signs=[];sun=null;cupsMeshes=[];deskG=legG=monG=scrG=standG=null;chairG=[];deskInst=[];instDesk=[];bldgMeshes=[];planMesh=null;figReset();
 }
 function buildRamp(r){
   const grp=new THREE.Group();grp.position.set(r.x,0,r.z);grp.rotation.y=(r.ax==="z"?-Math.PI/2:0)+(r.dir<0?Math.PI:0);root.add(grp);
@@ -304,7 +304,7 @@ function buildFloorWorld(m){
     _M2.makeTranslation(0,.87,-(dd/2-.14));_M3.multiplyMatrices(_M,_M2);standG.set(k,_M3);
   });
   [deskG,legG,monG,scrG,standG].forEach(g=>g.commit());
-  buildChairs(m);
+  buildChairs(m);buildFigures();
   buildAO(m.desks,m.items);
   (m.ramps||[]).forEach(buildRamp);
   (m.signs||[]).forEach(s=>{if(s&&s.lines&&isFinite(s.x))addSign(s.lines,s.x,isFinite(s.y)?s.y:3,s.z,s.h>0?s.h:.6,s.stripe&&HEX.test(s.stripe)?s.stripe:null)});

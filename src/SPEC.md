@@ -181,6 +181,21 @@ EDITOR.open({
 }) -> { close() }
 ```
 
+## 9. PEOPLE  (`PEOPLE`)  — how coworkers look (pure)
+Everyone is the same seated figure. Neutral variety only, picked from a hash of `"<floor key>|<desk id>"` (never a name or title).
+```js
+PEOPLE.defaultLook(key, arr) -> { kind:'person', shirt:'team', tone, hat:'none'|'phones'|'beanie'|'cap', glasses, mug, labCoat, coat:null,
+                                  pants, shoes, hatColor, mugColor }      // lab desks: lab coat, no mug
+PEOPLE.validLook(v) -> chosen fields only {kind, shirt:'team'|#hex, tone:#hex, hat, glasses, mug, labCoat, coat:#hex} | null
+PEOPLE.merge(base, chosen);  PEOPLE.chosenOf(look);  PEOPLE.norm(name)
+PEOPLE.validClaim(v) -> { w, desk, name, look, at } | null
+PEOPLE.locate(claim, peopleOn(w) -> [{desk,name}], floorKeys) -> { key, moved } | null   // same desk+name, else the one person with that name
+PEOPLE.resolve(claims, locateFn, nameMatch) -> { winners: Map key -> claim, status: Map uid -> { key, state:'ok'|'moved'|'lost'|'taken' } }
+```
+Claims: db doc `looks/<uid>` = `{ w, desk, name, look, at }`, one per viewer. Rules: `looks` read view / write admin (editors can
+remove a claim), `looks/{self}` read view / write interact. Two claims on one person: the claimant whose own profile name matches the
+seating name wins, then the earliest `at`. With sample people, or no db, your claim lives in localStorage `rc-mylook` (this browser only).
+
 ## UI tokens (for EDITOR, which draws its own DOM)
 CSS variables on :root that follow the current theme: `--ground --ink --muted --glass --glass2 --line --accent --on-accent --chip --btn`,
 fonts `--display` (Archivo) and `--mono` (IBM Plex Mono). Buttons in the page use classes `.tb` (tool button) and `.primary`.

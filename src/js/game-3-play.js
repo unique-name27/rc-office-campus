@@ -127,7 +127,7 @@ function chairsStep(dt){
     ch.x=clamp(ch.x,-PW/2+.4,PW/2-.4);ch.z=clamp(ch.z,-PD/2+.4,PD/2-.4);chairCell(ch);
     if(Math.abs(ch.vx)+Math.abs(ch.vz)+Math.abs(ch.va)<.03){ch.vx=ch.vz=ch.va=0;ch.awake=false}
   }
-  if((dirtyChairs.size||chairsMoved)&&chairG.length){for(const ch of dirtyChairs)chairMatrices(ch);if(chairsMoved)chairs.forEach(chairMatrices);chairG.forEach(g=>g.commit());chairsMoved=false}
+  if((dirtyChairs.size||chairsMoved)&&chairG.length){for(const ch of dirtyChairs){chairMatrices(ch);figChair(ch)}if(chairsMoved){chairs.forEach(chairMatrices);figAll()}chairG.forEach(g=>g.commit());chairsMoved=false}
 }
 const _CB={b:1,x0:0,x1:0,z0:0,z1:0};
 function tidyChairs(){chairs.forEach(c=>{c.x=c.hx;c.z=c.hz;c.a=c.ha;c.vx=c.vz=c.va=0;c.awake=false;chairCell(c)});dirtyChairs.clear();chairsMoved=true}

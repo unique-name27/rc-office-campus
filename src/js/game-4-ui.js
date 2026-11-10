@@ -25,7 +25,7 @@ addEventListener("keydown",e=>{
   audio();
   if(!$("setup").hidden){if(e.key==="Escape"&&!$("dlg")){closeSetup()}return}
   if(e.key==="/"&&!typing()){e.preventDefault();openFind();return}
-  if(e.key==="Escape"){if(typing()){document.activeElement.blur();return}if(!$("stylePop").hidden){closeStyle();return}if($("panel").classList.contains("open")){closeFind();return}if(!$("result").hidden){closeResult();return}if(elevAt){elevDismissed=elevAt.id;hideElev();return}}
+  if(e.key==="Escape"){if(typing()){document.activeElement.blur();return}if(!$("mePop").hidden){closeMe();return}if(!$("stylePop").hidden){closeStyle();return}if($("panel").classList.contains("open")){closeFind();return}if(!$("result").hidden){closeResult();return}if(elevAt){elevDismissed=elevAt.id;hideElev();return}}
   if(typing())return;
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   const tag=document.activeElement&&document.activeElement.tagName;
@@ -48,6 +48,7 @@ addEventListener("keydown",e=>{
     case"Space":if(mode==="drive"&&!fly&&!trans&&me.kind!=="car")me.jumpReq=true;break;
     case"KeyY":joinRace();break;
     case"KeyP":cycleAvatar();break;
+    case"KeyL":openMyLook();break;
     case"Enter":if(elevAt&&tag!=="BUTTON"){const f=routeNextFloor();if(f){ride(f);break}}if(mode==="drive"&&!fly&&tag!=="BUTTON"){if(run)runCancel("Coffee run cancelled");else if(race)raceCancel("Race cancelled");else runStart()}break;
   }
 });
@@ -63,8 +64,8 @@ function ndc(e){const r=cv.getBoundingClientRect();_ndc.set((e.clientX-r.left)/r
 function bldgAt(e){if(!bldgMeshes.length)return null;ndc(e);const h=pickRay.intersectObjects(bldgMeshes,false)[0];if(!h)return null;const b=bldg(h.object.userData.bldg);if(!b)return null;return{b,f:clamp(Math.floor(h.point.y/FLOOR_H)+1,1,b.floors)}}
 function deskAt(e){
   if(WKIND!=="floor"||!(WM.desks||[]).length)return null;ndc(e);
-  const objs=[deskG&&deskG.mesh,chairG[2]&&chairG[2].mesh].filter(Boolean),h=objs.length?pickRay.intersectObjects(objs,false)[0]:null;
-  if(h){const di=deskG&&h.object===deskG.mesh?instDesk[h.instanceId]:(chairs[h.instanceId]||{}).desk;if(di!=null&&di>=0)return di}
+  const objs=[deskG&&deskG.mesh,chairG[2]&&chairG[2].mesh,...figMeshes()].filter(Boolean),h=objs.length?pickRay.intersectObjects(objs,false)[0]:null;
+  if(h){const fd=figDeskOf(h),di=fd>=0?fd:deskG&&h.object===deskG.mesh?instDesk[h.instanceId]:(chairs[h.instanceId]||{}).desk;if(di!=null&&di>=0)return di}
   // lab benches and shared tables are furniture: take the seat nearest to where the click meets the work surface
   const r=pickRay.ray;if(Math.abs(r.direction.y)<1e-4)return null;const t=(.8-r.origin.y)/r.direction.y;if(t<0)return null;
   const px=r.origin.x+r.direction.x*t,pz=r.origin.z+r.direction.z*t;let best=1.2,bi=null;
@@ -136,12 +137,12 @@ function applyStyle(i){
   if(markerTag){disposeSprite(markerTag);markerTag=null;markerFor=-1}
 }
 ["chipsA","chipsB"].forEach(id=>{const box=$(id);ST.forEach((s,i)=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.i=i;b.textContent=(i+1)+". "+s.n;b.setAttribute("aria-pressed","false");b.onclick=()=>applyStyle(i);box.appendChild(b)})});
-function openStyle(){$("stylePop").hidden=false;$("bStyle").setAttribute("aria-expanded","true");const p=$("stylePop").querySelector('.chip[aria-pressed="true"]');(p||$("styleClose")).focus()}
+function openStyle(){closeMe();$("stylePop").hidden=false;$("bStyle").setAttribute("aria-expanded","true");const p=$("stylePop").querySelector('.chip[aria-pressed="true"]');(p||$("styleClose")).focus()}
 function closeStyle(){$("stylePop").hidden=true;$("bStyle").setAttribute("aria-expanded","false")}
 $("bStyle").onclick=()=>{$("stylePop").hidden?openStyle():closeStyle()};
 $("styleClose").onclick=closeStyle;
 const swatches=()=>me.kind==="car"?PAINTS:COATS[me.kind];
-function setPaint(p){paint=p;me.paint=p;store.set(me.kind==="car"?"rc-paint":"rc-coat-"+me.kind,p);if(root){dropVis(me.vis);me.vis=makeAvatar(me.kind,p)}if(meTag){disposeSprite(meTag);meTag=tagSprite(myName||"You",p);tags.add(meTag)}document.querySelectorAll(".sw").forEach(s=>s.setAttribute("aria-checked",String(s.dataset.p===p)));$("paintName").textContent=(swatches().find(x=>x[0]===p)||[0,""])[1];presDirty=true}
+function setPaint(p){paint=p;me.paint=p;store.set(me.kind==="car"?"rc-paint":"rc-coat-"+me.kind,p);if(root){dropVis(me.vis);me.vis=makeAvatar(me.kind,p)}if(meTag){disposeSprite(meTag);meTag=tagSprite(myName||"You",p);tags.add(meTag)}document.querySelectorAll("#paints .sw").forEach(s=>s.setAttribute("aria-checked",String(s.dataset.p===p)));$("paintName").textContent=(swatches().find(x=>x[0]===p)||[0,""])[1];presDirty=true}
 function renderSwatches(){const box=$("paints");box.innerHTML="";box.setAttribute("aria-label",me.kind==="car"?"Car paint":"Coat color");$("paintLbl").textContent=me.kind==="car"?"Paint":"Coat";
   swatches().forEach(([p,n])=>{const b=document.createElement("button");b.type="button";b.className="sw";b.style.background=p;b.dataset.p=p;b.setAttribute("role","radio");b.setAttribute("aria-label",n);b.onclick=()=>setPaint(p);box.appendChild(b)})}
 $("paints").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const L=swatches(),i=L.findIndex(x=>x[0]===paint),n=(i+(/Right|Down/.test(e.key)?1:-1)+L.length)%L.length;setPaint(L[n][0]);$("paints").children[n].focus()});
@@ -195,7 +196,7 @@ function renderStart(){
   if(!DATA)return;
   const camp=WKIND==="campus",c=DATA.campus;
   $("goWalk").textContent=camp?"Walk around":"Walk the floor";
-  $("myDesk").hidden=!myDesk;
+  $("myDesk").hidden=$("myLook").hidden=!myDesk;
   $("bSetup").hidden=$("bSetup2").hidden=!canSetup;
   const ban=$("banner");ban.hidden=!DATA.demo;ban.textContent=canSetup?"These are sample people. Load your real seating in Set up.":"These are sample people until the page owner loads real seating.";
   if(camp){
@@ -277,9 +278,12 @@ function showPick(it){
   $("pRoute").textContent=mode==="walk"&&it.w===WKEY?"Walk me there":"Show route";
   $("pView").hidden=mode!=="overview"&&it.w===WKEY;$("pView").textContent=it.w===WKEY?"Show on floor":"See "+floorShort(it.w);
   $("pRace").hidden=it.w===WKEY&&Math.hypot(it.x-(WM.spawn||{x:0}).x,it.z-(WM.spawn||{z:0}).z)<6;
+  pMeUI(it);
   setTarget(it);routeVisuals(true);
   $("pRoute").focus();
 }
+function pMeUI(it){const cs=deskClaimState(it);$("pMe").hidden=!cs||cs==="taken";$("pMe").textContent=cs==="mine"?"My look":"This is me"}
+$("pMe").onclick=()=>{const it=picked;if(!it)return;const claim=deskClaimState(it)!=="mine";if(innerWidth<=760)closeFind();openMe(it,claim)};
 $("pRoute").onclick=()=>{const it=picked;if(!it)return;
   if(mode==="walk"&&it.w===WKEY){setTarget(it);tour={t:0,dur:Math.min(3.2,1+Math.hypot(it.x-walker.x,it.z-walker.z)/18),from:{x:walker.x,z:walker.z,yaw:walker.yaw,pitch:walker.pitch},to:{x:it.x,z:it.z,yaw:walker.yaw+angDiff(walker.yaw,it.a||0),pitch:-.32}};if(innerWidth<=760)closeFind();return}
   if(routeTo(it)){if(mode==="overview"){toast("Route ready. Take the wheel to drive it.")}if(innerWidth<=760||mode!=="overview")closeFind()}};
@@ -291,7 +295,7 @@ let myDesk=null;
 const normName=s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 // match the signed-in name to the seating (only the floor that has them gets built)
 function findMyDesk(){
-  myDesk=null;const n=normName(myName);
+  myDesk=DATA?myClaimItem():null;const n=myDesk?"":normName(myName);
   if(n&&DATA)for(const k of floorKeys()){
     if(!(DATA.rosters[k]||[]).some(p=>normName(p.name)===n))continue;
     const m=modelFor(k);if(!m)break;const pi=(m.people||[]).findIndex(p=>normName(p.name)===n),p=m.people[pi],d=p&&m.desks[p.desk];
@@ -299,13 +303,14 @@ function findMyDesk(){
     if(dest)myDesk={w:k,kind:"desk",id:dest.id,di:p.desk,name:p.name,team:p.team,sub:`${p.title?p.title+" · ":""}${p.team||"No team"} · ${floorShort(k)} · Desk ${d.id}`,x:dest.x,z:dest.z,a:dest.a||0,s:""};
     break;
   }
-  $("myDeskB").hidden=!myDesk;$("myDesk").hidden=!myDesk;
+  $("myDeskB").hidden=!myDesk;$("myDesk").hidden=!myDesk;$("myLook").hidden=!myDesk;
 }
+const isMyDesk=di=>!!(myDesk&&myDesk.w===WKEY&&myDesk.di===di);
 $("myDeskB").onclick=$("myDesk").onclick=()=>{if(!myDesk)return;showPick(myDesk);openFind(true);if(mode!=="overview"||myDesk.w===WKEY){routeTo(myDesk)}};
 
 /* ---------- labels near you ---------- */
 const labelCache=new Map(),liveLabels=new Set();
-function labelFor(di){if(labelCache.has(di))return labelCache.get(di);const d=WM.desks[di],p=WM.people[d.person];const s=spriteFrom(textCanvas([p?p.name:"Open desk",d.id],{size:48,pad:18,stripe:p?teamColorOf(d.team):"#BDBBB3"}),.26);const ch=d.chair>=0&&WM.chairs[d.chair];s.position.set(ch?(d.x*.55+ch.x*.45):d.x,1.42,ch?(d.z*.55+ch.z*.45):d.z);labelCache.set(di,s);return s}
+function labelFor(di){if(labelCache.has(di))return labelCache.get(di);const d=WM.desks[di],p=WM.people[d.person];const s=spriteFrom(textCanvas([p?p.name:"Open desk",d.id],{size:48,pad:18,stripe:p?teamColorOf(d.team):"#BDBBB3"}),.26);const ch=d.chair>=0&&WM.chairs[d.chair];s.position.set(ch?(d.x*.55+ch.x*.45):d.x,1.52,ch?(d.z*.55+ch.z*.45):d.z);labelCache.set(di,s);return s}
 function labelsClear(){for(const i of liveLabels){const s=labelCache.get(i);if(s)scene.remove(s)}liveLabels.clear();for(const s of labelCache.values())disposeSprite(s);labelCache.clear()}
 function updateLabels(){
   if(WKIND!=="floor"){if(liveLabels.size)labelsClear();return}
@@ -342,15 +347,15 @@ function bumpedChair(ch){if(ch.desk<0)return;const{d,p}=deskInfo(ch.desk);if(!d)
 function underDesk(x,z){const desks=WM.desks||[];for(let k=0;k<desks.length;k++){const d=desks[k];if(d.arr==="hot"||d.arr==="lab")continue;const dx=x-d.x,dz=z-d.z;if(Math.abs(dx)>1.2||Math.abs(dz)>1.2)continue;const c=Math.cos(d.a||0),s=Math.sin(d.a||0),lx=dx*c-dz*s,lz=dx*s+dz*c,w=d.w||1.56,dd=d.dd||.78;if(Math.abs(lx)<w/2&&Math.abs(lz)<dd/2)return k}return -1}
 function updateLookCard(force){
   let i=null,title="",meta="";
-  if(WKIND==="floor"&&mode==="walk"&&!fly&&(WM.desks||[]).length){ray.setFromCamera({x:0,y:0},camera);const objs=[deskG&&deskG.mesh,chairG[2]&&chairG[2].mesh,chairG[3]&&chairG[3].mesh].filter(Boolean);const h=objs.length?ray.intersectObjects(objs,false)[0]:null;
-    let di=h?(deskG&&h.object===deskG.mesh?instDesk[h.instanceId]:(chairs[h.instanceId]||{desk:-1}).desk):-1;
+  if(WKIND==="floor"&&mode==="walk"&&!fly&&(WM.desks||[]).length){ray.setFromCamera({x:0,y:0},camera);const objs=[deskG&&deskG.mesh,chairG[2]&&chairG[2].mesh,chairG[3]&&chairG[3].mesh,...figMeshes()].filter(Boolean);const h=objs.length?ray.intersectObjects(objs,false)[0]:null;
+    let di=h?(figDeskOf(h)>=0?figDeskOf(h):deskG&&h.object===deskG.mesh?instDesk[h.instanceId]:(chairs[h.instanceId]||{desk:-1}).desk):-1;
     if(di<0){ // lab benches and shared tables are furniture, not desk tops: pick the nearest seat you're facing
       let best=2.3;const fx_=-Math.sin(walker.yaw),fz_=-Math.cos(walker.yaw);
       (WM.desks||[]).forEach((d,k)=>{const dx=d.x-walker.x,dz=d.z-walker.z,dist=Math.hypot(dx,dz);if(dist<best&&dist>.05&&(dx*fx_+dz*fz_)/dist>.8){best=dist;di=k}})}
-    if(di>=0){const{d,p}=deskInfo(di);i=di;title=p?p.name:"Open desk";meta=p?`${p.title?p.title+" · ":""}${p.team||""} · ${d.id}`:`${d.id} · Bookable desk`}}
+    if(di>=0){const{d,p}=deskInfo(di);i=di;title=p?p.name+(isMyDesk(di)?" (you)":""):"Open desk";meta=p?`${p.title?p.title+" · ":""}${p.team||""} · ${d.id}`:`${d.id} · Bookable desk`}}
   else if(WKIND==="floor"&&mode==="drive"&&!fly){
     if(bumpMsg&&performance.now()-bumpMsg.t<1800){i=1e6+bumpMsg.i;title=bumpMsg.txt;const{d,p}=deskInfo(bumpMsg.i);meta=p?`${p.title?p.title+" · ":""}${d.id}`:d.id}
-    else{const k=underDesk(me.x,me.z);if(k>=0){const{d,p}=deskInfo(k);i=k;const on=me.y>.5;title=p?(on?"On ":"Under ")+p.name+"'s desk":(on?"On an open desk":"Under an open desk");meta=p?`${p.title?p.title+" · ":""}${p.team||""}`:d.id}}
+    else{const k=underDesk(me.x,me.z);if(k>=0){const{d,p}=deskInfo(k);i=k;const on=me.y>.5;title=p?(on?"On ":"Under ")+(isMyDesk(k)?"your desk":p.name+"'s desk"):(on?"On an open desk":"Under an open desk");meta=p?`${p.title?p.title+" · ":""}${p.team||""}`:d.id}}
   }
   if(i===lastLook&&!force)return;lastLook=i;
   if(i==null){lookEl.hidden=true;return}
@@ -430,9 +435,9 @@ function hudFrame(){
 }
 function setHelp(){
   const h=$("help");
-  if(mode==="drive")h.innerHTML=me.kind==="car"?"<kbd>W A S D</kbd> drive · <kbd>Space</kbd> drift · <kbd>J</kbd> jump · <kbd>Shift</kbd> boost · <kbd>H</kbd> horn · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route"
-    :"<kbd>W A S D</kbd> run · <kbd>Space</kbd> jump · <kbd>Shift</kbd> sprint · <kbd>H</kbd> "+(me.kind==="dog"?"bark":"meow")+" · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route"+(me.kind==="cat"?" · cats can jump onto desks":"");
-  else if(mode==="walk")h.innerHTML="<kbd>Click</kbd> to look around · <kbd>W A S D</kbd> walk · <kbd>Shift</kbd> run · <kbd>/</kbd> find · <kbd>Esc</kbd> free mouse";
+  if(mode==="drive")h.innerHTML=me.kind==="car"?"<kbd>W A S D</kbd> drive · <kbd>Space</kbd> drift · <kbd>J</kbd> jump · <kbd>Shift</kbd> boost · <kbd>H</kbd> horn · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look"
+    :"<kbd>W A S D</kbd> run · <kbd>Space</kbd> jump · <kbd>Shift</kbd> sprint · <kbd>H</kbd> "+(me.kind==="dog"?"bark":"meow")+" · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look"+(me.kind==="cat"?" · cats can jump onto desks":"");
+  else if(mode==="walk")h.innerHTML="<kbd>Click</kbd> to look around · <kbd>W A S D</kbd> walk · <kbd>Shift</kbd> run · <kbd>/</kbd> find · <kbd>L</kbd> my look · <kbd>Esc</kbd> free mouse";
   else h.innerHTML="";
 }
 
@@ -627,7 +632,7 @@ function scheduleMerge(){clearTimeout(mergeT);mergeT=setTimeout(()=>{if(edOpen||
 function applyChange(ch){
   const here=WKEY==="campus"?ch.campus:(ch.all||ch.changed.has(WKEY)||!floorKeys().includes(WKEY));
   if(here){refreshWorld();return}
-  peopleIdx=null;findMyDesk();if(route)routeTo(route.to,true);updateBrand();renderStart();if(!$("setup").hidden)renderSetup();
+  peopleIdx=null;recomputeLooks();findMyDesk();if(route)routeTo(route.to,true);updateBrand();renderStart();if(!$("setup").hidden)renderSetup();
 }
 function refreshWorld(){
   // keep the viewer where they are (and moving) if their floor still exists
@@ -636,7 +641,7 @@ function refreshWorld(){
   enterWorld(key,mode==="overview"?null:p);
   if(m!=="overview"&&mode===m){if(m==="walk"){walker.x=p.x;walker.z=p.z}else{spawnNear(p.x,p.z,p.a);if(Math.hypot(me.x-p.x,me.z-p.z)<.3)Object.assign(me,vel)}}
   if(hadRun)toast("This floor was just updated, so the coffee run stopped.");else if(m!=="overview")toast("This floor was just updated.");
-  if(route)routeTo(route.to,true);peopleIdx=null;findMyDesk();renderStart();if(!$("setup").hidden)renderSetup();
+  if(route)routeTo(route.to,true);peopleIdx=null;recomputeLooks();findMyDesk();renderStart();if(!$("setup").hidden)renderSetup();
 }
 // fresh = the listener has delivered a snapshot confirmed by the store (not a cached copy). Setup writes wait for all three.
 const fresh={c:false,f:false,r:false};
@@ -692,7 +697,7 @@ const FIELDS=[["name","Full name"],["first","First name"],["last","Last name"],[
 function el(tag,props,kids){const e=document.createElement(tag);if(props)for(const k in props){if(props[k]==null||props[k]===false)continue;if(k==="text")e.textContent=props[k];else if(k==="cls")e.className=props[k];else if(k.startsWith("on"))e[k]=props[k];else e.setAttribute(k,props[k])}(kids||[]).forEach(c=>c&&e.appendChild(typeof c==="string"?document.createTextNode(c):c));return e}
 // unsaved edits in the Teams and Names sections survive re-renders (snapshots, imports, other saves)
 const setupDraft={teams:{},names:{},campus:null};let setupOpener=null;
-const INERT_IDS=["stage","bar","start","side","panel","stylePop","mapwrap","status","speedo","look","help","elev","touch","result"];
+const INERT_IDS=["stage","bar","start","side","panel","stylePop","mePop","mapwrap","status","speedo","look","help","elev","touch","result"];
 function setInert(on){INERT_IDS.forEach(id=>{const e=$(id);if(e){if(on)e.setAttribute("inert","");else e.removeAttribute("inert")}})}
 function openSetup(){setupOpener=document.activeElement;$("setup").hidden=false;setInert(true);renderSetup();const h=$("setupBox")&&$("setupBox").querySelector("h2");h&&h.focus()}
 function closeSetup(){$("setup").hidden=true;imp=null;setupDraft.teams={};setupDraft.names={};setupDraft.campus=null;setInert(false);if(setupOpener&&setupOpener.focus&&document.contains(setupOpener))setupOpener.focus();setupOpener=null}
@@ -760,8 +765,9 @@ function renderSetupBody(box){
   s4.appendChild(el("div",{cls:"row"},[el("button",{cls:"primary",type:"button",text:"Save names",onclick:async()=>{const bs=DATA.campus.buildings.map(b=>{const p=bIn.find(x=>x[0]===b);return Object.assign({},b,{name:(p[1].value.trim()||b.name).slice(0,40)})});try{await saveCampus({name:(cn.value.trim()||"Campus").slice(0,60),buildings:bs});setupDraft.names={};setupDraft.campus=null;toast("Names saved")}catch(_){}}})]));
   if(!DATA.demo)s4.appendChild(el("p",{cls:"note"},["Want the sample people back? ",el("button",{cls:"lnk",type:"button",text:"Show sample people",onclick:()=>confirmDlg("Show the sample people to everyone instead of your seating? Your seating stays saved, and you can switch back here.","Show sample people",async()=>{try{await saveCampus({demo:true});toast("Showing sample people")}catch(_){}})})]));
   else if(Object.keys(dbRosters).some(k=>(dbRosters[k]||[]).length))s4.appendChild(el("p",{cls:"note"},["Your saved seating is hidden right now. ",el("button",{cls:"lnk",type:"button",text:"Show my seating again",onclick:async()=>{try{await saveCampus({demo:false});toast("Showing your seating")}catch(_){}}})]));
+  if(db)renderClaimsSec(box);
 }
-function confirmDlg(msg,ok,fn){const d=el("section",{cls:"dlg glass",id:"dlg",role:"alertdialog","aria-modal":"true"},[el("p",{text:msg}),el("div",{cls:"row"},[el("button",{cls:"primary",type:"button",text:ok,onclick:()=>{d.remove();fn()}}),el("button",{cls:"tb",type:"button",text:"Cancel",onclick:()=>d.remove()})])]);document.body.appendChild(d);d.querySelector("button").focus();d.addEventListener("keydown",e=>{if(e.key==="Escape"){e.stopPropagation();d.remove()}})}
+function confirmDlg(msg,ok,fn){const back=document.activeElement,done=()=>{d.remove();if(back&&back.focus&&document.contains(back)&&!back.closest("[hidden]"))back.focus()};const d=el("section",{cls:"dlg glass",id:"dlg",role:"alertdialog","aria-modal":"true"},[el("p",{text:msg}),el("div",{cls:"row"},[el("button",{cls:"primary",type:"button",text:ok,onclick:()=>{done();fn()}}),el("button",{cls:"tb",type:"button",text:"Cancel",onclick:done})])]);document.body.appendChild(d);d.querySelector("button").focus();d.addEventListener("keydown",e=>{if(e.key==="Escape"){e.stopPropagation();done()}})}
 async function saveFile(name,text){
   if(!downloads)downloads=await capUse("downloads");
   if(downloads){try{await downloads.save({filename:name,data:text});return}catch(e){if(e&&e.code==="declined")return}}
@@ -887,6 +893,175 @@ function openEditor(key){
   }catch(e){console.error(e);edOpen=false;toast("The floor editor couldn't open.")}
 }
 
+/* ---------- my look: claim your desk ("This is me") and choose how your figure looks ---------- */
+let meItem=null,meLook=null,meOpener=null,meSaveT=0,meSaving=false,meQueued=null,meShown="",meTucked=false;
+const KIND_N={person:"Person",dog:"Dog",cat:"Cat"},HAT_N={none:"None",phones:"Headphones",beanie:"Beanie",cap:"Cap"};
+const meKey=()=>meItem.w+"|"+meItem.id.slice(5);
+const meSay=t=>{$("meNote").textContent=t};
+function meDesk(){const m=modelFor(meItem.w);return(m&&m.desks[meItem.di])||null}
+function meDefault(){const d=meDesk();return PEOPLE.defaultLook(meKey(),d?d.arr:"")}
+function openMyLook(){if(myDesk){openMe(myDesk);return}toast("Find your desk first, then choose This is me.");openFind()}
+function openMe(it,claim){
+  if(!it||it.kind!=="desk")return;
+  closeStyle();if(document.pointerLockElement)document.exitPointerLock();
+  if($("mePop").hidden)meOpener=document.activeElement;
+  if(meItem&&meSaveT)saveMe();
+  meItem=it;meLook=null;meShown="";meSay("");
+  // show the desk so changes are visible as you make them
+  if(it.w!==WKEY)goFloor(it.w,it);else{setTarget(it);routeVisuals(true);if(mode==="overview"){ov.tx=it.x*.5;ov.tz=it.z*.5}}
+  $("mePop").hidden=false;
+  // on a phone the start card would hide the desk you are dressing: tuck it away while this is open
+  if(innerWidth<=760&&!$("start").classList.contains("tucked")){$("start").classList.add("tucked");meTucked=true}
+  if(claim&&deskClaimState(it)==="open")claimMe();else renderMe();
+  meFocus();
+}
+function meFocus(){const p=$("mePop");const f=(!$("meOpts").hidden&&p.querySelector('#meKind [aria-checked="true"]'))||(!$("meClaimRow").hidden&&$("meClaim"))||$("meClose");f.focus()}
+function closeMe(){
+  if($("mePop").hidden)return;
+  if(meSaveT)saveMe();
+  $("mePop").hidden=true;meItem=null;meLook=null;
+  if(meTucked){meTucked=false;if(!$("side").classList.contains("open"))$("start").classList.remove("tucked")}
+  if(meOpener&&meOpener.focus&&document.contains(meOpener)&&!meOpener.closest("[hidden]"))meOpener.focus();meOpener=null;
+}
+$("meClose").onclick=closeMe;
+$("myLook").onclick=openMyLook;
+$("meClaim").onclick=()=>claimMe();
+// radio rows (chips or color swatches) and toggle chips, rebuilt on every change; arrow keys move like the paint swatches
+function meRadios(box,items,cur,pick,kind){
+  box.innerHTML="";
+  for(const [v,name,col] of items){const b=document.createElement("button");b.type="button";b.className=kind==="sw"?"sw"+(v==="team"?" team":""):"chip";b.dataset.v=v;b.setAttribute("role","radio");b.setAttribute("aria-checked",String(v===cur));
+    if(kind==="sw"){b.style.backgroundColor=col;b.setAttribute("aria-label",name);b.title=name}else b.textContent=name;b.onclick=()=>pick(v);box.appendChild(b)}
+}
+function meToggles(box,items,L,flip){box.innerHTML="";for(const [k,name] of items){const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.v=k;b.textContent=name;b.setAttribute("aria-pressed",String(!!L[k]));b.onclick=()=>flip(k,!L[k]);box.appendChild(b)}}
+["meKind","meShirt","meTone","meHat","meCoat"].forEach(id=>$(id).addEventListener("keydown",e=>{
+  if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();
+  const bs=[...$(id).querySelectorAll("[role=radio]")];if(!bs.length)return;const i=Math.max(0,bs.findIndex(b=>b.getAttribute("aria-checked")==="true"));
+  const t=bs[(i+(/Right|Down/.test(e.key)?1:-1)+bs.length)%bs.length];t.focus();t.click();
+}));
+function renderMe(){
+  if(!meItem||$("mePop").hidden)return;
+  const st=deskClaimState(meItem),mine=st==="mine",shared=lookShared();meShown=st;
+  const who=$("meWho");who.textContent="";const b=document.createElement("b");b.textContent=meItem.name;who.append(b,document.createTextNode(" · "+floorShort(meItem.w)+" · Desk "+meItem.id.slice(5)));
+  const local=DATA.demo?"These are sample people, so your look is saved in this browser only.":"This view can't save to the page, so your look is saved in this browser only.";
+  $("meIntro").textContent=mine?(shared?"Everyone who opens this page sees your look. Changes save as you go.":local)
+    :st==="taken"?"Someone else has already claimed this desk. If that's a mistake, an editor of this page can remove their claim in Set up."
+    :"Is this you? Claim your desk to choose how you look here."+(shared?" Everyone who opens this page will see it.":" "+local);
+  $("meClaimRow").hidden=mine||st==="taken";$("meOpts").hidden=!mine;$("meUnclaim").hidden=!mine;
+  if(!mine)return;
+  if(!meLook){const c=myClaimNow();meLook=PEOPLE.merge(meDefault(),c&&c.look)}
+  const L=meLook,d=meDesk();
+  meRadios($("meKind"),PEOPLE.KINDS.map(k=>[k,KIND_N[k]]),L.kind,v=>setMe({kind:v}),"chip");$("meKindN").textContent=KIND_N[L.kind];
+  $("mePerson").hidden=L.kind!=="person";$("mePet").hidden=L.kind==="person";
+  if(L.kind==="person"){
+    const team=meItem.team||"";
+    meRadios($("meShirt"),[["team","Team color"+(team?" ("+team+")":""),teamColorOf(team)]].concat(PAINTS.map(([h,n])=>[h,n,h])),L.shirt,v=>setMe({shirt:v}),"sw");
+    $("meShirtN").textContent=L.shirt==="team"?"Team color":(PAINTS.find(p=>p[0]===L.shirt)||[0,"Custom"])[1];
+    meRadios($("meTone"),PEOPLE.TONES.map(([h,n])=>[h,n,h]),L.tone,v=>setMe({tone:v}),"sw");$("meToneN").textContent=(PEOPLE.TONES.find(t=>t[0]===L.tone)||[0,"Custom"])[1];
+    meRadios($("meHat"),PEOPLE.HATS.map(h=>[h,HAT_N[h]]),L.hat,v=>setMe({hat:v}),"chip");$("meHatN").textContent=HAT_N[L.hat];
+    meToggles($("meExtra"),[["glasses","Glasses"]].concat(d&&d.arr==="lab"?[]:[["mug","Mug on my desk"]]).concat([["labCoat","Lab coat"]]),L,(k,v)=>setMe({[k]:v}));
+  }else{
+    const cs=COATS[L.kind],cur=cs.some(c=>c[0]===L.coat)?L.coat:cs[0][0];
+    meRadios($("meCoat"),cs.map(([h,n])=>[h,n,h]),cur,v=>setMe({coat:v}),"sw");$("meCoatN").textContent=(cs.find(c=>c[0]===cur)||[0,""])[1];
+  }
+}
+// focus the same control after the panel is rebuilt (or the first sensible one if it is gone)
+function meRefocus(box,v){const n=box&&$(box)&&[...$(box).children].find(x=>x.dataset.v===v);if(n&&!n.closest("[hidden]"))n.focus();else meFocus()}
+// preview at once (this browser), save shortly after (one write at a time)
+function setMe(p){
+  if(!meItem||!meLook)return;
+  if(p.kind&&p.kind!==meLook.kind)p=Object.assign({coat:null},p); // a dog's coat doesn't carry over to a cat
+  const a=document.activeElement,box=a&&a.parentElement&&a.parentElement.id,v=a&&a.dataset&&a.dataset.v;
+  Object.assign(meLook,p);
+  LOOKS.set(meKey(),PEOPLE.chosenOf(meLook));if(meItem.w===WKEY)rebuildFigures();
+  clearTimeout(meSaveT);meSaveT=setTimeout(saveMe,450);
+  renderMe();
+  if(box&&$(box)&&$("mePop").contains($(box)))meRefocus(box,v);
+}
+function meDoc(){
+  const prev=myClaimNow(),desk=meItem.id.slice(5),same=!!(prev&&prev.w===meItem.w&&prev.desk.toLowerCase()===desk.toLowerCase());
+  return{w:meItem.w,desk,name:meItem.name.slice(0,80),look:PEOPLE.chosenOf(meLook),at:same&&prev.at?prev.at:Date.now()};
+}
+async function saveMe(){
+  clearTimeout(meSaveT);meSaveT=0;
+  if(!meItem||!meLook)return false;
+  const doc=meDoc();
+  if(!lookShared()){store.set(LOCAL_LOOK,JSON.stringify(doc));recomputeLooks();meSay("Saved in this browser.");return true}
+  if(meSaving){meQueued=doc;return true} // the newest look waits for the write in flight (even if the panel closes)
+  return writeLook(doc);
+}
+async function writeLook(doc){
+  meSaving=true;meSay("Saving…");let ok=false;
+  if(myName)lookNames.set(myId,myName); // my own account name counts at once if this desk is contested
+  try{
+    await db.doc("looks/"+myId).set(doc);ok=true;
+    // until the page's own update arrives, treat the claim as made (skip if a newer look is about to be written)
+    if(!meQueued){meSay("Saved.");const c=PEOPLE.validClaim(doc);if(c){lookDocs=lookDocs.filter(x=>x.uid!==myId).concat([Object.assign(c,{uid:myId})]);recomputeLooks()}}
+  }catch(e){
+    meSay(e&&e.code==="invalid_argument"?"Saving your look needs Contributor access to this page.":e&&e.code==="quota_exceeded"?"The page's storage is full, so your look wasn't saved.":"Couldn't save your look. Try again.");
+    if(!meQueued)recomputeLooks(); // drop the preview
+  }finally{meSaving=false;if(meQueued){const d=meQueued;meQueued=null;writeLook(d)}}
+  return ok;
+}
+async function claimMe(){
+  if(!meItem||meSaving)return;
+  const had=myClaimNow(),moved=!!(had&&(had.w!==meItem.w||had.desk.toLowerCase()!==meItem.id.slice(5).toLowerCase()));
+  meLook=PEOPLE.merge(meDefault(),had&&had.look); // your look comes with you to a new desk
+  renderMe();$("meClaimRow").hidden=true;          // this desk, while the claim is saved
+  const ok=await saveMe();
+  if(!meItem)return;
+  meShown="";renderMe();meFocus();
+  if(ok&&moved&&deskClaimState(meItem)==="mine")meSay("Your look moved to this desk.");
+}
+$("meUnclaim").onclick=()=>confirmDlg("Remove your claim on this desk? The figure there goes back to its standard look.","Remove claim",async()=>{
+  clearTimeout(meSaveT);meSaveT=0;meQueued=null;meLook=null; // nothing pending may write the claim back
+  if(!lookShared()){store.set(LOCAL_LOOK,"");recomputeLooks();closeMe();toast("Claim removed");return}
+  try{await db.doc("looks/"+myId).delete();lookDocs=lookDocs.filter(c=>c.uid!==myId);recomputeLooks();closeMe();toast("Claim removed")}
+  catch(e){toast("Couldn't remove your claim. Try again.")}
+});
+// claims changed (anyone's): refresh my desk, the person card, this panel and the editors' list
+function onLooksChanged(){
+  const was=myDesk?myDesk.w+myDesk.id:"";findMyDesk();
+  if(picked&&!$("pick").hidden&&picked.kind==="desk")pMeUI(picked);
+  if(meItem&&!$("mePop").hidden){
+    // the seating may have changed under the open panel
+    const cur=buildIndex().find(x=>x.w===meItem.w&&x.id===meItem.id);
+    if(!cur||PEOPLE.norm(cur.name)!==PEOPLE.norm(meItem.name)){closeMe();toast("The seating changed, so My look closed.")}
+    else if(meItem=cur,!meSaveT&&!meSaving){
+      const st=deskClaimState(meItem),c=st==="mine"&&myClaimNow();
+      const stale=c&&meLook&&JSON.stringify(PEOPLE.chosenOf(PEOPLE.merge(meDefault(),c.look)))!==JSON.stringify(PEOPLE.chosenOf(meLook));
+      if(st!==meShown||stale){
+        const before=meShown,a=document.activeElement,inside=!!(a&&$("mePop").contains(a)),box=a&&a.parentElement&&a.parentElement.id,v=a&&a.dataset&&a.dataset.v;
+        meLook=null;renderMe();
+        if(before==="mine"&&meShown!=="mine")meSay(meShown==="taken"?"Someone else's claim now holds this desk, so your look isn't shown here.":"Your claim on this desk was removed.");
+        if(inside&&(!document.contains(a)||a.closest("[hidden]")))meRefocus(box,v);
+      }
+    }
+  }
+  if((myDesk?myDesk.w+myDesk.id:"")!==was)renderStart();
+  // only the claims section of Set up changes (rebuilding the whole dialog would close pickers under an editor's cursor)
+  if(!$("setup").hidden&&canSetup){const old=$("claimsSec");if(old&&claimsSigNow()!==claimsSig){const ae=document.activeElement,fk=ae&&old.contains(ae)?ae.getAttribute("aria-label"):null,tmp=document.createElement("div");renderClaimsSec(tmp);const n=tmp.firstChild;old.replaceWith(n);if(fk){const t=[...n.querySelectorAll("button")].find(b=>b.getAttribute("aria-label")===fk);if(t)t.focus()}}}
+}
+// Set up, for editors: who claimed which desk, and a way to remove a wrong claim
+let claimsSig="";
+const claimsSigNow=()=>JSON.stringify([!!DATA.demo,lookDocs.map(c=>[c.uid,c.w,c.desk,c.name,lookNames.get(c.uid)||"",(lookStatus.get(c.uid)||{}).state||""])]);
+function renderClaimsSec(box){
+  const s=el("div",{cls:"sec",id:"claimsSec"});box.appendChild(s);claimsSig=claimsSigNow();
+  s.appendChild(el("h3",{text:"5. Desks people claimed"}));
+  s.appendChild(el("p",{cls:"note",text:"Coworkers can open their own desk, choose This is me, and pick how their figure looks. If two people claim one desk, the one whose account name matches the seating wins, then the first to claim. Remove a wrong claim here."+(DATA.demo?" While sample people are showing, claims aren't used.":"")}));
+  if(!lookDocs.length){s.appendChild(el("p",{cls:"note",text:"Nobody has claimed a desk yet."}));return}
+  const tw=el("div",{cls:"tscroll"}),tb=el("table",{cls:"tbl"});tw.appendChild(tb);
+  tb.appendChild(el("thead",null,[el("tr",null,[el("th",{text:"Claimed by"}),el("th",{text:"Desk"}),el("th",{text:"Status"}),el("th",{text:""})])]));
+  const tbody=el("tbody");tb.appendChild(tbody);
+  const ST_N={ok:"In use",moved:"In use (they moved desks)",taken:"Someone else holds this desk",lost:"Doesn't match the seating"};
+  for(const c of lookDocs.slice().sort((a,b)=>a.w.localeCompare(b.w)||a.desk.localeCompare(b.desk))){
+    const who=lookNames.get(c.uid)||"Someone",st=lookStatus.get(c.uid),where=`${c.name} · ${floorShort(c.w)} · Desk ${c.desk}`;
+    tbody.appendChild(el("tr",null,[el("td",{text:who}),el("td",{text:where}),el("td",{text:DATA.demo?"Not used now":ST_N[st&&st.state]||"Doesn't match the seating"}),
+      el("td",null,[el("button",{cls:"lnk",type:"button",text:"Remove","aria-label":`Remove ${who}'s claim on ${c.name}'s desk`,onclick:()=>confirmDlg(`Remove ${who}'s claim on ${where}? That figure goes back to its standard look.`,"Remove claim",async()=>{
+        try{await db.doc("looks/"+c.uid).delete();toast("Claim removed")}catch(e){toast(e&&e.code==="invalid_argument"?"Only editors of this page can remove a claim.":"Couldn't remove the claim. Try again.")}})})])]));
+  }
+  s.appendChild(tw);
+}
+
 /* ---------- main loop ---------- */
 function resize(){
   const w=innerWidth,h=innerHeight;renderer.setPixelRatio(DPR);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
@@ -911,7 +1086,7 @@ function frame(now){
   const ctl=mode==="drive"&&!fly&&!trans&&!((run&&run.phase==="count")||(race&&race.phase==="count"))&&$("result").hidden?readDrive():IDLE;
   const bctl=BOTPATH.length?botCtl(bot,dt):IDLE,n=Math.max(1,Math.ceil(dt/(1/120)));
   for(let k=0;k<n;k++){carStep(me,ctl,dt/n,true);if(BOTPATH.length)carStep(bot,bctl,dt/n,false)}
-  chairsStep(dt);
+  chairsStep(dt);figFrame(dt);figCommit();
   syncCar(me,dt,false);syncCar(bot,dt,false);if(bot.vis)bot.vis.g.visible=BOTPATH.length>0;
   remoteFrame(dt,now);
   if(mode==="walk"&&!fly&&!trans)walkFrame(dt);
@@ -965,7 +1140,7 @@ requestAnimationFrame(frame);
   if(db)showLoading();
   if(user){try{myId=await user.id()}catch(_){}try{canWrite=await user.can("data.write")}catch(_){}try{canSetup=!!(await user.canEdit())||!!(await user.isOwner())}catch(_){}}
   if(!db&&!window.claude)canSetup=true; // local preview: let the setup tools run in memory
-  watchData();startBoard();renderStart();
+  watchData();startBoard();watchLooks();recomputeLooks();renderStart();
   if(room){try{room.onPeers(ch=>syncPeers(ch.peers),()=>{room=null;for(const r of remotes.values())removeRemote(r);remotes.clear();renderRoster()});setTimeout(()=>{roomSettled=true;renderRoster()},2000)}catch(_){room=null}}
   presDirty=true;resolveNames();renderStart();
 })();

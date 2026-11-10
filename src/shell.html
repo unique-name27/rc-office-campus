@@ -78,7 +78,7 @@ kbd{font:500 10px var(--mono);color:var(--muted);border:1px solid var(--line);bo
 #banner{font-size:12px;line-height:1.4;color:var(--muted);border-left:3px solid var(--accent);padding:2px 0 2px 8px}
 /* side: leaderboard + roster */
 #side{position:fixed;z-index:5;right:max(14px,env(safe-area-inset-right,0px));top:calc(66px + env(safe-area-inset-top,0px));width:272px;padding:14px;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 96px);overflow:auto;box-sizing:border-box}
-#side h2,#stylePop h2{margin:0;font-size:14px;font-weight:800}
+#side h2,#stylePop h2,#mePop h2{margin:0;font-size:14px;font-weight:800}
 #side h2:not(:first-child){margin-top:8px}
 .list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;font-size:13px}
 .list li{display:flex;align-items:center;gap:8px;padding:3px 0;min-width:0}
@@ -111,7 +111,11 @@ kbd{font:500 10px var(--mono);color:var(--muted);border:1px solid var(--line);bo
 #legend i{width:10px;height:10px;border-radius:2px;flex:none}
 #legend b{font:400 11px var(--mono);color:var(--muted);margin-left:auto}
 /* style popover */
-#stylePop{position:fixed;z-index:8;top:calc(64px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);width:min(520px,calc(100vw - 24px));padding:14px;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;background:var(--glass2)}
+#stylePop,#mePop{position:fixed;z-index:8;top:calc(64px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);width:min(520px,calc(100vw - 24px));padding:14px;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;background:var(--glass2)}
+#mePop{max-height:calc(100vh - 76px - env(safe-area-inset-top,0px));overflow:auto;gap:8px}
+#mePop .lbl{margin-top:2px}
+#mePop .who{font-size:13px;color:var(--muted)}#mePop .who b{color:var(--ink);font-weight:700}
+#mePop .sw.team{background-clip:content-box;padding:4px;border-style:dashed}
 /* map */
 #mapwrap{position:fixed;z-index:5;right:max(12px,env(safe-area-inset-right,0px));top:calc(64px + env(safe-area-inset-top,0px));padding:8px}
 #map{display:block;width:220px;height:140px}
@@ -221,6 +225,7 @@ body.touch #help{display:none}
   #start p,#ovKeys{display:none}
   #start .paints,#chipsA{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:4px 2px;margin:0 -2px}
   #start .paints::-webkit-scrollbar,#chipsA::-webkit-scrollbar{display:none}
+  #mePop .paints,#mePop .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:4px 2px;margin:0 -2px}
   .sw,.chip{flex:none}
   #map{width:140px;height:89px}
   #mapwrap{padding:6px}
@@ -279,7 +284,7 @@ body.touch #help{display:none}
     <button class="tb" id="goTop" type="button">Play top-down</button>
     <button class="tb" id="goWalk" type="button">Walk the floor</button>
   </div>
-  <div class="row" id="stLinks"><button class="lnk" id="myDesk" type="button" hidden>Route to my desk</button><button class="lnk no-c" id="planT" type="button" hidden>Hide floor plan</button><button class="lnk" id="bSetup2" type="button" hidden>Set up the campus</button></div>
+  <div class="row" id="stLinks"><button class="lnk" id="myDesk" type="button" hidden>Route to my desk</button><button class="lnk" id="myLook" type="button" hidden>My look</button><button class="lnk no-c" id="planT" type="button" hidden>Hide floor plan</button><button class="lnk" id="bSetup2" type="button" hidden>Set up the campus</button></div>
   <div class="keys" id="ovKeys">Drag to spin · scroll to zoom · click a building to pick a floor</div>
 </section>
 
@@ -298,7 +303,7 @@ body.touch #help{display:none}
   <ul id="results" role="listbox" aria-label="Search results"></ul>
   <div class="pick" id="pick" hidden>
     <div><div class="n" id="pickN"></div><div class="m" id="pickM"></div></div>
-    <div class="row"><button class="primary" id="pRoute" type="button">Show route</button><button class="tb" id="pRace" type="button">Race there</button><button class="tb" id="pView" type="button">See floor</button></div>
+    <div class="row"><button class="primary" id="pRoute" type="button">Show route</button><button class="tb" id="pRace" type="button">Race there</button><button class="tb" id="pView" type="button">See floor</button><button class="tb" id="pMe" type="button" hidden>This is me</button></div>
   </div>
   <div class="row">
     <button class="tb" id="rand" type="button">Surprise me</button>
@@ -313,6 +318,25 @@ body.touch #help{display:none}
   <div class="chips" id="chipsB" role="group" aria-label="Graphic style"></div>
   <p class="sdesc" id="styleDescB"></p>
   <div class="keys">Number keys 1–5 switch styles while you drive · N toggles Neon night</div>
+</section>
+
+<section id="mePop" class="glass" hidden aria-labelledby="meH">
+  <div class="row" style="justify-content:space-between"><h2 id="meH">My look</h2><button class="tb" id="meClose" type="button">Done</button></div>
+  <div class="who" id="meWho"></div>
+  <p class="note" id="meIntro"></p>
+  <div class="row" id="meClaimRow"><button class="primary" id="meClaim" type="button">This is me</button></div>
+  <div id="meOpts">
+    <div class="lbl">Show me as <b id="meKindN"></b></div><div class="chips" id="meKind" role="radiogroup" aria-label="Show me as"></div>
+    <div id="mePerson">
+      <div class="lbl">Shirt <b id="meShirtN"></b></div><div class="paints" id="meShirt" role="radiogroup" aria-label="Shirt color"></div>
+      <div class="lbl">Face and hands <b id="meToneN"></b></div><div class="paints" id="meTone" role="radiogroup" aria-label="Face and hands color"></div>
+      <div class="lbl">Headwear <b id="meHatN"></b></div><div class="chips" id="meHat" role="radiogroup" aria-label="Headwear"></div>
+      <div class="lbl">Extras</div><div class="chips" id="meExtra" role="group" aria-label="Extras"></div>
+    </div>
+    <div id="mePet" hidden><div class="lbl">Coat <b id="meCoatN"></b></div><div class="paints" id="meCoat" role="radiogroup" aria-label="Coat color"></div></div>
+  </div>
+  <p class="note" id="meNote" role="status"></p>
+  <div class="row"><button class="lnk" id="meUnclaim" type="button" hidden>This isn't my desk</button></div>
 </section>
 
 <div id="mapwrap" class="glass hud no-o"><canvas id="map" width="440" height="280" aria-label="Top view of where you are"></canvas><div class="cap"><span id="mapCap">Top view</span><span id="coords">—</span></div></div>

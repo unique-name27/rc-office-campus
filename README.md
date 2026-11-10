@@ -13,7 +13,9 @@ Drive a tiny remote-control car (or run around as a dog or a cat) on a two-build
 - **Routes.** Search anyone or any room. Chevrons on the floor lead you there, including elevator rides and walking between buildings.
 - **Races.** "Race there" sets up gates from a standard start to any desk or room. There's also a coffee run on every floor: kitchen, then five desks.
 - **Five graphic styles.** Studio (realistic materials and soft light), Neon night, Blueprint, Comic and Vector arcade. Keys 1–5 switch them; N toggles Neon night.
-- **Play as a car, a dog or a cat.** Everyone can jump. Cats jump high enough to land on desks, counters and parked cars.
+- **Play as a car, a dog or a cat.** Everyone can jump. Cats jump high enough to land on desks, counters and parked cars. P switches between them.
+- **Coworkers at their desks.** Everyone is the same simple seated figure: no hair, no gendered clothes, a neutral gray face. Variety comes from the team-colored shirt and from headwear, glasses and a mug picked per desk, never from a name. Heads turn as you drive past, and a pushed chair rolls away with its person.
+- **My look.** Open your own desk and choose **This is me** to pick your shirt, face and hands color, headwear and extras, or to show up as a dog or a cat. With sample people (like on this page) your look is saved in your browser only.
 - **Driving.** Drift (Space), boost (Shift), ramps, pushable chairs, a Mailbot, and chase, bumper, high and top-down cameras.
 - **Setup.** Load seating from a facilities CSV, then edit each floor: load a PNG, JPG or PDF plan and set its scale, trace rooms, import CAD walls (DXF), draw team areas, or place desks from facilities X/Y coordinates.
 
@@ -34,6 +36,8 @@ On this public page, setup changes and imported files stay in your browser tab a
 | Elevator floor | 1–4 on the elevator pad | tap a floor |
 | Coffee run | Enter | Coffee run |
 | Clear route | X | × on the route bar |
+| Switch car / dog / cat | P | Car button |
+| My look | L | My look |
 
 ## Loading real seating (team version)
 
@@ -58,6 +62,7 @@ node src/tests/nav.test.js
 node src/tests/importers.test.js
 node src/tests/campus.test.js
 node src/tests/editor.test.js
+node src/tests/people.test.js
 ```
 
 `src/SPEC.md` describes the data formats: the floor layout spec, the floor model, the routing API, and how importing works.

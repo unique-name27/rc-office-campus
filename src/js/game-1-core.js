@@ -61,7 +61,8 @@ const PBR={_:[.7,0,0,1],floor:[.38,0,0,.9],carpet:[.95,0,0,.35],desk:[.42,0,0,.8
   chair:[.82,0,0,.5],sofa:[.9,0,0,.4],body:[.8,0],head:[.6,0],fur:[.92,0,0,.35],wall:[.9,0,0,.7],solid:[.85,0],bldg:[.6,0],slab:[.5,.1],roof:[.75,0],
   glass:[.05,.25,0,1.6],win:[.06,.1,0,1.4],glassRoom:[.04,.1,0,1.3],bwin:[.08,.35,0,1.7],booth:[.05,.1,0,1.3],cabin:[.08,.4,0,1.5],
   plant:[.7,0,0,.5],pot:[.45,0],trunk:[.9,0],ramp:[.5,0],rampSide:[.6,0],cup:[.25,0],lid:[.5,0],tire:[.85,0,0,.4],
-  car:[.36,.12,1,.6],carbody:[.34,.25,1,.7],screen:[.2,0],post:[.35,.7],flag:[.8,0]};
+  car:[.36,.12,1,.6],carbody:[.34,.25,1,.7],screen:[.2,0],post:[.35,.7],flag:[.8,0],
+  shirt:[.88,0,0,.45],pants:[.9,0,0,.4],shoe:[.6,0,0,.6],figure:[.48,0,0,.8],eye:[.25,0,0,1],badge:[.45,0],hat:[.85,0,0,.45],mug:[.3,0,0,1]};
 const GRAD=(()=>{const t=new THREE.DataTexture(new Uint8Array([135,135,135,200,200,200,255,255,255]),3,1,THREE.RGBFormat);t.minFilter=t.magFilter=THREE.NearestFilter;t.generateMipmaps=false;t.needsUpdate=true;return t})();
 
 /* ---------- the 5 styles ---------- */
@@ -69,7 +70,8 @@ const BASE={floor:"#D9D5CB",carpet:"#CFE0EE",desk:"#F7F5EF",panel:"#9AA09A",leg:
 // roles used by v4 furniture/equipment/campus map onto the 21 base palette roles every style defines
 const ALIAS={counter:"panel",top:"desk",table:"desk",frame:"leg",machine:"mon",glassRoom:"win",rampSide:"leg",body:"chair",head:"pot",
   bench:"desk",cabinet:"panel",shelf:"leg",rack:"mon",led:"screen",scope:"mon",chamber:"wall",probe:"panel",sofa:"chair",reception:"panel",
-  fridge:"wall",printer:"wall",board:"desk",metal:"rim",booth:"win",locker:"panel",solid:"wall",roof:"panel",trunk:"pot",bldg:"wall",bwin:"win",slab:"panel",carbody:"car",cabin:"glass",fur:"car",post:"leg",flag:"ramp",stripe:"light",pad:"ramp"};
+  fridge:"wall",printer:"wall",board:"desk",metal:"rim",booth:"win",locker:"panel",solid:"wall",roof:"panel",trunk:"pot",bldg:"wall",bwin:"win",slab:"panel",carbody:"car",cabin:"glass",fur:"car",post:"leg",flag:"ramp",stripe:"light",pad:"ramp",
+  shirt:"chair",pants:"leg",shoe:"tire",figure:"pot",eye:"mon",badge:"ramp",hat:"chair",mug:"cup"};
 const PAL=o=>Object.assign({},BASE,o);
 const NEON_TEAM=["#3DA5FF","#B26BFF","#FFB547","#39FF9E","#FF2E97"],COMIC_TEAM=["#3B8BFF","#A35BFF","#FF9F1C","#2BD97C","#FF4FA0"];
 const ST=[

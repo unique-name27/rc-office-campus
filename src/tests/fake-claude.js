@@ -35,8 +35,8 @@
   }
   const db = { doc: docRef, collection: p => colRef(p) };
   const user = {
-    id: async () => 'u_test', canEdit: async () => true, isOwner: async () => true, can: async () => true,
-    profiles: async ids => Object.fromEntries(ids.map(i => [i, { name: i === 'u_test' ? (window.__fakeName || 'Test Person') : 'Coworker ' + i }])),
+    id: async () => window.__fakeUid || 'u_test', canEdit: async () => true, isOwner: async () => true, can: async () => true,
+    profiles: async ids => Object.fromEntries(ids.map(i => [i, { name: i === 'u_test' ? (window.__fakeName || localStorage.getItem('__fakeName') || 'Test Person') : 'Coworker ' + i }])),
   };
   const room = { presence: () => Promise.resolve(), onPeers: () => () => {} };
   window.__fakeStore = store;
