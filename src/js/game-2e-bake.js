@@ -21,7 +21,7 @@ const _M4=new THREE.Matrix4(),_P=new V3(),_Q=new THREE.Quaternion(),_S=new V3(),
 function reg(im,cyl){if(S&&S.hd&&im)regs.push({im,cyl:!!cyl})}
 function enter(){
   regs=[];flat=[];faces=null;blobs=null;
-  if(on){on=false;renderer.toneMappingExposure=S&&S.exposure||1}
+  if(on){on=false;renderer.toneMappingExposure=S&&S.exposure||1;HD.restyle()}   // GTAO and the furniture blobs come back
   rec=null;worldKey='';
 }
 
@@ -148,7 +148,7 @@ function world(key,m,kind){
   textures(key,r).then(t=>{if(root===rootNow&&worldKey===key&&S.hd)apply(key,m,kind,r,P,t)}).catch(e=>{console.warn('baked light failed to load for '+key,e);bad.add(key)});
 }
 function apply(key,m,kind,r,P,t){
-  const vars=new Map(),olds=new Set(),K=r.K,G=P.G;
+  const vars=new Map(),olds=new Set(),K=r.K*(r.g||1),G=P.G;
   U.bkFloor.value.set(G.x0,G.z0,G.w,G.d);
   // statics in the atlas: per-instance rectangles on a private copy of the batch's geometry
   const byIm=new Map();for(const it of P.list){let l=byIm.get(it.rg);if(!l)byIm.set(it.rg,l=[]);l.push(it)}

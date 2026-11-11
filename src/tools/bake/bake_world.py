@@ -27,7 +27,7 @@ KEY, KIND, H = C['key'], C['kind'], C['H']
 OUT = os.path.join(os.path.abspath(pos[1]), KEY); os.makedirs(OUT, exist_ok=True)
 SAMPLES = opt('--samples', 160)
 INDOOR = KIND != 'campus'
-PANEL_W, SUN_I, SUN_ELEV, SKY = (14.0, 10.0, 28.0, 0.8) if INDOOR else (0.0, 2.8, -1.0, 0.35)
+PANEL_W, SUN_I, SUN_ELEV, SKY = (14.0, 10.0, 28.0, 0.8) if INDOOR else (0.0, 2.8, -1.0, 1.0)   # outdoors the sky stands in for Studio's strong image-based light
 PAD = C['atlas']['pad']
 log = lambda *a: print('[%s %5.1fs]' % (KEY, time.time() - T0), *a, flush=True)
 
@@ -197,6 +197,8 @@ def finish(fl, at, meta):
         # the floor's bounce from below; exposure meters the room the way a camera would indoors
         meta['hemi'] = ['#FFF4E6', '#7A746B', round(math.pi * med, 3)]
         meta['exp'] = round(.72 * min(1.6, max(.6, .93 / med)), 3)
+    else:
+        meta['gain'] = 1.3   # outdoors: Studio's image-based light makes the realtime ground about this much brighter
     log('K', K, 'median', round(med, 3), 'cap', round(capv, 3))
 
 
