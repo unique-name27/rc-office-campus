@@ -210,7 +210,14 @@ function capture(){
   }
   // ground pieces (top-down lightmap) and every other static thing that blocks light; things that move are left out
   const flatSet=new Set(flat.map(f=>f.o));
-  for(const f of flat){const o=f.o,g=o.geometry;const n=o.isInstancedMesh?o.count:1;for(let i=0;i<n;i++){if(o.isInstancedMesh){o.getMatrixAt(i,_M4);_M4.premultiply(o.matrixWorld)}else _M4.copy(o.matrixWorld);const c=albedo(o.material,o.isInstancedMesh?o:null,i);each(g,(a,b,cc)=>tri(F,g,_M4,a,b,cc,null,c))}}
+  // only the faces that look up, lowest first: overlapping finishes share floor texels and the bake keeps the last one,
+  // so a carpet wins over the slab under it and a border over the carpet (a border's underside would bake black)
+  const FT=[],va=new V3(),vb=new V3(),vc=new V3();
+  for(const f of flat){const o=f.o,g=o.geometry;const n=o.isInstancedMesh?o.count:1;for(let i=0;i<n;i++){if(o.isInstancedMesh){o.getMatrixAt(i,_M4);_M4.premultiply(o.matrixWorld)}else _M4.copy(o.matrixWorld);const c=albedo(o.material,o.isInstancedMesh?o:null,i);
+    each(g,(a,b,cc)=>{const P=g.attributes.position;va.fromBufferAttribute(P,a).applyMatrix4(_M4);vb.fromBufferAttribute(P,b).applyMatrix4(_M4);vc.fromBufferAttribute(P,cc).applyMatrix4(_M4);
+      const ny=(vb.z-va.z)*(vc.x-va.x)-(vb.x-va.x)*(vc.z-va.z),area=Math.abs(ny);if(area<1e-9||ny<=0)return;   // world normal's y sign (counter-clockwise from above)
+      FT.push({y:(va.y+vb.y+vc.y)/3,p:[va.x,va.y,va.z,vb.x,vb.y,vb.z,vc.x,vc.y,vc.z],c})})}}
+  FT.sort((a,b)=>a.y-b.y);for(const t of FT){F.p.push(...t.p);F.c.push(...t.c)}
   const dyn=new Set();
   try{for(const gk in (figG||{}))if(figG[gk]&&figG[gk].mesh)dyn.add(figG[gk].mesh)}catch(_){}
   try{for(const cg of chairG||[])if(cg&&cg.mesh)dyn.add(cg.mesh)}catch(_){}

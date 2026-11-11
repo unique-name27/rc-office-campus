@@ -49,7 +49,7 @@ const evalJS = async expr => { const r = await send('Runtime.evaluate', { expres
 const shot = async name => { const s = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(join(SHOTS, name + '.png'), Buffer.from(s.result.data, 'base64')) };
 // views: the overview, standing at a spot (walk: x, z, yaw, pitch), and the car's chase camera (drive: x, z, heading)
 const VIEWS = {
-  'B1-1': [['overview'], ['walk', 13, -3, 2.4, -.25], ['walk', -12, -9, 2.6, -.3], ['drive', 11.6, 12, 0]],
+  'B1-1': [['overview'], ['walk', 13, -3, 2.4, -.25], ['walk', -12, -9, 2.6, -.3], ['drive', 11.6, 6, 0]],
   'B2-1': [['overview'], ['walk', 20, 0, 2.2, -.25], ['drive', 0, 10, 0]],
   campus: [['overview'], ['walk', -36, 22, 2.6, -.2]],
 };

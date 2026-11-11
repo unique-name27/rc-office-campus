@@ -44,6 +44,22 @@ const woodTex = canvasTex(512, 512, (g, W, H) => {
 const tileTex = canvasTex(256, 256, (g, W, H) => { g.fillStyle = '#ECEAE5'; g.fillRect(0, 0, W, H); const n = 4, s = W / n; for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) { g.fillStyle = `rgba(0,0,0,${rnd() * .035})`; g.fillRect(i * s + 2, j * s + 2, s - 4, s - 4) } g.strokeStyle = 'rgba(120,115,105,.55)'; g.lineWidth = 2; for (let i = 0; i <= n; i++) { g.beginPath(); g.moveTo(i * s, 0); g.lineTo(i * s, H); g.stroke(); g.beginPath(); g.moveTo(0, i * s); g.lineTo(W, i * s); g.stroke() } }, [1, 1]);
 [carpetTex,terrazzoTex,woodTex,tileTex].forEach(t=>SHARED.add(t));
 
+/* ---------- Blender-made PBR sets (pbr-data.js, src/blender/pbr_textures.py); the canvas finishes above stay as the fallback ---------- */
+const pbr = (name, w, d) => typeof pbrSet === 'function' ? pbrSet(name, w, d) : null;
+const pbrRough = name => (typeof PBR_DATA !== 'undefined' && PBR_DATA && PBR_DATA.sets[name] && PBR_DATA.sets[name].rough) || .5;
+// a new material from a set (three multiplies roughness by the map, so the map alone sets it unless `rough` asks for a mean)
+function pbrMat(s, name, color, extra = {}, rough) {
+  return new THREE.MeshStandardMaterial(Object.assign({ color, map: s.map, normalMap: s.normalMap, normalScale: new THREE.Vector2(s.normalScale, s.normalScale), roughnessMap: s.roughnessMap,
+    roughness: rough ? rough / pbrRough(name) : 1, metalness: s.metalness || 0 }, extra));
+}
+// a set's maps on an existing material; true color keeps the material's own color by dividing out the map's average
+function pbrOn(m, name, trueColor) {
+  const s = pbr(name); if (!s || m.userData.pbr) return m; m.userData.pbr = name;
+  m.map = s.map; m.normalMap = s.normalMap; m.normalScale = new THREE.Vector2(s.normalScale, s.normalScale); m.roughnessMap = s.roughnessMap; m.roughness = m.roughness / pbrRough(name);
+  if (trueColor) { const a = new THREE.Color(s.avg); m.color.multiply(new THREE.Color(1 / Math.max(.05, a.r), 1 / Math.max(.05, a.g), 1 / Math.max(.05, a.b))) }
+  m.needsUpdate = true; return m;
+}
+
 /* ---------- materials ---------- */
 const MAT = {};
 const std = (key, color, rough, metal = 0, extra = {}) => MAT[key] || (MAT[key] = keep(new THREE.MeshStandardMaterial(Object.assign({ color, roughness: rough, metalness: metal, envMapIntensity: .4 }, extra))));
@@ -51,14 +67,14 @@ const M = {
   wallWhite: () => std('wallWhite', '#E9E6E0', .92),
   baseboard: () => std('baseboard', '#5F6266', .6),
   spandrel: () => std('spandrel', '#D9D6D0', .8),
-  alu: () => std('alu', '#B9BEC4', .3, .9),
-  aluDark: () => std('aluDark', '#43474D', .35, .7),
+  alu: () => pbrOn(std('alu', '#B9BEC4', .3, .9), 'metal'),
+  aluDark: () => pbrOn(std('aluDark', '#43474D', .35, .7), 'metal'),
   glass: () => std('glass', '#CFE3EC', .04, 0, { transparent: true, opacity: .16, depthWrite: false, envMapIntensity: 1.6 }),
   sky: () => MAT.sky || (MAT.sky = keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.7, 1.8) }))),
   felt: () => std('felt', '#AEB4AC', .97),
   core: () => std('core', '#D8D4CC', .85),
   coreTop: () => std('coreTop', '#9E9A93', .8),
-  steel: () => std('steel', '#AEB3B8', .28, .95),
+  steel: () => pbrOn(std('steel', '#AEB3B8', .28, .95), 'metal'),
   white: () => std('white', '#E8E6E0', .55),
   offwhite: () => std('offwhite', '#E6E3DC', .6),
   epoxy: () => std('epoxy', '#1E2124', .28, .05, { envMapIntensity: 1 }),
@@ -74,7 +90,7 @@ const M = {
   team: () => std('teamFelt', '#FFFFFF', .97),
   screenOff: () => std('screenOff', '#101215', .25, .2),
   board: () => std('board', '#FAFAF8', .2),
-  oak: () => std('oak', '#D8C3A8', .5, 0, { map: woodTex }),
+  oak: () => MAT.oak || (pbr('oak') ? (MAT.oak = keep(pbrMat(pbr('oak'), 'oak', '#FFFFFF', { envMapIntensity: .4 }, .5))) : std('oak', '#D8C3A8', .5, 0, { map: woodTex })),
   laminate: () => std('laminate', '#E9E6DF', .45),
   yellow: () => std('yellow', '#F2C14E', .5),
 };
@@ -184,11 +200,17 @@ let floorKey='';
 function ground(m){
   const W=m.w,D=m.d;
   // ground: polished concrete, then floor finishes on top
-  const gm = new THREE.Mesh(new THREE.PlaneGeometry(W + 6, D + 6), new THREE.MeshStandardMaterial({ color: '#E9E3D9', roughness: .55, map: concreteTex(W + 6, D + 6), envMapIntensity: .3 })); gm.rotation.x = -Math.PI / 2; gm.receiveShadow = true; root.add(gm);
+  const cs = pbr('concrete', W + 6, D + 6);
+  const gm = new THREE.Mesh(new THREE.PlaneGeometry(W + 6, D + 6), cs ? pbrMat(cs, 'concrete', '#FFFFFF', { envMapIntensity: .3 }) : new THREE.MeshStandardMaterial({ color: '#E9E3D9', roughness: .55, map: concreteTex(W + 6, D + 6), envMapIntensity: .3 })); gm.rotation.x = -Math.PI / 2; gm.receiveShadow = true; root.add(gm);
   (m.areas || []).forEach((a, i) => {
     if (!(a.w > 0 && a.d > 0)) return; const y = .004 + Math.min(i, 30) * .0004, tc = a.team ? teamColorOf(a.team) : null;
-    let mat;
-    if (a.kind === 'esd') mat = std('esd', '#6F8597', .55, 0, { map: carpetTex });
+    let mat; const P = n => pbr(n, a.w, a.d), tint = (h, k) => '#' + new THREE.Color(h).multiplyScalar(k).getHexString();
+    if (a.kind === 'esd' && P('carpet')) mat = pbrMat(P('carpet'), 'carpet', tint('#6F8597', 1.09), { envMapIntensity: .25 }, .6);
+    else if (a.kind === 'tile' && P('tile')) mat = pbrMat(P('tile'), 'tile', '#FFFFFF', { envMapIntensity: .5 }, .45);
+    else if (a.kind === 'lobby' && P('terrazzo')) mat = pbrMat(P('terrazzo'), 'terrazzo', '#FFFFFF', { envMapIntensity: .7 }, .35);
+    else if (a.kind === 'wood' && P('oak')) mat = pbrMat(P('oak'), 'oak', '#FFFFFF', { envMapIntensity: .6 }, .5);
+    else if (!['esd', 'tile', 'lobby', 'wood'].includes(a.kind) && P('carpet')) mat = pbrMat(P('carpet'), 'carpet', tint(tc ? mixh('#A29E97', tc, .32) : '#A29E97', 1.09), { envMapIntensity: .25 }, .97);
+    else if (a.kind === 'esd') mat = std('esd', '#6F8597', .55, 0, { map: carpetTex });
     else if (a.kind === 'tile') { const t = tileTex.clone(); t.repeat.set(a.w / 1.2, a.d / 1.2); t.needsUpdate = true; mat = new THREE.MeshStandardMaterial({ color: '#FFFFFF', map: t, roughness: .45, envMapIntensity: .5 }) }
     else if (a.kind === 'lobby') { const t = terrazzoTex.clone(); t.repeat.set(a.w / 3, a.d / 3); t.needsUpdate = true; mat = new THREE.MeshStandardMaterial({ color: '#FFFFFF', map: t, roughness: .35, envMapIntensity: .7 }) }
     else if (a.kind === 'wood') { const t = woodTex.clone(); t.repeat.set(a.w / 4, a.d / 4); t.needsUpdate = true; mat = new THREE.MeshStandardMaterial({ color: '#E2D8CC', map: t, roughness: .5, envMapIntensity: .6 }) }
@@ -292,6 +314,7 @@ function buildDesks(m){
   desks.forEach((d,i)=>{if(d.arr!=='hot'&&d.arr!=='lab'&&isFinite(d.x)&&isFinite(d.z))drawn.push(i)});
   deskInst=new Array(desks.length).fill(-1);instDesk=drawn.slice();drawn.forEach((di,k)=>deskInst[di]=k);
   deskG=IG(new THREE.BoxGeometry(1,.03,1),'desk',drawn.length,{colored:true});
+  if(deskG.mesh&&deskG.mesh.material.isMeshStandardMaterial)pbrOn(deskG.mesh.material,'birch',true); // birch grain under the desk color (a route target still lights up)
   const legB=batch(UNITBOX,M.graphite(),{bake:1}),scrB=batch(UNITBOX,M.team(),{bake:1});
   desks.forEach((d,i)=>{
     if(!isFinite(d.x)||!isFinite(d.z))return;const w=d.w>0?d.w:1.56,dd=d.dd>0?d.dd:.78,it={x:d.x,z:d.z,a:d.a||0},sit=d.person>=0;
