@@ -360,7 +360,7 @@ function buildCampusWorld(m){
       addSign([b.name,"Drive in to enter"],cx+fx_*.4,4.6,cz+fz_*.4,1.1,S.acc);
     }
   }
-  buildItems(m.items);buildAO(null,m.items);
+  buildItems(S.hd?HD.campusItems(m.items):m.items);buildAO(null,m.items); // Studio: trees, lamps, benches... are models
   (m.items||[]).forEach(it=>{if(it.t==="sign"&&it.text&&isFinite(it.x))addSign([String(it.text).slice(0,40)],it.x,(it.h>0?it.h:1.2)+.7,it.z,1.0,S.acc)});
   (m.ramps||[]).forEach(buildRamp);
   (m.signs||[]).forEach(s=>{if(s&&s.lines&&isFinite(s.x))addSign(s.lines,s.x,isFinite(s.y)?s.y:3,s.z,s.h>0?s.h:1,s.stripe&&HEX.test(s.stripe)?s.stripe:null)});

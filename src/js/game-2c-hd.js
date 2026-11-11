@@ -116,6 +116,7 @@ function kitGeo(p,q){
   const P=new Int16Array(b64u8(p.p).buffer),I=p.w===4?new Uint32Array(b64u8(p.i).buffer):new Uint16Array(b64u8(p.i).buffer),pos=new Float32Array(P.length);
   for(let i=0;i<P.length;i++)pos[i]=P[i]/q;
   let g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setIndex(new THREE.BufferAttribute(I,1));
+  if(p.vc){const C=b64u8(p.vc),col=new Float32Array(C.length),lin=x=>(x/=255)<=.04045?x/12.92:Math.pow((x+.055)/1.055,2.4);for(let i=0;i<C.length;i++)col[i]=lin(C[i]);g.setAttribute('color',new THREE.BufferAttribute(col,3))} // sRGB bytes -> linear
   if(p.f){g=g.toNonIndexed();g.computeVertexNormals();fixNormals(g)} // flat-shaded: split per face, one normal per face
   else{
     const N=new Int8Array(b64u8(p.n).buffer),nor=new Float32Array(N.length);for(let i=0;i<N.length;i+=3){const l=Math.hypot(N[i],N[i+1],N[i+2]);if(l>0){nor[i]=N[i]/l;nor[i+1]=N[i+1]/l;nor[i+2]=N[i+2]/l}else nor[i+1]=1}
@@ -130,7 +131,7 @@ function fixNormals(g){const n=g.attributes.normal.array;for(let i=0;i<n.length;
 function loadKit(){
   for(const n in KITMESH){
     const rec=KITMESH[n],box=new THREE.Box3(),parts=[];
-    for(const p of rec.parts){const geo=kitGeo(p,rec.q);box.union(geo.boundingBox);parts.push({mat:p.k,geo,c:p.c,r:p.r,m:p.m,e:p.e,o:p.o})}
+    for(const p of rec.parts){const geo=kitGeo(p,rec.q);box.union(geo.boundingBox);parts.push({mat:p.k,geo,c:p.c,r:p.r,m:p.m,e:p.e,o:p.o,vc:!!p.vc})}
     KIT[n]={parts,box,size:box.getSize(new THREE.Vector3()),bl:BL.has(n)};
   }
   // a lower office-chair back, so shoulders and shirts show over it from behind (and from the RC car)
@@ -150,12 +151,20 @@ function blMat(name,p){
   if(p.o!=null&&p.o<1){m.transparent=true;m.opacity=Math.max(.25,p.o);m.depthWrite=false}
   return BLM[key]=keep(m);
 }
+// the patch.gg models (Polyfork, CC BY 4.0): one white material per model, colored per vertex. userData.avg is the
+// model's average color, which the light bake uses for the light it bounces.
+function vcMat(name,p){
+  const key='vc/'+name;if(BLM[key])return BLM[key];
+  const m=new THREE.MeshStandardMaterial({color:'#FFFFFF',roughness:p.r??.8,metalness:p.m??0,vertexColors:true,envMapIntensity:.45});
+  const c=p.geo.attributes.color,avg=new THREE.Color(0,0,0);if(c){for(let i=0;i<c.count;i++){avg.r+=c.getX(i);avg.g+=c.getY(i);avg.b+=c.getZ(i)}avg.multiplyScalar(1/Math.max(1,c.count))}
+  m.userData.avg=avg;return BLM[key]=keep(m);
+}
 function placeKit(name, list, o = {}) {
   const k = KIT[name]; if (!k || !list.length) return;
   const b = k.box, cx = (b.min.x + b.max.x) / 2, cz = (b.min.z + b.max.z) / 2, sz = k.size;
   for (const p of k.parts) {
     const tint = !!(o.tint && o.tint.includes(p.mat));
-    const mat = (o.mats && o.mats[p.mat]) || (k.bl ? blMat(name, p) : tint ? tintMat(p.mat) : (KMAT[p.mat] || KMAT._defaultMat)());
+    const mat = (o.mats && o.mats[p.mat]) || (k.bl ? blMat(name, p) : p.vc ? vcMat(name, p) : tint ? tintMat(p.mat) : (KMAT[p.mat] || KMAT._defaultMat)());
     const im = new THREE.InstancedMesh(p.geo, mat, list.length); im.castShadow = o.cast !== false && !mat.transparent; im.receiveShadow = true;
     list.forEach((q, i) => {
       const u = q.s || 1;
@@ -280,17 +289,22 @@ function buildItems(items) {
   for (const it of by.scope || []) { if (blp('oscilloscope')) { const q = dims(it); blList.oscilloscope.push({ x: it.x, y: q.y || 0, z: it.z, a: it.a || 0, w: q.w, h: q.h, d: q.d }); continue } const q = dims(it); const y0 = q.y || 0; put(ins, it, 0, y0 + q.h / 2, 0, q.w, q.h, q.d); put(dm, it, -q.w * .15, y0 + q.h * .55, q.d / 2 + .002, q.w * .56, q.h * .68, .004); { const [x, z] = loc(it, -q.w * .15, q.d / 2 + .0045); wave.add(x, y0 + q.h * .55, z, q.w * .5, q.h * .6, 1, it.a || 0) } for (let k = 0; k < 3; k++) put(dm, it, q.w * .22 + (k % 2) * .06, y0 + q.h * (.35 + k * .2), q.d / 2 + .006, .03, .03, .012) }
   for (const it of by.chamber || []) { if (blp('testChamber')) { const q = dims(it); blList.testChamber.push({ x: it.x, z: it.z, a: (it.a || 0) + Math.PI, w: q.w, h: q.h, d: q.d }); continue } const q = dims(it); put(white, it, 0, q.h / 2, 0, q.w, q.h, q.d); put(glass, it, 0, q.h * .55, -(q.d / 2 + .01), q.w * .45, q.h * .3, .02); put(dm, it, 0, q.h * .55, -(q.d / 2 + .004), q.w * .52, q.h * .37, .006); put(scr, it, q.w * .32, q.h * .8, -(q.d / 2 + .01), q.w * .18, q.h * .08, .01) }
   for (const it of by.probe || []) { if (blp('probeStation')) { const q = dims(it); blList.probeStation.push({ x: it.x, z: it.z, a: (it.a || 0) + Math.PI, w: q.w, d: q.d, s: q.w / KIT.probeStation.size.x }); continue } const q = dims(it); put(dm, it, 0, .4, 0, q.w, .8, q.d); put(steel, it, 0, .82, 0, q.w * .7, .04, q.d * .7); put(steel, it, 0, 1.05, q.d * .1, .1, .5, .1); put(dm, it, 0, 1.32, q.d * .1, .25, .14, .25) }
-  for (const it of by.cabinet || []) { const q = dims(it); put(offw, it, 0, q.h / 2, 0, q.w, q.h, q.d); for (let r = 1; r < 3; r++) put(dm, it, 0, q.h * r / 3, -(q.d / 2 + .003), q.w * .96, .006, .004); put(lam, it, 0, q.h + .01, 0, q.w + .02, .02, q.d + .02) }
-  for (const it of by.locker || []) { const q = dims(it); put(steel, it, 0, q.h / 2, 0, q.w, q.h, q.d) }
+  // Polyfork models from patch.gg (CC BY 4.0, src/assets/patch/CREDITS.md) where they fit, the code-built pieces otherwise
+  const pgList = { storageCupboard: [], lockerBank: [], printer: [], whiteboard: [] };
+  for (const it of by.cabinet || []) { const q = dims(it); if (blp('storageCupboard')) { const n = Math.max(1, Math.round(q.w / 1.1)); for (let i = 0; i < n; i++) { const [x, z] = loc(it, -q.w / 2 + q.w * (i + .5) / n, 0); pgList.storageCupboard.push({ x, z, a: (it.a || 0) + Math.PI, w: q.w / n, h: q.h, d: q.d }) } continue }
+    put(offw, it, 0, q.h / 2, 0, q.w, q.h, q.d); for (let r = 1; r < 3; r++) put(dm, it, 0, q.h * r / 3, -(q.d / 2 + .003), q.w * .96, .006, .004); put(lam, it, 0, q.h + .01, 0, q.w + .02, .02, q.d + .02) }
+  for (const it of by.locker || []) { const q = dims(it); if (blp('lockerBank')) { const n = Math.max(1, Math.round(q.w)); for (let i = 0; i < n; i++) { const [x, z] = loc(it, -q.w / 2 + q.w * (i + .5) / n, 0); pgList.lockerBank.push({ x, z, a: (it.a || 0) + Math.PI, w: q.w / n, h: q.h, d: q.d }) } continue }
+    put(steel, it, 0, q.h / 2, 0, q.w, q.h, q.d) }
   for (const it of by.reception || []) { const q = dims(it); put(white, it, 0, q.h / 2, 0, q.w, q.h, q.d); put(oak, it, 0, q.h + .02, 0, q.w + .06, .04, q.d + .06);
     // a wafer on a plinth beside the desk
     { const [x, z] = loc(it, q.w / 2 + 1.1, 0); cyl.add(x, .5, z, .42, 1, .42); waferAt.push([x, 1.012, z]) } }
-  for (const it of by.printer || []) { const q = dims(it); put(offw, it, 0, q.h / 2, 0, q.w, q.h, q.d); put(dm, it, 0, q.h + .02, 0, q.w * .8, .04, q.d * .6); put(scr, it, q.w * .3, q.h * .9, -(q.d / 2 + .003), .12, .07, .005) }
-  for (const it of by.whiteboard || []) { const q = dims(it); const y0 = q.y || .9; put(board, it, 0, y0 + q.h / 2, 0, q.w, q.h, .03); put(alu, it, 0, y0 - .01, 0, q.w + .04, .03, .06) }
+  for (const it of by.printer || []) { const q = dims(it); if (blp('printer')) { pgList.printer.push({ x: it.x, z: it.z, a: (it.a || 0) + Math.PI, w: q.w, h: q.h, d: q.d }); continue } put(offw, it, 0, q.h / 2, 0, q.w, q.h, q.d); put(dm, it, 0, q.h + .02, 0, q.w * .8, .04, q.d * .6); put(scr, it, q.w * .3, q.h * .9, -(q.d / 2 + .003), .12, .07, .005) }
+  for (const it of by.whiteboard || []) { const q = dims(it); const y0 = q.y || .9; if (blp('whiteboard')) { pgList.whiteboard.push({ x: it.x, y: y0 - .06, z: it.z, a: (it.a || 0) + Math.PI, w: q.w, h: q.h + .1, d: .1 }); continue } put(board, it, 0, y0 + q.h / 2, 0, q.w, q.h, .03); put(alu, it, 0, y0 - .01, 0, q.w + .04, .03, .06) }
   for (const it of by.elevdoor || []) { const q = dims(it); for (const sx of [-1, 1]) put(steel, it, sx * q.w / 4, q.h / 2, 0, q.w / 2 - .02, q.h, .06); put(dm, it, 0, q.h + .08, 0, q.w + .24, .16, .1) }
   for (const it of by.booth || []) { const q = dims(it); put(glass, it, 0, q.h / 2, 0, q.w, q.h, q.d); put(alu, it, 0, q.h, 0, q.w + .04, .06, q.d + .04); put(felt, it, 0, .02, 0, q.w - .1, .04, q.d - .1, '#5C6E7A') }
   [white, cw, ins, esdm, aluD, wave, offw, epoxy, dm, steel, rackF, led, scr, felt, oak, board, alu, glass, cyl, cylMetal, lam].forEach(b => b.done());
   for (const n in blList) placeKit(n, blList[n]);
+  for (const n in pgList) placeKit(n, pgList[n]);
   for (const [x, y, z] of waferAt) { const w = new THREE.Mesh(new THREE.CylinderGeometry(.15, .15, .004, 64), waferMat()); w.position.set(x, y, z); w.rotation.z = .5; w.castShadow = true; root.add(w) }
 
   // Kenney models for the things a kit does well
@@ -306,11 +320,36 @@ function buildItems(items) {
   kp('televisionModern', (by.screen || []).map(it => { const q = dims(it); return { x: it.x, y: q.y, z: it.z, a: (it.a || 0) + Math.PI, s: q.w / KIT.televisionModern.size.x } }), { mats: { metal: M.screen(), metalDark: std('tvBody', '#1C1E21', .4, .3) } });
   kp('loungeDesignSofa', (by.sofa || []).map(it => { const q = dims(it); return { x: it.x, z: it.z, a: (it.a || 0) + Math.PI, w: q.w, h: q.h, d: q.d } }), { mats: { carpetBlue: std('sofa', '#5A6470', .9) } });
 }
+// a stable 0..1 per (desk or item, slot) on this floor, so extra props never shift the rnd() sequence the rest depends on
+function hz(i, k) {
+  let h = 2166136261; for (let j = 0; j < floorKey.length; j++) h = Math.imul(h ^ floorKey.charCodeAt(j), 16777619);
+  h ^= Math.imul(i + 1013, 0x9E3779B1) ^ Math.imul(k + 17, 0x85EBCA6B); h ^= h >>> 15; h = Math.imul(h, 0x2C1B3C6D); h ^= h >>> 12; h = Math.imul(h, 0x297A2D39); h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+
+/* ---------- campus street furniture in Studio: Polyfork models from patch.gg (CC BY 4.0, src/assets/patch/CREDITS.md) ---------- */
+// takes the campus items, places the ones a model covers and returns the rest for the game's own builder
+const CAMPUS_KIT = { tree: 'oakTree', lamp: 'lampPost', bench: 'parkBench', bikerack: 'bikeRack', planter: 'planterBox', bollard: 'bollard', flag: 'flagPole' };
+function campusItems(items) {
+  const lists = {}, rest = []; floorKey = 'campus'; // the same tree turns on every visit (the light bake saw them so)
+  (items || []).forEach((it, i) => {
+    const n = CAMPUS_KIT[it.t], k = n && KIT[n]; if (!k || !isFinite(it.x) || !isFinite(it.z)) { rest.push(it); return }
+    const L = lists[n] || (lists[n] = []), a = it.a || 0, sz = k.size, h = it.h > 0 ? it.h : 0;
+    if (it.t === 'tree') L.push({ x: it.x, z: it.z, a: hz(i, 1) * 6.283, s: (h || 4.5) / sz.y * (.94 + hz(i, 2) * .12) });
+    else if (it.t === 'planter') { // a long planter is a row of square boxes
+      const w = it.w > 0 ? it.w : 2, d = it.d > 0 ? it.d : 1, along = w >= d, n2 = Math.max(1, Math.round((along ? w : d) / (along ? d : w))), L2 = (along ? w : d) / n2;
+      for (let j = 0; j < n2; j++) { const o = -(along ? w : d) / 2 + L2 * (j + .5), [x, z] = loc({ x: it.x, z: it.z, a }, along ? o : 0, along ? 0 : o); L.push({ x, z, a, w: along ? L2 : w, d: along ? d : L2, h: sz.y * (h || .6) / .6 }) }
+    }
+    else L.push({ x: it.x, z: it.z, a: a + Math.PI, s: ({ lamp: (h || 5) / sz.y, bollard: (h || .9) / sz.y, flag: (h || 8) / sz.y })[it.t] || (it.w > 0 ? it.w : sz.x) / sz.x });
+  });
+  for (const n in lists) placeKit(n, lists[n]);
+  return rest;
+}
 
 /* ---------- desks: birch tops on graphite end frames (the RC car drives underneath), Kenney monitors, keyboards, mice ---------- */
 // the tops are the game's desk instances (deskG), so a desk can still light up as a route target
 function buildDesks(m){
-  const desks=m.desks||[],mon=[],kb=[],mouse=[],lap=[],plants=[],drawn=[];
+  const desks=m.desks||[],mon=[],kb=[],mouse=[],lap=[],plants=[],drawn=[],clut={mug:[],takeawayCup:[],headphones:[],bookStack:[],cactus:[]};
   desks.forEach((d,i)=>{if(d.arr!=='hot'&&d.arr!=='lab'&&isFinite(d.x)&&isFinite(d.z))drawn.push(i)});
   deskInst=new Array(desks.length).fill(-1);instDesk=drawn.slice();drawn.forEach((di,k)=>deskInst[di]=k);
   deskG=IG(new THREE.BoxGeometry(1,.03,1),'desk',drawn.length,{colored:true});
@@ -326,11 +365,17 @@ function buildDesks(m){
     }
     const top=d.arr==='lab'?.9:d.arr==='hot'?.74:.775;
     if(!sit)return;
-    if(d.arr==='hot'){const [x,z]=loc(it,0,-.02);lap.push({x,y:top,z,a:(d.a||0)+Math.PI,s:1.25});return}
+    // a little of each person's stuff (Polyfork models from patch.gg), picked per floor and desk without touching rnd()
+    const odds=k=>hz(i,k),stuff=(n,lx,lz,s,k)=>{const [x,z]=loc(it,lx,lz);clut[n].push({x,y:top,z,a:(d.a||0)+Math.PI+(odds(k)-.5)*1.4,s})};
+    if(d.arr==='hot'){const [x,z]=loc(it,0,-.02);lap.push({x,y:top,z,a:(d.a||0)+Math.PI,s:1.25});if(odds(1)<.35)stuff('takeawayCup',w/2-.2,.06,1.4,2);return}
     if(d.mon){const [x,z]=loc(it,0,-(dd/2-.2));mon.push({x,y:top,z,a:d.a||0,s:1.45})}
     {const [x,z]=loc(it,-.02,dd/2-.24);kb.push({x,y:top,z,a:(d.a||0)+Math.PI,s:1.5})}
     {const [x,z]=loc(it,.32,dd/2-.22);mouse.push({x,y:top,z,a:(d.a||0)+Math.PI,s:1.4})}
     if(d.arr!=='lab'&&rnd()<.35){const [x,z]=loc(it,-(w/2-.14),-(dd/2-.16));plants.push({x,y:top,z,a:rnd()*6,s:1.5+rnd()*.5,k:1+Math.floor(rnd()*3)})}
+    if(d.arr==='lab')return;
+    const cup=odds(3);if(cup<.38)stuff('mug',w/2-.2,dd/2-.36,1.4,4);else if(cup<.55)stuff('takeawayCup',w/2-.2,dd/2-.36,1.4,4);
+    if(odds(5)<.25)stuff('headphones',-(w/2-.24),dd/2-.3,1.4,6);
+    const back=odds(7);if(back<.22)stuff('bookStack',w/2-.22,-(dd/2-.2),1.3,8);else if(back<.34)stuff('cactus',w/2-.18,-(dd/2-.17),1.5,8);
   });
   deskG.commit();if(deskG.mesh)BAKE.reg(deskG.mesh,false);legB.done();scrB.done();
   // screens: a document, code or a chip layout, picked per desk
@@ -339,6 +384,7 @@ function buildDesks(m){
   placeKit('computerScreen',mon,{mats:{metalDark:std('monBezel','#1C1E21',.4,.3),metal:std('monBack','#2E3135',.4,.5)}});
   placeKit('computerKeyboard',kb);placeKit('computerMouse',mouse);placeKit('laptop',lap,{mats:{metal:M.screen(),metalDark:std('lapBody','#3A3E44',.45,.5)}});
   for(const k of [1,2,3])placeKit('plantSmall'+k,plants.filter(p=>p.k===k));
+  for(const n in clut)placeKit(n,clut[n],{cast:false});
 }
 
 /* ---------- pushable chairs: Kenney office chairs, bar stools and guest chairs, one instanced group per material ---------- */
@@ -463,6 +509,6 @@ function floor(m){
 function enter(){FX.clear();BAKE.enter();scene.environment=S.hd?environment():null;bootGrace=performance.now()+5000;gpuMs=-1}
 
 loadKit();
-return{floor,enter,restyle:()=>applyQuality(qLevel),draw:()=>{if(S.hd&&fxOn)composer.render(1/60);else renderer.render(scene,camera)},buildChairs,chairMatrix,chairPaint,mat:roleMat,applyQuality,setQuality,pixelRatio,render,resizeFx,qUI,KIT,LEVELS,
+return{floor,campusItems,enter,restyle:()=>applyQuality(qLevel),draw:()=>{if(S.hd&&fxOn)composer.render(1/60);else renderer.render(scene,camera)},buildChairs,chairMatrix,chairPaint,mat:roleMat,applyQuality,setQuality,pixelRatio,render,resizeFx,qUI,KIT,LEVELS,
   get quality(){return{mode:qMode,level:LEVELS[qLevel].n,gpuMs,fps,timer:!!TQ,fx:fxOn}},get passes(){return{composer,gtao,bloom}}};
 })();

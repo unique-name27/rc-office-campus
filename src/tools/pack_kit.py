@@ -5,8 +5,10 @@ usage: python -I src/tools/pack_kit.py
 Sources (GLB, Y up, meters):
   src/assets/kenney/*.glb  Kenney Furniture Kit 2.1 (CC0, www.kenney.nl), the pieces the Studio style uses
   src/assets/lab/*.glb     lab props built in Blender from code (src/blender/props.py), with baked AO in COLOR_0
+  src/assets/patch/*.glb   Polyfork models (CC BY 4.0) found on patch.gg, colored per vertex (manifest.json, CREDITS.md)
 Each model is flattened (node transforms applied) and merged per material. Positions are int16 scaled per model,
-normals int8, UVs uint16 (lab props only: their screens get a live image), AO uint8 (lab props only).
+normals int8, UVs uint16 (lab props only: their screens get a live image), AO uint8 (lab props only), vertex colors
+as sRGB uint8 (patch models only).
 """
 import base64, json, math, os, struct
 
@@ -60,7 +62,11 @@ def xf_dir(m, d):
 def b64(fmt, vals): return base64.b64encode(struct.pack('<%d%s' % (len(vals), fmt), *vals)).decode()
 
 
-def pack(path, keep_uv_ao):
+def srgb8(x):  # linear 0..1 -> sRGB byte (vertex colors are stored in sRGB so dark colors keep their steps)
+    x = min(1, max(0, x)); return round(255 * (12.92 * x if x <= .0031308 else 1.055 * x ** (1 / 2.4) - .055))
+
+
+def pack(path, keep_uv_ao, keep_vc=False):
     g, bins = read_glb(path); groups = {}; mats = g.get('materials', [])
     def walk(ni, parent):
         n = g['nodes'][ni]; m = mat4_mul(parent, node_matrix(n))
@@ -69,12 +75,13 @@ def pack(path, keep_uv_ao):
                 at = prim['attributes']; P = accessor(g, bins, at['POSITION']); N = accessor(g, bins, at['NORMAL'])
                 mi = prim.get('material'); name = mats[mi].get('name', 'mat%d' % mi) if mi is not None else '_defaultMat'
                 U = accessor(g, bins, at['TEXCOORD_0']) if keep_uv_ao and name == 'screen' and 'TEXCOORD_0' in at else None  # only screens use UVs
-                C = accessor(g, bins, at['COLOR_0']) if keep_uv_ao and 'COLOR_0' in at else None
+                C = accessor(g, bins, at['COLOR_0']) if (keep_uv_ao or keep_vc) and 'COLOR_0' in at else None
                 I = [i[0] for i in accessor(g, bins, prim['indices'])] if 'indices' in prim else list(range(len(P)))
                 gr = groups.setdefault(name, {'v': [], 'i': [], 'mat': mats[mi] if mi is not None else {}})
                 base = len(gr['v'])
                 for k in range(len(P)):
-                    gr['v'].append((xf_point(m, P[k]), xf_dir(m, N[k]), U[k] if U else None, C[k][0] if C else None))
+                    gr['v'].append((xf_point(m, P[k]), xf_dir(m, N[k]), U[k] if U else None, C[k][0] if C and not keep_vc else None,
+                                    tuple(srgb8(c) for c in C[k][:3]) if C and keep_vc else None))
                 gr['i'] += [base + i for i in I]
         for c in n.get('children', []): walk(c, m)
     I4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -102,23 +109,26 @@ def pack(path, keep_uv_ao):
                 if any(sum(n[i] * GV[GI[t + k]][1][i] for i in range(3)) < .995 for k in range(3)): return False
             return True
         if flat_ok():
+            # a flat corner is its position (plus its color, for vertex-colored models)
             remap, idx = {}, []
             for v in GV:
-                key = tuple(round(c * q) for c in v[0]); remap.setdefault(key, len(remap)); idx.append(remap[key])
+                key = (tuple(round(c * q) for c in v[0]), v[4]); remap.setdefault(key, len(remap)); idx.append(remap[key])
             V = list(remap.keys()); I = [idx[i] for i in GI]
-            rec['f'] = 1; rec['p'] = b64('h', [c for v in V for c in v]); rec['i'] = b64('H' if len(V) < 65536 else 'I', I); rec['w'] = 2 if len(V) < 65536 else 4
+            rec['f'] = 1; rec['p'] = b64('h', [c for v in V for c in v[0]]); rec['i'] = b64('H' if len(V) < 65536 else 'I', I); rec['w'] = 2 if len(V) < 65536 else 4
+            if V and V[0][1] is not None: rec['vc'] = b64('B', [c for v in V for c in v[1]])
             parts.append(rec); tris += len(I) // 3; continue
         # quantize, then share identical vertices
         remap, V, idx = {}, [], []
         for v in gr['v']:
             key = (tuple(round(c * q) for c in v[0]), tuple(round(c * 127) for c in v[1]),
-                   tuple(round(min(1, max(0, c)) * 65535) for c in v[2]) if v[2] is not None else None, round(min(1, max(0, v[3])) * 255) if v[3] is not None else None)
+                   tuple(round(min(1, max(0, c)) * 65535) for c in v[2]) if v[2] is not None else None, round(min(1, max(0, v[3])) * 255) if v[3] is not None else None, v[4])
             remap.setdefault(key, len(remap)); idx.append(remap[key])
         V = list(remap.keys()); gr['i'] = [idx[i] for i in gr['i']]
         rec['p'] = b64('h', [c for v in V for c in v[0]])
         rec['n'] = b64('b', [c for v in V for c in v[1]])
         if V and V[0][2] is not None: rec['u'] = b64('H', [c for v in V for c in v[2]])
         if V and V[0][3] is not None: rec['a'] = b64('B', [v[3] for v in V])
+        if V and V[0][4] is not None: rec['vc'] = b64('B', [c for v in V for c in v[4]])
         rec['i'] = b64('H' if len(V) < 65536 else 'I', gr['i']); rec['w'] = 2 if len(V) < 65536 else 4
         parts.append(rec); tris += len(gr['i']) // 3
     return {'q': round(q, 3), 'parts': parts}, tris
@@ -126,14 +136,30 @@ def pack(path, keep_uv_ao):
 
 def main():
     out, total = {}, 0
-    for sub, keep in (('kenney', False), ('lab', True)):
+    for sub, keep, vc in (('kenney', False, False), ('lab', True, False), ('patch', False, True)):
         d = os.path.join(SRC, 'assets', sub)
         for f in sorted(os.listdir(d)):
             if not f.endswith('.glb'): continue
-            rec, tris = pack(os.path.join(d, f), keep); out[f[:-4]] = rec; total += tris
+            rec, tris = pack(os.path.join(d, f), keep, vc); out[f[:-4]] = rec; total += tris
             print('%-26s %6d tris' % (f, tris))
+    # CC BY 4.0 wants a credit per model, with its source, the license and a note that it was changed: in the page
+    # itself (this comment) and in src/assets/patch/CREDITS.md
+    man = json.load(open(os.path.join(SRC, 'assets', 'patch', 'manifest.json'), encoding='utf-8'))
+    lic = 'CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)'
+    credit = ['%s by Polyfork, %s, %s' % (a['title'], a['source'], lic) for a in man]
+    changed = 'Changed: flattened, quantized and packed into this page, then scaled, tiled and placed by the game.'
     js = ('// generated by src/tools/pack_kit.py from src/assets (Kenney Furniture Kit, CC0, www.kenney.nl; lab props from src/blender/props.py)\n'
-          '// do not edit by hand\nconst KITMESH=' + json.dumps(out, separators=(',', ':')) + ';\n')
+          '// do not edit by hand\n// Models found on patch.gg (https://patch.gg/create/toolbox/assets):\n'
+          + ''.join('//   %s\n' % c for c in credit) + '//   %s\n' % changed
+          + 'const KITMESH=' + json.dumps(out, separators=(',', ':')) + ';\n')
+    md = ('# Credits: models from patch.gg\n\nThese models were found on [patch.gg](https://patch.gg/create/toolbox/assets) and are made by\n'
+          '[Polyfork](https://polyfork.dev). Each is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).\n\n'
+          '| model | in the game | source |\n|---|---|---|\n'
+          + ''.join('| %s | `%s` | %s |\n' % (a['title'], a['name'], a['source']) for a in man)
+          + '\nChanged: flattened, quantized and packed into the game\'s page (`src/js/kit-meshes.js`), then scaled, tiled and placed\n'
+            'by the game. The GLB files here are the published originals (`manifest.json` has their checksums).\n'
+            'Generated by `src/tools/pack_kit.py`.\n')
+    open(os.path.join(SRC, 'assets', 'patch', 'CREDITS.md'), 'w', encoding='utf-8', newline='\n').write(md)
     open(OUT, 'w', encoding='utf-8', newline='\n').write(js)
     print('wrote %s  %d models  %d tris  %.1f KB' % (OUT, len(out), total, len(js) / 1024))
 
