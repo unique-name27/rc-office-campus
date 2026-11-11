@@ -419,6 +419,7 @@ function qUI(){
   $('qnote').textContent=qMode==='auto'?`Auto is using ${LEVELS[qLevel].n}${LEVELS[qLevel].n==='Lowest'?' (reduced resolution)':''}${gpuMs>=0?` · ${fps} fps, GPU ${gpuMs.toFixed(1)} ms`:fps?` · ${fps} fps`:''}`:`${LEVELS[qLevel].n}, fixed${gpuMs>=0?` · ${fps} fps, GPU ${gpuMs.toFixed(1)} ms`:fps?` · ${fps} fps`:''}`;
 }
 function render(dt){
+  FX.frame(dt);
   let tq=null;if(TQ&&qPend.length<6){tq=gl.createQuery();gl.beginQuery(TQ.TIME_ELAPSED_EXT,tq)}
   if(S.hd&&fxOn)composer.render(dt);else renderer.render(scene,camera);
   if(tq){gl.endQuery(TQ.TIME_ELAPSED_EXT);qPend.push(tq)}if(TQ)gpuPoll();dtMs=dtMs*.95+dt*1000*.05;
@@ -436,7 +437,7 @@ function floor(m){
   return (m.items||[]).filter(it=>!TYPES.has(it.t)); // anything else is drawn by the game's own builder
 }
 // a new world: light it, and give Auto a few seconds before it judges the frame rate
-function enter(){scene.environment=S.hd?environment():null;bootGrace=performance.now()+5000;gpuMs=-1}
+function enter(){FX.clear();scene.environment=S.hd?environment():null;bootGrace=performance.now()+5000;gpuMs=-1}
 
 loadKit();
 return{floor,enter,restyle:()=>applyQuality(qLevel),draw:()=>{if(S.hd&&fxOn)composer.render(1/60);else renderer.render(scene,camera)},buildChairs,chairMatrix,chairPaint,mat:roleMat,applyQuality,setQuality,pixelRatio,render,resizeFx,qUI,KIT,LEVELS,
