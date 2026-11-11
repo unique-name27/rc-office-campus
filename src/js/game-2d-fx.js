@@ -119,5 +119,10 @@ function frame(dt){
   for(let k=0;k<MAX_SP;k++){const s=spS[k];if(s.on){s.t+=dt;splashFrame(s,k)}}
   boxG.commit();cylG.commit();dropG.commit();
 }
+// a hard landing on a desk top (off a ramp, a dog or cat leaping up) knocks its things off too. SFX.land is the game's own
+// heavy-landing moment (carStep, the player's avatar only), so listen there rather than add another hook to carStep;
+// landing on the kitchen counter splashes the same way
+if(typeof SFX!=="undefined"&&SFX.land){const land0=SFX.land;SFX.land=s=>{land0(s);
+  try{if(s>2.4&&typeof me!=="undefined"&&me.y>.5){const sp=Math.hypot(me.vx,me.vz)||1;crash(me.x,me.z,SC_HIT+s,{x:me.x-me.vx/sp*.5,z:me.z-me.vz/sp*.5})}}catch(_){}}}
 return{crash,frame,clear};
 })();
