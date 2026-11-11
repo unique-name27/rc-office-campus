@@ -391,7 +391,7 @@ function post(){
   {const gs=gtao.setSize.bind(gtao);gtao.setSize=(w,h)=>gs(Math.ceil(w*aoScale),Math.ceil(h*aoScale))}
   gtao.blendIntensity=1;
   // labels, tags and lines are not surfaces: keep them out of the AO pass
-  {const ov=gtao.overrideVisibility.bind(gtao);gtao.overrideVisibility=()=>{ov();scene.traverse(o=>{if(o.isSprite||o.isLine||o.isPoints)o.visible=false})}}
+  {const ov=gtao.overrideVisibility.bind(gtao);gtao.overrideVisibility=()=>{ov();scene.traverse(o=>{if(o.isSprite||o.isLine||o.isPoints||o.userData.noAO)o.visible=false})}}
   composer.addPass(gtao);
   bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.3,.35,1.5);composer.addPass(bloom); // only true emissives (LEDs, lamps) pass the threshold
   // one NaN or infinite pixel would be blurred across the whole screen (a black flash): bloom ignores them

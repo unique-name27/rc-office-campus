@@ -59,6 +59,24 @@ body.moving:not([data-mode="overview"]) #start:not(:hover):not(:focus-within){op
 body:not([data-mode="overview"]) .bl{padding:6px 8px;gap:4px 8px;grid-template-columns:minmax(72px,1fr) auto}body:not([data-mode="overview"]) .bl .fls{flex-wrap:wrap;justify-content:flex-end}body:not([data-mode="overview"]) .bl .bs{display:none}
 .fl.out{min-width:64px}
 @media (min-width:761px) and (max-width:1180px){body:not([data-mode="overview"]):not([data-opts="0"]):not([data-find="1"]) #status{left:370px;transform:none;max-width:calc(100vw - 370px - 250px)}}
+/* Banana Brawl: hearts, the item slot and score up top; the standings under the map; a big Item button on touch */
+.brrow .note{font-size:12px;color:var(--muted);line-height:1.3;flex:1;min-width:140px}
+#brawlHud{position:fixed;z-index:6;left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top,0px));display:flex;align-items:center;gap:12px;padding:8px 8px 8px 14px;box-sizing:border-box;max-width:calc(100vw - 24px)}
+body.brawl #status{top:calc(140px + env(safe-area-inset-top,0px))}body.brawl #toast{top:calc(186px + env(safe-area-inset-top,0px))}body.brawl #start{z-index:7}
+body[data-find="1"] #brawlHud{display:none}
+@media (min-width:761px){body.brawl.touch[data-opts="1"]:not([data-mode="overview"]):not([data-find="1"]) #speedo{top:calc(140px + env(safe-area-inset-top,0px))}}
+@media (min-width:761px) and (max-width:880px){body:not(.touch) #brawlHud{left:max(12px,env(safe-area-inset-left,0px));transform:none}}
+.hearts{display:flex;gap:4px}.hrt{width:22px;height:20px;background:#E4572E;clip-path:path("M11 19.5 C 4.5 14.6 0.5 10.8 0.5 6.3 C 0.5 3 3 0.5 6 0.5 C 8.3 0.5 10.1 1.8 11 3.6 C 11.9 1.8 13.7 0.5 16 0.5 C 19 0.5 21.5 3 21.5 6.3 C 21.5 10.8 17.5 14.6 11 19.5 Z");transition:transform .2s}
+.hrt.off{background:var(--line);transform:scale(.85)}
+.bri{position:relative}.slot{width:46px;height:46px;border-radius:12px;border:2px solid var(--accent);background:var(--chip);display:grid;place-items:center;font:700 18px var(--display)}
+.slot svg{width:38px;height:38px}.slot[data-empty="1"]{border-style:dashed;border-color:var(--line)}
+#brUses{position:absolute;right:-6px;bottom:-6px;font:800 12px var(--display);background:var(--accent);color:var(--on-accent);border-radius:8px;padding:0 5px}#brUses:empty{display:none}
+.brt{display:flex;flex-direction:column;gap:2px;min-width:0}.brt b{font-size:14px;white-space:nowrap}.brt span{font:500 11px var(--mono);color:var(--muted);white-space:nowrap}
+#brawlBoard{position:fixed;z-index:5;right:max(12px,env(safe-area-inset-right,0px));top:calc(258px + env(safe-area-inset-top,0px));width:236px;padding:10px 12px;margin:0;list-style:none;display:flex;flex-direction:column;gap:5px;box-sizing:border-box}
+#brawlBoard[hidden]{display:none}#brawlBoard li{display:flex;align-items:center;gap:7px;font-size:12px}#brawlBoard li.me{font-weight:800}
+#brawlBoard .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#brawlBoard .st{font:500 11px var(--mono);color:var(--muted)}
+.pitem{position:fixed;z-index:6;right:max(14px,env(safe-area-inset-right,0px));bottom:calc(206px + env(safe-area-inset-bottom,0px));width:96px;height:66px;display:none;place-items:center;font-size:14px}
+body.brawl.touch[data-mode="drive"] .pitem{display:grid}.pitem svg{width:46px;height:46px}.pitem[data-empty="1"]{opacity:.55}
 #start h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.05}
 #start p{margin:0;font-size:14px;line-height:1.45;color:var(--muted)}
 .lbl{font:500 11px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
@@ -249,6 +267,8 @@ body.touch #help{display:none}
   #mapwrap{padding:6px}
   #status{max-width:calc(100vw - 190px);left:max(12px,env(safe-area-inset-left,0px));transform:none;font-size:12px}
   #legend{display:none}
+  #brawlBoard{display:none!important}
+  #brawlHud{gap:8px;padding:6px 6px 6px 10px}#brItemN{display:none}#brLeave kbd{display:none}
   #help{display:none}
   .brand span{display:none}
   .brand{max-width:34vw}
@@ -257,8 +277,9 @@ body.touch #help{display:none}
 @media (max-width:760px) and (min-height:521px){
   body.touch #status{top:calc(196px + env(safe-area-inset-top,0px));max-width:calc(100vw - 24px)}
   body.touch #toast{top:calc(240px + env(safe-area-inset-top,0px))}
+  #brawlHud{top:calc(192px + env(safe-area-inset-top,0px))}body.brawl.touch #status{top:calc(264px + env(safe-area-inset-top,0px))}body.brawl.touch #toast{top:calc(312px + env(safe-area-inset-top,0px))}
 }
-@media (max-height:520px){body.touch #status{top:calc(128px + env(safe-area-inset-top,0px))}body.touch #elev{bottom:calc(14px + env(safe-area-inset-bottom,0px))}}
+@media (max-height:520px){body.touch #brawlHud{top:calc(64px + env(safe-area-inset-top,0px))}#brawlBoard{display:none!important}body.touch .pitem{bottom:calc(18px + env(safe-area-inset-bottom,0px));right:calc(max(14px,env(safe-area-inset-right,0px)) + 216px)}body.touch #status{top:calc(128px + env(safe-area-inset-top,0px))}body.touch #elev{bottom:calc(14px + env(safe-area-inset-bottom,0px))}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -286,6 +307,7 @@ body.touch #help{display:none}
 
 <section id="start" class="glass hud" aria-labelledby="startH">
   <div class="row opth"><div class="kick" id="stKick"></div><button class="tb no-o" id="optsHide" type="button" title="Hide the options (Esc brings them back)">Hide <kbd>Esc</kbd></button></div>
+  <div class="row no-o brrow"><button class="primary" id="bBrawl" type="button">Banana Brawl <kbd>B</kbd></button><span class="note">Throw bananas at coworkers on this floor (or at bots)</span></div>
   <div class="row no-c no-d no-w" id="stNav"><button class="tb" id="bUp2" type="button">← Campus</button><div class="fls" id="flChips" role="group" aria-label="Floors in this building"></div></div>
   <h1 id="startH" class="no-d no-w">Drive the campus</h1>
   <p id="stP" class="no-d no-w"></p>
@@ -364,6 +386,13 @@ body.touch #help{display:none}
   <div class="row"><button class="lnk" id="meUnclaim" type="button" hidden>This isn't my desk</button></div>
 </section>
 
+<section id="brawlHud" class="glass hud no-o no-w" hidden aria-label="Banana Brawl">
+  <div id="brHearts" class="hearts" role="img"></div>
+  <div class="bri"><div id="brItem" class="slot" data-empty="1"></div><span id="brUses"></span></div>
+  <div class="brt"><b id="brItemN">Grab a crate</b><span id="brScore" role="status">0 KO · 0 hits</span></div>
+  <button class="tb" id="brLeave" type="button">Leave <kbd>B</kbd></button>
+</section>
+<ol id="brawlBoard" class="glass hud list no-o no-w" hidden aria-label="Brawl standings"></ol>
 <div id="mapwrap" class="glass hud no-o"><canvas id="map" width="440" height="280" aria-label="Top view of where you are"></canvas><div class="cap"><span id="mapCap">Top view</span><span id="coords">—</span></div></div>
 <div id="status" class="glass hud no-o" hidden></div>
 <div id="speedo" class="glass hud no-o no-w"><div><span class="v" id="spd">0</span><span class="u">km/h</span></div><div class="meter" aria-hidden="true"><i id="boostBar"></i></div><div class="meter sk" aria-hidden="true"><i id="skillBar"></i></div><div class="tags"><span id="tBoostTag">Boost</span><span id="tDriftTag">Drift</span><span id="tAirTag">Air</span><span id="tSkillTag">Turbo</span></div></div>
@@ -385,6 +414,7 @@ body.touch #help{display:none}
     <button class="pd" id="pHorn" type="button">Horn</button>
     <button class="pd" id="pBrake" type="button">Brake</button>
   </div>
+  <button class="pd pitem" id="pItem" type="button" data-empty="1">Item</button>
 </div>
 
 <div id="count" aria-hidden="true"></div>

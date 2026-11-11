@@ -18,7 +18,11 @@ Files (all under `v4/`):
 | `js/nav.js` | `NAV` | agent | nothing |
 | `js/importers.js` | `IMPORT` | agent | nothing (pdf.js passed in at call time) |
 | `js/editor.js` | `EDITOR` | agent | nothing at load; gets helpers via `open(opts)` |
+| `js/props.js` | `PROPS` | agent | nothing (section 10) |
 | `js/game.js` | — | main | everything above + THREE |
+| `js/game-2f-physics.js` | `PHYS` | agent | the game scope, `PROPS`, Rapier (lazy, optional; section 10) |
+| `js/game-2d-fx.js` | `FX` | agent | the game scope, `FX_DATA` (`js/fx-data.js`, from `src/blender/fx_sim.py`; section 11) |
+| `js/game-2e-bake.js` | `BAKE` | agent | the game scope, `BAKES` (`js/bake-data.js`, from `src/tools/bake/`; section 11) |
 
 ## Module rules (all modules)
 * Exactly one top-level declaration: `const NAME=(()=>{ ... return { ... }; })();` — no `import`/`export`/`require`, no other globals,
@@ -186,6 +190,22 @@ EDITOR.open({
 }) -> { close() }
 ```
 
+## 8b. BRAWL  (`BRAWL`)  — Banana Brawl rules (pure); the game side is `js/game-3b-brawl.js`, item art `js/game-3a-brawl-art.js`
+No host: each player is the authority on themselves. Presence field `bw` (null when not brawling):
+`{ hp, sc (hits), ko (KOs), it (item | null), n (uses), sh (bubble 0/1), out (knocked out 0/1), iv (can't be hit right now 0/1),
+tk (heartbeat: whole seconds; presence only goes out when something changes, and peers drop a brawler after 3 s without a new one),
+pj: [[id, kind, x, y, z, vx, vz]] (≤10 live throws), hb: [[throwerPeer, throwId, 0 hit | 1 KO | 2 blocked by a bubble]] (hits taken,
+last ~4 s, ≤8) }`. A victim decides its own hits from the thrower's `pj`;
+the thrower counts a point when its peer shows up in someone's `hb` (`credits`). Bots exist only while nobody else brawls on the floor.
+```js
+BRAWL.ITEMS / ITEM / PJ;  BRAWL.rollItem(u, behind) -> 'banana'|'bunch'|'paper'|'plane'|'coffee'|'bubble'
+BRAWL.crateSpots(floorKey, [[x,z]], n, spacing) -> [[x,z]]           // the same on every client
+BRAWL.launch(kind, car, id, back) -> throw;  BRAWL.step(throw, dt, {blocked, ground, target}) -> alive (a banana lands as a peel)
+BRAWL.touches(throw, {x,y,z,r,tall});  BRAWL.armed(throw, own)
+BRAWL.fresh(now) / hit(state, now) -> {state, took, ko, blocked} / respawn(state, now)
+BRAWL.enc(...) -> bw;  BRAWL.validBw(untrusted) -> bw | null;  BRAWL.credits(myPeer, [[peer, bw]], countedSet, mineIds) -> [{victim, id, ko, blocked}];  BRAWL.standings(rows)
+```
+
 ## 9. PEOPLE  (`PEOPLE`)  — how coworkers look (pure)
 Coworkers are creatures by default; the plain seated person is a pick. Everything is chosen from a hash of `"<floor key>|<desk id>"`
 (never a name or title).
@@ -204,6 +224,57 @@ PEOPLE.resolve(claims, locateFn, nameMatch) -> { winners: Map key -> claim, stat
 Claims: db doc `looks/<uid>` = `{ w, desk, name, look, at }`, one per viewer. Rules: `looks` read view / write admin (editors can
 remove a claim), `looks/{self}` read view / write interact. Two claims on one person: the claimant whose own profile name matches the
 seating name wins, then the earliest `at`. With sample people, or no db, your claim lives in localStorage `rc-mylook` (this browser only).
+
+## 10. Loose props and live physics  (`PROPS` in `js/props.js`, pure; `PHYS` in `js/game-2f-physics.js`, game)
+`PROPS` follows the module rules above (no THREE, no DOM, seeded randomness) and is tested by `tests/props.test.js`.
+```js
+PROPS.KINDS -> { box, boxS, ream, bin, bottle, cone }   // each { h, m (kg), and w,d (box-like) or r (round) }, meters
+PROPS.plan(model, key, free) -> [{ kind, x, y, z, a, g }]   // 20 to 40 props, the same for the same floor key and model
+   free(x, z, r) -> bool: true when a circle of radius r touches no wall, post or furniture (the game asks its collider grid and spotFree)
+   y = height of the prop's center (stacked props rest on the ones below), a = yaw (three's rotation.y), g = stack/cluster number
+   Paper reams and a bin by each printer, water bottles by the fridge, a bin by the kitchen counter, cones outside restrooms and
+   the kitchen, box stacks along `ext`/`int` walls. Kept clear of the spawn point, elevator and exit pads, the coffee pickup,
+   ramps, route end points (`dests`) and chairs.
+PROPS.ticks(clock = { acc }, dt, step, max) -> steps to run now   // fixed-step accumulator; time beyond `max` steps is dropped
+PROPS.span(gridCollider, wallH) -> { y0, y1 } | null              // height of a game grid collider in the physics world
+```
+`PHYS` is part of the game scope (it uses `mat`/`IG`/`crMerge`, the collider grid, `chairs`, `me`, `bot`, `remotes`):
+```js
+PHYS.floor()            // called at the end of loadColliders: a world was (re)entered, its props start over
+PHYS.clear()            // called by clearRoot: forget the instanced meshes (clearRoot disposed them)
+PHYS.build()            // called at the end of buildWorld: plan (if the floor is new), build one instanced mesh per prop kind
+PHYS.frame(dt)          // called once per frame() after remoteFrame: fixed 60 Hz steps, at most 3 per frame
+PHYS.burst(x, y, z, kind = "card" | "paper" | "confetti") -> 6 | 0   // six pieces fly up, tumble and are gone after 3 s; 0 (and nothing
+                                                                     // happens) while the engine isn't running. At most 48 pieces live.
+PHYS.blast(x, z, r, v = 3) -> n      // push every prop within r meters outward at up to v m/s; 0 without the engine
+PHYS.track(car) / PHYS.untrack(car)  // extra car-like objects { x, y, z, h, kind } that should shove props (bots of a new mode)
+PHYS.ready, PHYS.state ("idle" | "wait" | "loading" | "ready" | "failed"), PHYS.error, PHYS.props, PHYS.stats, PHYS.idle
+```
+* The engine is `@dimforge/rapier3d-compat` at an exact version (`PHYS.VER`), fetched with a dynamic `import()` from jsDelivr 350 ms after
+  the first frame. If the import or the WebAssembly start-up fails (offline, a blocked CDN, a content security policy without
+  WebAssembly), `PHYS.state` becomes `"failed"`, one `console.info` line says so, and the props are not shown (nothing would stop a
+  car driving through them), so the floors look and play exactly as before. They appear once the engine is running. `#nophys` in the page address turns the engine off on purpose.
+* One physics world per entered floor (and one, without props, for the outside): the floor, every collider of the game's grid that
+  blocks cars (mask 1) or is a surface (mask 8) as a fixed box or cylinder (desk legs under 6 cm are left out), ramps as a small
+  triangle mesh from `groundY`, props as dynamic bodies, chairs and every car (me, the Mailbot, coworkers on this floor,
+  `PHYS.track`ed ones) as kinematic bodies that follow the game's own positions. **Props never push back**: `carStep`, the chairs'
+  physics and the collider grid are untouched, so races and routes behave the same with or without the engine.
+* Props are local to each browser: coworkers do not see your knocked-over boxes. A style change keeps them where they lie;
+  entering the floor again (or any other) puts them back.
+* Cost: nothing is stepped while every prop rests and no car or rolling chair is within 1.8 m of one. Only bodies that moved
+  get their instance matrix rewritten.
+
+## 11. Baked light, Blender materials, pre-recorded moments  (`BAKE`, `PBR_DATA`, `FX`; Studio only for the bake)
+* `BAKE.world(key, model, kind)` runs at the end of `buildWorld` (before `PHYS.build`). It hashes the world's static geometry
+  (the batches HD registers with `BAKE.reg` plus the flat ground pieces) and uses `BAKES[key]` only when the hash matches;
+  otherwise realtime Studio. Anything that moves must not enter that hash: mark its meshes `userData.dyn = true`
+  (the physics props and debris and the brawl items do; the figures and chairs are skipped by the capture itself). Full details and re-baking: `src/tools/bake/README.md`.
+* On a baked world the sun, fill light and shadow map are off and GTAO is skipped; a hemisphere light measured from the
+  bake lights cars, creatures, chairs and the physics props.
+* `PBR_DATA` (`js/pbr-data.js`, from `src/blender/pbr_textures.py` + `src/tools/pack_pbr.py`): tiling albedo, normal and
+  roughness sets for concrete, terrazzo, tile, carpet, birch, oak and metal; HD falls back to its canvas finishes without them.
+* `FX.crash(x, z, speed, car, isMe)` (from `carStep` on a hit over 2.2 m/s): desk scatter or a coffee splash, replayed from
+  Blender tracks with instanced groups; `FX.frame(dt)` from `HD.render`, `FX.clear()` on a new world.
 
 ## UI tokens (for EDITOR, which draws its own DOM)
 CSS variables on :root that follow the current theme: `--ground --ink --muted --glass --glass2 --line --accent --on-accent --chip --btn`,

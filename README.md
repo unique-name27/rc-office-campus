@@ -15,15 +15,18 @@ Drive a tiny remote-control car (or run around as a dog or a cat) on a two-build
 - **Races.** "Race there" sets up gates from a standard start to any desk or room. There's also a coffee run on every floor: kitchen, then five desks.
 - **Five graphic styles.** Studio (realistic materials in soft daylight, with ambient occlusion, a little glow, Kenney furniture and lab gear made in Blender), Neon night, Blueprint, Comic and Vector arcade. Keys 1–5 switch them; N toggles Neon night.
 - **Quality levels for Studio.** Auto (the default) times the graphics card and steps between High, Balanced and Low to stay smooth, so laptops can run it too. You can also fix a level in the Style panel.
+- **Baked light and Blender materials in Studio.** On the sample floors and the campus, Studio uses light baked in Blender: light bouncing off the walls, soft shadows and ambient occlusion, and it is lighter on the graphics card: 1.4 to 2.6 times less time per frame than realtime light at High. Floors, carpet, desks and metal use textures made in Blender. A floor whose layout you change switches back to realtime light by itself. How to re-bake: `src/tools/bake/README.md`.
 - **Play as a car, a dog or a cat.** All three are modeled in Blender from code (`src/blender/avatars.py`). Everyone can jump, and P switches between them. Each has a special skill:
   - **Car: charged drift.** Hold Space through a turn: blue sparks mean a turbo is ready (let go for a burst); keep holding and at orange the big turbo fires by itself. Shift boosts.
   - **Dog: big woof.** H barks and pushes nearby chairs (with whoever sits on them) and the Mailbot out of the way.
   - **Cat: double jump.** Press jump again in the air, or just keep holding it, for a flip and a second jump. Cats land softly and can reach desks, counters and cabinets.
   Dog and cat times have their own leaderboards.
-- **Coworkers at their desks are creatures.** Dragons, dogs, cats, foxes, bears, pandas, bunnies, frogs, penguins, owls, robots, unicorns, dinos and aliens, each typing away in a scarf of its team's color. Who gets what is picked per desk, never from a name. Heads turn as you drive past, and a pushed chair rolls away with whoever sits on it.
+- **Coworkers at their desks are creatures.** Dragons, dogs, cats, foxes, bears, pandas, bunnies, frogs, penguins, owls, robots, unicorns, dinos and aliens, each typing away in a scarf of its team's color. Who gets what is picked per desk, never from a name. Heads turn as you drive past, and a pushed chair rolls away with whoever sits on it. They type in bursts, breathe, stretch now and then and look around.
 - **My look.** Open your own desk and choose **This is me** to pick your creature and its coat, or the plain seated person (shirt, face and hands color, headwear, extras). With sample people (like on this page) your look is saved in your browser only.
+- **Banana Brawl (B).** A kart battle on the floor you're on. Drive through supply crates for an item: a banana (throw it, or drop the peel behind you), a bunch of three, a paper ball that bounces off walls, a paper plane that homes in, coffee (a big boost) or a bubble that blocks one hit. Three hearts; a hit spins you out, and losing your last heart is a KO for whoever threw it. Everyone brawling on the same floor plays together; when nobody else is, three bots (Stapler, Shredder and Laminator) join you.
 - **Real sounds.** The car's motor, horn, the dog's barks and the cat's meows are CC0 recordings (credits in `src/assets/sounds/CREDITS.md`); the motor's pitch follows your speed.
 - **Driving.** Drift (Space), boost (Shift), ramps, pushable chairs, a Mailbot, and chase, bumper, high and top-down cameras.
+- **Loose props you can crash into.** Every floor has 20 to 40 of them: stacks of cardboard boxes along the walls, recycling bins, wet-floor cones, spare water-cooler bottles by the fridge and paper reams by the printers. Drive into them and they tumble, roll and land with a thud (real rigid-body physics from [Rapier](https://rapier.rs/), loaded after the page is up). The dog's big woof blows them over too, and brawl crates burst into cardboard when you grab them. They are back in place when you come back to the floor. Where the physics engine can't load, the floors stay as they were, without the props. Hit a desk hard and its papers, mug and pens fly off; crash into the kitchen counter or the coffee machine and coffee splashes back (both moments are simulated in Blender and replayed).
 - **Setup.** Load seating from a facilities CSV, then edit each floor: load a PNG, JPG or PDF plan and set its scale, trace rooms, import CAD walls (DXF), draw team areas, or place desks from facilities X/Y coordinates.
 
 On this public page, setup changes and imported files stay in your browser tab and are gone on reload. Nothing is uploaded.
@@ -41,6 +44,9 @@ On this public page, setup changes and imported files stay in your browser tab a
 | Find a person or room | / | Find |
 | Overview / campus | O | Overview |
 | Show / hide the options card | Esc | Options |
+| Start / leave Banana Brawl | B | Banana Brawl (options card) |
+| Use your item (hold S to drop a banana behind) | F | Item |
+| Drop a banana behind you | G | Item while braking |
 | Walk ↔ drive | C | Walk |
 | Elevator floor | 1–4 on the elevator pad | tap a floor |
 | Coffee run | Enter | Coffee run |
@@ -73,8 +79,10 @@ node src/tests/campus.test.js
 node src/tests/editor.test.js
 node src/tests/people.test.js
 node src/tests/skills.test.js
+node src/tests/brawl.test.js
+node src/tests/props.test.js
 ```
 
 `src/SPEC.md` describes the data formats: the floor layout spec, the floor model, the routing API, and how importing works.
 
-Built with [three.js](https://threejs.org/) r165. Furniture from Kenney's [Furniture Kit](https://kenney.nl/assets/furniture-kit) (CC0). The car, dog, cat and lab props are built in Blender by scripts in `src/blender/`; `src/tools/pack_kit.py` packs the models into the page.
+Built with [three.js](https://threejs.org/) r165 and the [Rapier](https://rapier.rs/) physics engine (`@dimforge/rapier3d-compat` 0.21.0, Apache-2.0, fetched from jsDelivr when the page is running). Furniture from Kenney's [Furniture Kit](https://kenney.nl/assets/furniture-kit) (CC0). The car, dog, cat and lab props are built in Blender by scripts in `src/blender/`; `src/tools/pack_kit.py` packs the models into the page.

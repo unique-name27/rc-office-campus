@@ -6,9 +6,10 @@ usage: python -I build.py [out.html] [--test]
 import sys, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MODULES = ["layout.js", "campus.js", "nav.js", "importers.js", "editor.js", "people.js", "avatar-meshes.js", "kit-meshes.js", "sound-data.js",
-           "pbr-data.js", "fx-data.js", "bake-data.js"]
-GAME = ["game-1-core.js", "game-1b-avatars.js", "game-2-world.js", "game-2b-people.js", "game-2c-hd.js", "game-2d-fx.js", "game-2e-bake.js", "game-3-play.js", "game-4-ui.js"]
+MODULES = ["layout.js", "campus.js", "nav.js", "importers.js", "editor.js", "people.js", "props.js", "avatar-meshes.js", "kit-meshes.js", "sound-data.js",
+           "brawl.js", "pbr-data.js", "fx-data.js", "bake-data.js"]
+GAME = ["game-1-core.js", "game-1b-avatars.js", "game-2-world.js", "game-2b-people.js", "game-2c-hd.js", "game-2d-fx.js", "game-2e-bake.js",
+        "game-2f-physics.js", "game-3-play.js", "game-3a-brawl-art.js", "game-3b-brawl.js", "game-4-ui.js"]
 # three.js r165 as ES modules from jsDelivr: one copy, shared with the add-ons through the import map
 TV = "0.165.0"
 IMPORTMAP = ('<script type="importmap">\n{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@%s/build/three.module.min.js",'
@@ -41,8 +42,9 @@ window.__rc={get me(){return me},get bot(){return bot},get WKEY(){return WKEY},g
     const db=x=>x>0?(20*Math.log10(x)).toFixed(1):"-inf";return{peakDb:db(pk),rmsDb:db(Math.sqrt(ss/Math.max(1,last))),ms:Math.round(last/sr*1000)}},
   get renderer(){return renderer},get scene(){return scene},get camera(){return camera},ST,get elevAt(){return elevAt},get remotes(){return remotes},syncPeers,walker,get chairs(){return chairs},carStep,groundY,roomFor,onPlat,setAvatar,LAYOUT,CAMPUS,NAV,IMPORT,EDITOR,PEOPLE,
   get FIG(){return FIG},get FIGP(){return FIGP},get figG(){return figG},get LOOKS(){return LOOKS},get lookStatus(){return lookStatus},get lookDocs(){return lookDocs},get myDesk(){return myDesk},get myId(){return myId},
-  recomputeLooks,rebuildFigures,figFrame,openMe,closeMe,deskClaimState,showPick,tidyChairs,chairsStep,
-  get SND(){return SND},get motor(){return motor},get AC(){return AC},BAKE};
+  recomputeLooks,rebuildFigures,figFrame,openMe,closeMe,deskClaimState,showPick,tidyChairs,chairsStep,PHYS,PROPS,spotFree,get cells(){return cells},get RAMPS(){return RAMPS},
+  get SND(){return SND},get motor(){return motor},get AC(){return AC},BAKE,
+  get brawl(){return brawl},brawlStart,brawlLeave,brawlUse,brawlFrame,BRAWL,get myPeer(){return myPeer},set myPeer(v){myPeer=v}};
 """
 
 

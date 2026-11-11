@@ -104,7 +104,7 @@ function carStep(c,ctl,dt,isMe){
   if(c.y<=g){
     // a fall longer than your own hop lands hard (thud, dust, a little shake); a plain hop lands softly
     const heavy=c.air&&(c.kind==="cat"?-c.vy>8.5:c.vy<-1.5&&(!c.hop||-c.vy>P.jump+.6)); // cats land on their feet from up to ~3 m
-    if(heavy){c.squash=Math.min(1,-c.vy/5);if(isMe){SFX.land(-c.vy);shake=Math.max(shake,Math.min(.6,-c.vy*.08))}for(let k=0;k<4;k++)puff(c.x+(Math.random()-.5)*.3,.03,c.z+(Math.random()-.5)*.3,smokeCol(c))}
+    if(heavy){c.squash=Math.min(1,-c.vy/5);if(isMe){SFX.land(-c.vy);FX.land(-c.vy,c);shake=Math.max(shake,Math.min(.6,-c.vy*.08))}for(let k=0;k<4;k++)puff(c.x+(Math.random()-.5)*.3,.03,c.z+(Math.random()-.5)*.3,smokeCol(c))}
     else if(c.air&&c.vy<-1){c.squash=Math.min(.5,-c.vy/9);if(isMe&&c.kind!=="car")SFX.step(c.kind)}
     c.vy=dt>0?Math.min(4.5,(g-c.gPrev)/dt,.4*Math.hypot(c.vx,c.vz)):0;c.y=g;if(c.air&&!c.hop&&c.airT>.35&&isMe)toastAir(c.airT);c.air=false;c.airT=0;c.hop=false;c.airJumps=0;c.bonk=false;
   }else{c.air=(c.y-g)>.012;if(c.air)c.airT+=dt}
@@ -171,6 +171,7 @@ function payTurbo(c,tier,vF,P,isMe){
 }
 // chairs within 2.4 m slide away (the nearer, the faster) and spin; the Mailbot backs off
 function woofAt(x,z,src){
+  PHYS.blast(x,z,2.6,3.2); // loose boxes, bins and cones blow over too
   for(const ch of chairsNear(x,z,2.4)){
     const dx=ch.x-x,dz=ch.z-z,d=Math.hypot(dx,dz);if(d>2.4)continue;
     const a=d>1e-3?Math.atan2(dz,dx):Math.random()*Math.PI*2,v=1+3*(1-d/2.4),ux=Math.cos(a),uz=Math.sin(a),vn=ch.vx*ux+ch.vz*uz;
@@ -286,7 +287,7 @@ function setMode(m){
   $("bSwap").innerHTML=m==="walk"?'Drive <kbd>C</kbd>':(WKIND==="campus"?'Walk <kbd>C</kbd>':'Walk <kbd>C</kbd>');
   $("bCam").innerHTML=camName(camMode)+' <kbd>V</kbd>';
   if(m!=="walk"){tour=null;if(document.pointerLockElement)document.exitPointerLock()}
-  if(m!=="drive"){if(run)runCancel();if(race)raceCancel();closeResult()}
+  if(m!=="drive"){if(run)runCancel();if(race)raceCancel();if(brawl)brawlLeave("You left the brawl.");closeResult()}
   if(m!=="overview"){closeTimes();tip.hidden=true;cv.style.cursor=""}
   if(was==="overview"&&m!=="overview"&&$("start").contains(document.activeElement))document.activeElement.blur(); // arrow keys steer, not a chip
   if(m==="overview")hideElev();
@@ -405,7 +406,7 @@ let elevAt=null,elevLock=null,elevDismissed=null;
 // arriving or respawning on a pad shouldn't pop the elevator panel until you've driven off it once
 function lockPadAt(x,z){if(!WM||WKIND!=="floor")return;for(const e of WM.elevators||[])if(e.pad&&Math.hypot(x-e.pad.x,z-e.pad.z)<(e.pad.r||1)+.8){elevLock=e.id;if(elevAt)hideElev()}}
 function elevFrame(){
-  if(WKIND!=="floor"||fly||trans||mode==="overview"||race||run||!$("result").hidden){if(elevAt)hideElev();return}
+  if(WKIND!=="floor"||fly||trans||mode==="overview"||race||run||brawl||!$("result").hidden){if(elevAt)hideElev();return}
   const p=mode==="walk"?walker:me;let near=null;const lg=curLeg(),wantRide=lg&&lg.end.kind==="elev";
   for(const e of WM.elevators||[]){if(!e.pad)continue;const d=Math.hypot(p.x-e.pad.x,p.z-e.pad.z),r=(e.pad.r||1)+(elevAt&&elevAt.id===e.id?.5:0);
     if(elevDismissed===e.id){if(d>r+.8)elevDismissed=null;continue} // Esc closed it: stays closed until you leave the pad
@@ -432,7 +433,7 @@ async function ride(f){
 /* ---------- building doors (floor 1 exit <-> campus door pads) ---------- */
 let doorLock=true;
 function doorFrame(){
-  if(fly||trans||mode==="overview"||race||run)return;
+  if(fly||trans||mode==="overview"||race||run||brawl)return; // no doors mid-brawl: the arena is this floor
   const p=mode==="walk"?walker:me;
   if(WKIND==="floor"&&WM.exit){const ex=WM.exit,d=Math.hypot(p.x-ex.x,p.z-ex.z),r=ex.r||1.2;if(d<r){if(!doorLock)goOutside()}else if(d>r+1)doorLock=false;return}
   if(WKIND==="campus"){let nearAny=false;for(const b of WM.buildings||[]){const pd=b.door;if(!pd)continue;const d=Math.hypot(p.x-pd.x,p.z-pd.z),r=pd.r||1.2;if(d<r+1)nearAny=true;if(d<r&&!doorLock){goInside(b);return}}if(!nearAny)doorLock=false}
@@ -506,6 +507,7 @@ function computeCoffee(){
 }
 let run=null,lastBeep=4,markerFor=-1,cupsKey="";const cupsDone=[]; // delivered cups stay on the floor they were delivered on
 function runStart(){
+  if(brawl){toast("Leave the brawl first ("+(document.body.classList.contains("touch")?"tap Leave":"B")+"), then start a coffee run.");return}
   if(mode!=="drive"||fly||trans)return;if(WKIND!=="floor"||!ROUTE.length){toast(WKIND==="campus"?"Coffee runs happen inside. Drive into a building.":"This floor has no kitchen for a coffee run.");return}
   if(race)raceCancel();closeResult();tidyChairs();const s=WM.spawn;spawnNear(s.x,s.z,s.a||0);me.cup=false;cupsDone.length=0;cupsKey=WKEY;restoreCups();
   run={phase:"count",cd:3.4,stage:0,t:0};lastBeep=4;updateRunBtn();toast(`Grab coffee in the kitchen, then deliver it to ${ROUTE.length-1} desks`);
@@ -549,6 +551,7 @@ async function startRace(dest,joinT0){
   if(!path||path.pts.length<2||path.len<6){toast(path&&path.len<6?"That's right next to the start. Pick somewhere farther away.":"Couldn't find a race route there.");return}
   let gates=[];try{gates=NAV.gates(path.pts,10)}catch(_){}
   if(!gates.length)gates=[{x:dest.x,z:dest.z,a:0}];
+  if(brawl)brawlLeave("You left the brawl for the race.");
   clearRoute();closeResult();
   if(WKEY!==dest.w||mode!=="drive"){const ok=await goWorld(dest.w,{at:{x:st.x,z:st.z,a:st.a||0},mode:"drive",title:"Race to "+dest.name,sub:floorName(dest.w)});if(!ok)return}
   else{tidyChairs();spawnNear(st.x,st.z,st.a||0)}

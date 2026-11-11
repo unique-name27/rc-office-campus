@@ -20,6 +20,8 @@ function world(opt) {
     PW: 200, PD: 200, WKIND: 'floor', H: 3, REDUCED: true, bot, BOTPATH: [[0, 0], [1, 1]],
     SFX: new Proxy({}, { get: (_, k) => (...a) => calls.push(['SFX.' + k, ...a]) }),
     skillFx: (c, ev, vol, tier) => calls.push(['fx', ev, tier]),
+    PHYS: { blast: (...a) => calls.push(['blast', ...a]) },
+    FX: { crash: (...a) => calls.push(['FX.crash', ...a]), land: (...a) => calls.push(['FX.land', ...a]) },
   };
   const names = Object.keys(env);
   const api = new Function(...names, '"use strict";let presDirty=false;\n' + code + '\n;return {newCar,spawn,carStep,woofAt,IDLE,AVP,G};')(...names.map(n => env[n]));
@@ -161,6 +163,17 @@ test('cat: holding jump under a desk does not waste the air jump on the bump', (
   c.jumpReq = true; const top = run(W, c, .8, ctl({ jumpHeld: true }));
   assert(top <= .72 - .45 + .02, 'stays under the desk, peak ' + top.toFixed(3));
   assert(!W.calls.some(x => x[1] === 'jump2'), 'no air jump fired');
+});
+test('a hard landing tells FX (desk scatter) only for the player, with the landing speed', () => {
+  const W = world(), c = W.newCar(0, 0, 0, '#fff', 'dog');
+  c.y = c.gPrev = 2.5; c.air = true; c.vy = 0; run(W, c, 1.2, ctl());
+  const fx = W.calls.filter(x => x[0] === 'FX.land'), snd = W.calls.filter(x => x[0] === 'SFX.land');
+  assert.strictEqual(fx.length, 1, 'one FX.land'); assert.strictEqual(snd.length, 1, 'one thud');
+  assert(fx[0][1] > 2.4 && Math.abs(fx[0][1] - snd[0][1]) < 1e-9 && fx[0][2] === c, 'same speed, this car');
+  const W2 = world(), b = W2.newCar(0, 0, 0, '#fff', 'dog');
+  b.y = b.gPrev = 2.5; b.air = true; b.vy = 0;
+  for (let i = 0; i < Math.round(1.2 / DT); i++) W2.carStep(b, ctl(), DT, false);
+  assert(!W2.calls.some(x => x[0] === 'FX.land' || x[0] === 'SFX.land'), 'a bot or remote car landing hard does not');
 });
 console.log(`skills: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

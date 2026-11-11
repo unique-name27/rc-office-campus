@@ -42,13 +42,16 @@ addEventListener("keydown",e=>{
     case"KeyN":applyStyle(cur===1?(prevStyle!=null?prevStyle:0):1);break;
     case"KeyM":setMuted(!muted);toast(muted?"Sound off":"Sound on");break;
     case"KeyH":if(mode==="drive")honk();break;
-    case"KeyR":if(mode==="drive"&&!fly&&!trans){if(run)runStart();else if(race)startRace(race.dest);else{const s=WM.spawn||{x:0,z:0,a:0};spawnNear(s.x,s.z,s.a||0);toast("Back at the start")}}break;
+    case"KeyR":if(brawl){toast("No restarts mid-brawl: press B to leave it.");break}if(mode==="drive"&&!fly&&!trans){if(run)runStart();else if(race)startRace(race.dest);else{const s=WM.spawn||{x:0,z:0,a:0};spawnNear(s.x,s.z,s.a||0);toast("Back at the start")}}break;
     case"KeyT":tidyChairs();toast("Chairs tidied");break;
     case"KeyX":if(route||target){clearRoute();toast("Route cleared")}break;
     case"KeyJ":if(mode==="drive"&&!fly&&!trans)me.jumpReq=true;break;
     case"Space":if(mode==="drive"&&!fly&&!trans&&me.kind!=="car")me.jumpReq=true;break;
     case"KeyY":joinRace();break;
     case"KeyP":cycleAvatar();break;
+    case"KeyB":if(!fly&&!trans)brawlToggle();break;
+    case"KeyF":if(brawl)brawlUse(!!(keys.KeyS||keys.ArrowDown));break;
+    case"KeyG":if(brawl)brawlUse(true);break;
     case"KeyL":openMyLook();break;
     case"Enter":if(elevAt&&tag!=="BUTTON"){const f=routeNextFloor();if(f){ride(f);break}}if(mode==="drive"&&!fly&&tag!=="BUTTON"){if(run)runCancel("Coffee run cancelled");else if(race)raceCancel("Race cancelled");else runStart()}break;
   }
@@ -379,6 +382,7 @@ let meTag=null,botTag=null;
 function rebuildTags(){
   disposeSprite(meTag);disposeSprite(botTag);meTag=tagSprite(myName||"You",paint);botTag=tagSprite("Mailbot",bot.paint);tags.add(meTag);tags.add(botTag);
   for(const r of remotes.values()){disposeSprite(r.tag);r.tag=null}
+  if(brawl)for(const b of brawl.bots){disposeSprite(b.tag);b.tag=null}
 }
 function placeTag(s,x,y,z){if(!s)return;s.position.set(x,y,z);const d=camera.position.distanceTo(s.position),k=clamp(d/4.2,1,15)*s.userData.h;s.scale.set(k*s.userData.ar,k,1)}
 const pops=[];
@@ -489,6 +493,7 @@ function hudFrame(){
 }
 function setHelp(){
   const h=$("help");
+  if(mode==="drive"&&brawl){h.innerHTML="<kbd>W A S D</kbd> drive · drive through crates for items · <kbd>F</kbd> use it · <kbd>G</kbd> drop a banana behind you · <kbd>Shift</kbd> boost · <kbd>V</kbd> camera · <kbd>B</kbd> leave the brawl";return}
   if(mode==="drive")h.innerHTML=me.kind==="car"?"<kbd>W A S D</kbd> drive · <kbd>Space</kbd> drift (hold through a turn: turbo) · <kbd>J</kbd> jump · <kbd>Shift</kbd> boost · <kbd>H</kbd> horn · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look"
     :me.kind==="dog"?"<kbd>W A S D</kbd> run · <kbd>Space</kbd> jump · <kbd>Shift</kbd> sprint · <kbd>H</kbd> big woof (pushes chairs) · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look"
     :"<kbd>W A S D</kbd> run · <kbd>Space</kbd> jump, again or hold to double jump · <kbd>Shift</kbd> sprint · <kbd>H</kbd> meow · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look";
@@ -569,7 +574,7 @@ const WKEY_RE=/^(campus|[A-Za-z0-9]{1,8}-\d{1,2})$/;
 function syncPeers(peers){
   const seen=new Set(),now=performance.now();
   for(const p of peers){
-    if(p.sameTab||p.kind!=="viewer")continue;seen.add(p.peer);
+    if(p.sameTab){myPeer=p.peer;continue}if(p.kind!=="viewer")continue;seen.add(p.peer);
     let r=remotes.get(p.peer);
     if(!r){r={peer:p.peer,uid:null,car:newCar(0,0,0,"#9AA0A6"),paint:"#9AA0A6",name:"",m:"o",w:"",has:false,tx:0,tz:0,ty:0,th:0,tp:0,tr:0,vx:0,vz:0,t:0,pres:null,tag:null,wvis:null,isMe:p.isMe,rc:null};remotes.set(p.peer,r)}
     if(r.pres===p.presence)continue;r.pres=p.presence;const pr=p.presence||{};
@@ -586,6 +591,7 @@ function syncPeers(peers){
       r.car.air=pr.a===1;r.car.vF=num(pr.s,-20,20)||0;r.car.steer=num(pr.st,-1,1)||0;r.car.boosting=pr.b===1;r.car.drift=pr.d===1;r.car.driftDir=Math.sign(r.car.steer)||1;r.car.driftTier=r.car.drift?num(pr.dc,0,2)||0:0;r.car.driftT=r.car.driftTier===2?1.2:r.car.driftTier?.8:0;
     }
     if(r.m!=="d"){r.vx=r.vz=0}
+    {const bw=BRAWL.validBw(pr.bw);if(bw){brawlVet(r,bw);r.bwAt=now}if((bw?bw.hp:-1)!==(r.bw?r.bw.hp:-1)){disposeSprite(r.tag);r.tag=null}r.bw=bw}
     r.wx=num(pr.wx,-400,400);r.wz=num(pr.wz,-400,400);r.wy=num(pr.wy,-1e5,1e5)||0;
     const rc=pr.rc&&typeof pr.rc==="object"&&typeof pr.rc.k==="string"&&pr.rc.k.length<140&&num(pr.rc.t0,0,1e15)!=null?{k:pr.rc.k,t0:pr.rc.t0,n:typeof pr.rc.n==="string"?pr.rc.n.slice(0,60):"a race"}:null;
     if(rc&&(!r.rc||r.rc.t0!==rc.t0)&&r.w===WKEY&&mode==="drive"&&!race&&!run&&Date.now()-rc.t0<2600&&rc.t0<Date.now()+1500){joinable={r,rc,until:performance.now()+3000};toast(`${r.name||"A coworker"} is racing to ${rc.n} · ${document.body.classList.contains("touch")?"tap Join race":"press Y to join"}`)}
@@ -632,7 +638,7 @@ function remoteFrame(dt,now){
     if(Math.hypot(px-c.x,pz-c.z)>4){c.x=px;c.z=pz}
     const k=1-Math.exp(-dt*10);c.x+=(px-c.x)*k;c.z+=(pz-c.z)*k;c.y+=(r.ty-c.y)*(1-Math.exp(-dt*16));c.h+=angDiff(c.h,r.th)*k;c.pitch+=(r.tp-c.pitch)*k;c.roll+=(r.tr-c.roll)*k;c.vx=r.vx;c.vz=r.vz;c.lat=0;
     syncCar(c,dt,true);
-    if(!r.tag){r.tag=tagSprite(r.name||"Coworker",r.paint);tags.add(r.tag)}r.tag.visible=true;
+    if(!r.tag){r.tag=tagSprite((r.name||"Coworker")+(r.bw?" "+"♥".repeat(r.bw.hp):""),r.paint);tags.add(r.tag)}r.tag.visible=true;
     if(r.m==="w"&&r.wx!=null){if(!r.wvis&&root)r.wvis=makeWalker(r.paint);if(r.wvis){r.wvis.visible=true;r.wvis.position.set(r.wx,0,r.wz);r.wvis.rotation.y=r.wy}placeTag(r.tag,r.wx,1.75,r.wz)}
     else{if(r.wvis)r.wvis.visible=false;placeTag(r.tag,c.x,c.y+tagH(c.kind),c.z)}
   }
@@ -654,6 +660,7 @@ function sendPresence(){
   if(mode==="walk"){o.wx=r2(walker.x);o.wz=r2(walker.z);o.wy=r2(walker.yaw)}else{o.wx=null;o.wz=null;o.wy=null}
   o.rc=race?{k:race.key,t0:race.t0,n:race.dest.name.slice(0,60)}:null;
   if(me.kind!=="car")o.av=me.kind;if(me.air)o.a=1;
+  o.bw=brawlPres();
   const key=JSON.stringify(o);if(key===lastPres)return;lastPres=key;
   room.presence(o).catch(()=>{});
 }
@@ -948,6 +955,7 @@ let pdfjs=null;
 function loadPdfJs(){if(pdfjs)return pdfjs;pdfjs=new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";s.onload=()=>{const L=window.pdfjsLib;if(!L){rej(new Error("PDF reader didn't load"));return}try{L.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"}catch(_){}res(L)};s.onerror=()=>{pdfjs=null;rej(new Error("The PDF reader couldn't load. Export the plan as PNG instead."))};document.head.appendChild(s)});return pdfjs}
 function openEditor(key){
   const spec=DATA.floors[key];if(!spec)return;
+  if(brawl)brawlLeave("You left the brawl.");
   const xyRows=dbXY[key]||[],xyBy=new Map(xyRows.map(r=>[String(r[0]).toLowerCase(),r]));
   const roster=(DATA.rosters[key]||[]).map(p=>{const r=xyBy.get(String(p.desk||"").toLowerCase());return r?Object.assign({},p,{x:r[1],y:r[2],rot:r[3]}):Object.assign({},p)});
   // desks with coordinates but nobody assigned (open desks) still get placed
@@ -1162,12 +1170,13 @@ function frame(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;if(!(dt>0)||!WM)return;
   if(edOpen){if(presT>1){presT=0;sendPresence()}presT+=dt;return} // the editor covers the screen: skip simulation and rendering
   T+=dt;
-  const ctl=mode==="drive"&&!fly&&!trans&&!((run&&run.phase==="count")||(race&&race.phase==="count"))&&$("result").hidden?readDrive():IDLE;
+  const ctl=brawlCtl(mode==="drive"&&!fly&&!trans&&!((run&&run.phase==="count")||(race&&race.phase==="count"))&&$("result").hidden?readDrive():IDLE);
   const bctl=BOTPATH.length?botCtl(bot,dt):IDLE,n=Math.max(1,Math.ceil(dt/(1/120)));
   for(let k=0;k<n;k++){carStep(me,ctl,dt/n,true);if(BOTPATH.length)carStep(bot,bctl,dt/n,false)}
   chairsStep(dt);figFrame(dt);figCommit();
   syncCar(me,dt,false);syncCar(bot,dt,false);if(bot.vis)bot.vis.g.visible=BOTPATH.length>0;
-  remoteFrame(dt,now);
+  remoteFrame(dt,now);brawlFrame(dt);
+  PHYS.frame(dt);
   if(mode==="walk"&&!fly&&!trans)walkFrame(dt);
   runFrame(dt);raceFrame(dt);routeFrame(dt,now);elevFrame();doorFrame();
   chevOff+=dt*1.4;if(route||race)routeVisuals();

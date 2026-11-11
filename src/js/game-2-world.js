@@ -86,6 +86,7 @@ function loadColliders(m){
     for(const p of plats)if(x0>=p.x0-.1&&x1<=p.x1+.1&&z0>=p.z0-.1&&z1<=p.z1+.1){c.top=p.h;break}}
   // the plate edge is always a wall
   const w=m.w,d=m.d;[[-w/2-1,0,2,d+4],[w/2+1,0,2,d+4],[0,-d/2-1,w+4,2],[0,d/2+1,w+4,2]].forEach(([x,z,ww,dd])=>addCol({b:1,x0:x-ww/2,x1:x+ww/2,z0:z-dd/2,z1:z+dd/2,m:7,tall:1}));
+  PHYS.floor(); // a world was (re)entered: its loose props start over
 }
 
 /* ---------- chairs (pushable) ---------- */
@@ -113,7 +114,7 @@ function clearRoot(){
     if(o.geometry&&!o.geometry.userData.keep)o.geometry.dispose();
     if(o.material){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(m===INVIS||m.userData.keep)return;if(m.map&&!SHARED.has(m.map))m.map.dispose();m.dispose()})}
   });
-  scene.remove(root);root=null;if(HULL){HULL.dispose();HULL=null}lineMats=[];glowMats=[];signs=[];sun=null;cupsMeshes=[];deskG=legG=monG=scrG=standG=null;chairG=[];aoBlobs=null;deskInst=[];instDesk=[];bldgMeshes=[];planMesh=null;figReset();
+  scene.remove(root);root=null;if(HULL){HULL.dispose();HULL=null}lineMats=[];glowMats=[];signs=[];sun=null;cupsMeshes=[];deskG=legG=monG=scrG=standG=null;chairG=[];aoBlobs=null;deskInst=[];instDesk=[];bldgMeshes=[];planMesh=null;figReset();PHYS.clear();
 }
 function buildRamp(r){
   const grp=new THREE.Group();grp.position.set(r.x,0,r.z);grp.rotation.y=(r.ax==="z"?-Math.PI/2:0)+(r.dir<0?Math.PI:0);root.add(grp);
@@ -379,5 +380,6 @@ function buildWorld(){
   lights();
   if(!WM)return;
   if(WKIND==="campus")buildCampusWorld(WM);else buildFloorWorld(WM);
-  if(S.hd)BAKE.world(WKEY,WM,WKIND); // baked light when this world has a matching bake (game-2e-bake.js)
+  if(S.hd)BAKE.world(WKEY,WM,WKIND); // baked light when this world has a matching bake (game-2e-bake.js); before the props, which are not in the bake
+  PHYS.build(); // loose props (and their physics world once the engine has loaded)
 }

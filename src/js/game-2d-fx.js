@@ -8,7 +8,7 @@
 // current style's own materials, so all five styles show it their way. Lighting is baked, so nothing stays lying around:
 // the pieces shrink away a few seconds after they land.
 const FX=(()=>{
-const D=FX_DATA,NONE={crash(){},frame(){},clear(){}};
+const D=FX_DATA,NONE={crash(){},land(){},frame(){},clear(){}};
 if(!D||!D.scatter||!D.splash)return NONE;
 const i16=s=>{const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new Int16Array(u.buffer)};
 const SC=D.scatter,SP=D.splash,NP=SC.pieces.length,ND=SP.count;
@@ -119,10 +119,11 @@ function frame(dt){
   for(let k=0;k<MAX_SP;k++){const s=spS[k];if(s.on){s.t+=dt;splashFrame(s,k)}}
   boxG.commit();cylG.commit();dropG.commit();
 }
-// a hard landing on a desk top (off a ramp, a dog or cat leaping up) knocks its things off too. SFX.land is the game's own
-// heavy-landing moment (carStep, the player's avatar only), so listen there rather than add another hook to carStep;
-// landing on the kitchen counter splashes the same way
-if(typeof SFX!=="undefined"&&SFX.land){const land0=SFX.land;SFX.land=s=>{land0(s);
-  try{if(s>2.4&&typeof me!=="undefined"&&me.y>.5){const sp=Math.hypot(me.vx,me.vz)||1;crash(me.x,me.z,SC_HIT+s,{x:me.x-me.vx/sp*.5,z:me.z-me.vz/sp*.5})}}catch(_){}}}
-return{crash,frame,clear};
+// a hard landing on a desk top (off a ramp, a dog or cat leaping up) knocks its things off too; landing on the kitchen
+// counter splashes the same way. carStep calls this from the player's own heavy landing only (SFX.land itself is also
+// just a thud for physics props and brawl knockouts, so it is not a landing signal)
+function land(s,c){
+  try{if(s>2.4&&c&&c.y>.5){const sp=Math.hypot(c.vx,c.vz)||1;crash(c.x,c.z,SC_HIT+s,{x:c.x-c.vx/sp*.5,z:c.z-c.vz/sp*.5})}}catch(_){}
+}
+return{crash,land,frame,clear};
 })();
