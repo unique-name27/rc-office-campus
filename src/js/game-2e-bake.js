@@ -196,7 +196,7 @@ function capture(){
   const A={p:[],u:[],c:[]},F={p:[],c:[]},O={p:[],c:[]},v=new V3(),col=new THREE.Color(),ic=new THREE.Color();
   const tri=(T,g,M,i0,i1,i2,uvs,c)=>{for(const k of [i0,i1,i2]){v.fromBufferAttribute(g.attributes.position,k).applyMatrix4(M);T.p.push(v.x,v.y,v.z);if(uvs)T.u.push(uvs[k*2],uvs[k*2+1])}T.c.push(c[0],c[1],c[2])};
   const each=(g,fn)=>{const ix=g.index,n=ix?ix.count:g.attributes.position.count;for(let k=0;k<n;k+=3)fn(ix?ix.getX(k):k,ix?ix.getX(k+1):k+1,ix?ix.getX(k+2):k+2)};
-  const albedo=(mt,im,i)=>{col.copy(mt.color||col.setRGB(.7,.7,.7));if(mt.map)col.multiplyScalar(.82);if(im&&im.instanceColor){im.getColorAt(i,ic);col.multiply(ic)}if(mt.vertexColors)col.multiplyScalar(.9);return lin(col)};
+  const albedo=(mt,im,i)=>{col.copy(mt.userData.avg||mt.color||col.setRGB(.7,.7,.7));if(mt.map)col.multiplyScalar(.82);if(im&&im.instanceColor){im.getColorAt(i,ic);col.multiply(ic)}if(mt.vertexColors)col.multiplyScalar(.9);return lin(col)};
   // atlas faces with their lightmap coordinates (exactly the shader's)
   const regSet=new Set();
   for(const it of P.list){
