@@ -432,7 +432,7 @@ const LAYOUT=(()=>{
     }
 
     /* ---------- explicit desks (facilities coordinates / hand placed); ids kept verbatim ---------- */
-    const fl=S.f!=null?S.f:S.key;
+    const fl=S.f!=null?S.f:S.key,exFrom=M.desks.length;
     S.desks.forEach((k,i)=>{
       const id=uniqueId(k.id,`${fl}-X${pad2(i+1)}`,usedIds,P,"desk");
       const arr=k.arr||TM.arr(k.team)||"bench",F=frame(k.x,k.z,k.q),base={id,arr,team:k.team,zone:null};
@@ -451,6 +451,8 @@ const LAYOUT=(()=>{
       }
       obst.push(grow(F.box((foot[0]+foot[1])/2,(foot[2]+foot[3])/2,(foot[1]-foot[0])/2,(foot[3]-foot[2])/2),AISLE));
     });
+
+    const exTo=M.desks.length;   // M.desks[exFrom..exTo) are the hand-placed desks
 
     /* ---------- team zones: auto-filled desk groups ---------- */
     // a group footprint (local rect in frame G) is accepted when it stays inside the plate edge aisle and clear of every obstacle
@@ -599,7 +601,8 @@ const LAYOUT=(()=>{
     });
 
     /* ---------- people -> desks ---------- */
-    // 1) exact desk id  2) a free desk in their team's zones  3) a free desk in a zone without a team  4) unplaced
+    // 1) exact desk id  2) a free desk in their team's zones or among hand-placed desks tagged with their team
+    // 3) a free desk in a zone without a team or an untagged hand-placed desk (never a hot desk)  4) unplaced
     const rows=lite?[]:normRoster(roster,P);
     const idMap=new Map();M.desks.forEach((d,i)=>{if(!idMap.has(low(d.id)))idMap.set(low(d.id),i)});
     const owner=new Int32Array(M.desks.length).fill(-1),deskOf=new Int32Array(rows.length).fill(-1),autoOf=new Uint8Array(rows.length);
@@ -608,6 +611,8 @@ const LAYOUT=(()=>{
     const pools=new Map(),openPool={list:[],at:0};
     zones.forEach(c=>{const t=low(c.zone.team);if(!t){openPool.list.push(...c.desks);return}
       if(!pools.has(t))pools.set(t,{list:[],at:0});pools.get(t).list.push(...c.desks)});
+    for(let k=exFrom;k<exTo;k++){const d=M.desks[k];if(d.arr==="hot")continue;const t=low(d.team);
+      if(!t){openPool.list.push(k);continue}if(!pools.has(t))pools.set(t,{list:[],at:0});pools.get(t).list.push(k)}
     const take=pool=>{while(pool.at<pool.list.length){const k=pool.list[pool.at++];if(owner[k]<0)return k}return -1};
     const rest=[];
     for(const r of pending){const pool=pools.get(low(rows[r].team)),k=pool?take(pool):-1;if(k>=0){owner[k]=r;deskOf[r]=k;autoOf[r]=1}else rest.push(r)}

@@ -273,8 +273,12 @@ test('per-team arrangements: every zone is filled with its own arr or its team d
 });
 
 test('an offices zone drawn flush with the window wall keeps both rows (EDITOR rect -> LAYOUT)', () => {
-  // what a facilities person does in the editor: drag a Finance area from the plate corner along the north windows
-  const T = EDITOR._t, base = D.floors['B1-4'];
+  // what a facilities person does in the editor: drag a Finance area from the plate corner along the north windows.
+  // On a plain 72 x 44 m floor with a central core (Building 1's plate is too small and full for this).
+  const T = EDITOR._t, core = (id, type, x0, z0, x1, z1, door) => ({ id, type, name: id, x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, door });
+  const base = { v: 1, key: 'B1-4', b: 'B1', f: 4, w: 72, d: 44, door: null, plan: null, walls: [], glass: [], desks: [], ramps: null, updatedAt: 0,
+    rooms: [core('e1', 'elevator', -2.8, -7.6, 0, -2.4, 's'), core('e2', 'elevator', 0, -7.6, 2.8, -2.4, 's'), core('st1', 'stairs', -8, -7.6, -2.8, -2.4, null), core('rr1', 'restroom', 2.8, -7.6, 8, -2.4, null)],
+    zones: [] };
   const rect = T.rectFromDrag(10, -22, 36, -9.5, true);
   const mk = r => Object.assign({}, base, { zones: base.zones.filter(z => z.id !== 'z2').concat([Object.assign({ id: 'z2', team: 'Legal', arr: null }, r, { dir: r.w >= r.d ? 'h' : 'v' })]) });
   const flush = LAYOUT.build(T.finalize(mk(rect)), [], D.campus.teams), inset = LAYOUT.build(mk({ x: rect.x - 0.15, z: rect.z + 0.15, w: rect.w - 0.3, d: rect.d - 0.3 }), [], D.campus.teams);
@@ -286,6 +290,40 @@ test('an offices zone drawn flush with the window wall keeps both rows (EDITOR r
   for (const d of flush.dests.filter(x => x.kind === 'desk' && flush.desks.find(k => 'desk:' + k.id === x.id).zone === 'z2')) {
     const r = NAV.findPath(G, s.x, s.z, d.x, d.z);
     assert.ok(r && Math.hypot(r.pts[r.pts.length - 1][0] - d.x, r.pts[r.pts.length - 1][1] - d.z) < 0.35, d.id + ' reachable');
+  }
+});
+
+test('hand-placed desks: imported people whose desk ids are not found still get desks (team-tagged first, then untagged)', () => {
+  // what a seating import does to Building 1: its desk grid stays, the demo's team tags are dropped, zones are re-teamed
+  for (const k of ['B1-1', 'B1-2', 'B1-3', 'B1-4']) {
+    const base = D.floors[k], spec = Object.assign({}, base, { desks: base.desks.map(d => Object.assign({}, d, { team: '' })) });
+    const free = base.desks.filter(d => d.arr !== 'hot').length + MODELS[k].desks.filter(d => d.zone != null).length;
+    const people = D.rosters[k].map((r, i) => ({ desk: 'nowhere-' + i, name: r.name, team: 'Imported ' + r.team, title: r.title }));
+    const m = LAYOUT.build(spec, people, D.campus.teams);
+    assert.equal(m.people.length, Math.min(people.length, free), k + ' seated');
+    assert.ok(m.people.every(p => p.auto && m.desks[p.desk].arr !== 'hot'), k + ': auto-placed, never at a hot desk');
+  }
+  // a desk tagged with a team is used for that team before anyone else's
+  const one = { v: 1, key: 'Z-2', b: 'Z', f: 2, w: 20, d: 14, door: null, plan: null, walls: [], glass: [], zones: [], ramps: null, updatedAt: 0,
+    rooms: [{ id: 'e1', type: 'elevator', name: 'Elevator', x: 0, z: -5.5, w: 2.6, d: 2.4, door: 's' }],
+    desks: [{ id: 'a', x: -4, z: 2, a: 0, team: 'Blue' }, { id: 'b', x: 4, z: 2, a: 0 }] };
+  const m = LAYOUT.build(one, [{ desk: '', name: 'Ann Lee', team: 'Red', title: 't' }, { desk: '', name: 'Bo Kim', team: 'Blue', title: 't' }], {});
+  assert.equal(m.desks[m.people.find(p => p.name === 'Bo Kim').desk].id, 'a', 'Blue takes the Blue desk');
+  assert.equal(m.desks[m.people.find(p => p.name === 'Ann Lee').desk].id, 'b', 'Red takes the untagged desk');
+});
+
+test('Building 1: no desk sits on a room, a column or another desk', () => {
+  const foot = d => { const s = Math.abs(Math.sin(d.a)) > 0.5, ex = (s ? d.dd : d.w) / 2, ez = (s ? d.w : d.dd) / 2; return { x0: d.x - ex, x1: d.x + ex, z0: d.z - ez, z1: d.z + ez }; };
+  const hit = (a, b) => Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > 0.01 && Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0) > 0.01;
+  for (const k of ['B1-1', 'B1-2', 'B1-3', 'B1-4']) {
+    const m = MODELS[k], ds = m.desks.map(foot);
+    for (const r of m.rooms) { const b = { x0: r.x - r.w / 2, x1: r.x + r.w / 2, z0: r.z - r.d / 2, z1: r.z + r.d / 2 };
+      m.desks.forEach((d, i) => assert.ok(r.type === 'open' || r.type === 'lobby' || !hit(ds[i], b), `${k}: desk ${d.id} sits on ${r.name}`)); }
+    // bench desks in a run butt together (1.56 m tops at the plan's 1.55 m pitch): only more than 3 cm counts as overlapping
+    const deep = (a, b) => Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > 0.03 && Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0) > 0.03;
+    for (let i = 0; i < ds.length; i++) for (let j = i + 1; j < ds.length; j++) assert.ok(!deep(ds[i], ds[j]), `${k}: desks ${m.desks[i].id} / ${m.desks[j].id} overlap`);
+    for (const w of m.walls) if (w.kind !== 'ext') m.desks.forEach((d, i) => { const f = ds[i], mx = (w.x1 + w.x2) / 2, mz = (w.z1 + w.z2) / 2;
+      if (Math.hypot(w.x2 - w.x1, w.z2 - w.z1) < 0.5) assert.ok(!(mx > f.x0 - .05 && mx < f.x1 + .05 && mz > f.z0 - .05 && mz < f.z1 + .05), `${k}: desk ${d.id} is on a column`); });
   }
 });
 

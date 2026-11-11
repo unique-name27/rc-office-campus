@@ -118,6 +118,7 @@ CAMPUS.demo() -> { campus: CampusDoc, floors: { key: LayoutSpec }, rosters: { ke
 CAMPUS.exterior(campusDoc) -> CampusModel
 CAMPUS.key(b, f) -> "B1-3";  CAMPUS.parseKey("B1-3") -> { b: "B1", f: 3 } | null
 CAMPUS.defaultArr(team) -> ARR;  CAMPUS.teamColor(team, i) -> "#hex" (stable, distinct, readable on light and dark)
+CAMPUS.sampleSeat(spec, roster) -> Roster   // sample mode only: seat the sample people at a hand-drawn floor's own assigned desks (not hot desks), team by team, ~1 in 8 left open
 CAMPUS.ARR_NAMES = { bench: "Open benches", cubes: "Cubicles", offices: "Private offices", lab: "Lab benches", hot: "Hot desks" }
 CAMPUS.ROOM_TYPES = [...]   // with display names
 ```

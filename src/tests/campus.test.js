@@ -98,7 +98,7 @@ test('teamColor: hex, stable by name, distinct for consecutive indices', () => {
 test('demo campus doc', () => {
   const c = D.campus;
   assert.strictEqual(c.v, 1); assert.strictEqual(c.name, 'San Jose campus'); assert.strictEqual(c.demo, true);
-  assert.deepStrictEqual(c.buildings, [{ id: 'B1', name: 'Building 1', short: 'B1', floors: 4, x: -46, z: 0, w: 72, d: 44 }, { id: 'B2', name: 'Building 2', short: 'B2', floors: 4, x: 46, z: 0, w: 64, d: 48 }]);
+  assert.deepStrictEqual(c.buildings, [{ id: 'B1', name: 'Building 1', short: 'B1', floors: 4, x: -36, z: 0, w: 42, d: 30.23 }, { id: 'B2', name: 'Building 2', short: 'B2', floors: 4, x: 46, z: 0, w: 64, d: 48 }]);
   assert.deepStrictEqual(Object.keys(D.floors).sort(), KEYS); assert.deepStrictEqual(Object.keys(D.rosters).sort(), KEYS);
   const names = Object.keys(c.teams);
   assert.ok(names.length >= 20, 'teams ' + names.length);
@@ -116,7 +116,8 @@ test('demo specs are well-formed (SPEC §1)', () => {
     assert.deepStrictEqual(Object.keys(s).sort(), ['b', 'd', 'desks', 'door', 'f', 'glass', 'key', 'plan', 'ramps', 'rooms', 'updatedAt', 'v', 'w', 'walls', 'zones'].sort(), k);
     assert.strictEqual(s.v, 1); assert.strictEqual(s.key, k); assert.strictEqual(s.b, p.b); assert.strictEqual(s.f, p.f);
     assert.strictEqual(s.w, b.w); assert.strictEqual(s.d, b.d); assert.strictEqual(s.plan, null); assert.strictEqual(s.ramps, null); assert.strictEqual(s.updatedAt, 0);
-    assert.deepStrictEqual(s.door, p.f === 1 ? { side: 's', at: 0, w: 3 } : null, k);
+    // Building 1 floor 1 has its front door off-center, at the lobby
+    assert.deepStrictEqual(s.door, p.f !== 1 ? null : k === 'B1-1' ? { side: 's', at: -15.07, w: 2.4 } : { side: 's', at: 0, w: 3 }, k);
     for (const a of ['walls', 'glass', 'desks']) assert.ok(Array.isArray(s[a]));
     const plate = { x0: -s.w / 2, x1: s.w / 2, z0: -s.d / 2, z1: s.d / 2 }, ids = new Set();
     for (const r of s.rooms) {
@@ -184,7 +185,7 @@ test('rosters: four string fields, known teams, names unique across the campus, 
       const n = r.name.toLowerCase(); assert.ok(!all.has(n), 'duplicate name ' + r.name); all.add(n); total++;
     }
   }
-  assert.ok(total > 1100, 'people ' + total);
+  assert.ok(total > 900, 'people ' + total);   // Building 1 is a 42 x 30 m plate (about 250 people), Building 2 about 680
   for (const famous of ['lisa su', 'jensen huang', 'emma watson', 'kevin hart']) assert.ok(!all.has(famous), famous);
   // leadership: every team of 8+ has one lead (director / VP / general counsel / chief) and at least one manager
   const byTeam = {};
@@ -198,13 +199,14 @@ test('rosters: four string fields, known teams, names unique across the campus, 
   assert.ok(byTeam['Finance'].includes('FP&A analyst') && byTeam['People & HR'].includes('Recruiter'));
 });
 
-test('LAYOUT.build on all 8 floors: everyone placed at their exact desk, 140-230 people, clean', () => {
+test('LAYOUT.build on all 8 floors: everyone placed at their exact desk, 50-100 (B1) or 140-230 (B2) people, clean', () => {
   const seen = new Set();
   for (const k of KEYS) {
     const m = MODELS[k], s = D.floors[k];
     assert.strictEqual(m.unplaced.length, 0, k + ' unplaced');
     assert.strictEqual(m.people.length, D.rosters[k].length, k);
-    assert.ok(m.people.length >= 140 && m.people.length <= 230, `${k}: ${m.people.length} people`);
+    const [lo, hi] = k.startsWith('B1') ? [50, 100] : [140, 230];
+    assert.ok(m.people.length >= lo && m.people.length <= hi, `${k}: ${m.people.length} people`);
     assert.ok(m.people.every(p => !p.auto), k + ': every desk id matched');
     assert.deepStrictEqual(m.problems, [], k);
     for (const p of m.people) {
@@ -221,7 +223,7 @@ test('LAYOUT.build on all 8 floors: everyone placed at their exact desk, 140-230
     const nc = m.rooms.filter(r => r.type === 'conf').length;
     assert.ok(nc >= 2 && nc <= 6, k + ' conference rooms ' + nc);
     assert.strictEqual(m.elevators.length, 2, k);
-    assert.ok(m.rooms.some(r => r.type === 'phone'), k + ' phone booths');
+    if (k !== 'B1-1') assert.ok(m.rooms.some(r => r.type === 'phone'), k + ' phone booths');   // B1-1 has none
     assert.strictEqual(m.coffee.length, 5, k + ' coffee run');
     if (k.endsWith('-1')) { assert.ok(m.exit, k + ' exit'); assert.ok(m.rooms.some(r => r.type === 'lobby'), k + ' lobby'); }
     else assert.strictEqual(m.exit, null);
@@ -353,7 +355,7 @@ test('exterior follows the floor-1 doorway (east side, off-center) and stays ali
   assert.ok(!insideCollider(E, b2.door.x, b2.door.z, 5));
   // no floor specs: default south doorway in the middle
   const E2 = CAMPUS.exterior(D.campus);
-  assert.deepStrictEqual(E2.buildings.map(b => [b.door.x, b.door.z]), [[-46, 23.2], [46, 25.2]]);
+  assert.deepStrictEqual(E2.buildings.map(b => [b.door.x, b.door.z]), [[-36, 16.315], [46, 25.2]]);
 });
 
 test('never throws on messy input', () => {
@@ -384,7 +386,8 @@ test('never throws on messy input', () => {
   for (const L of [undefined, null, {}, { build: 5 }, { build: () => { throw new Error('x'); }, capacity: () => { throw new Error('y'); } }, { build: () => null, capacity: () => ({ byZone: { z1: 'lots' } }) }]) {
     const d = CAMPUS.demo(L);
     assert.deepStrictEqual(Object.keys(d.floors).sort(), KEYS);
-    for (const k of KEYS) for (const r of d.rosters[k]) assert.strictEqual(r.desk, '');
+    // zone seats need LAYOUT to number them; hand-placed desks (Building 1) have their ids already
+    for (const k of KEYS) for (const r of d.rosters[k]) assert.ok(r.desk === '' || d.floors[k].desks.some(x => x.id === r.desk), k + ' ' + r.desk);
   }
   for (const v of [undefined, null, {}, [], 'x', 12, { side: 1 }]) { CAMPUS.key(v, v); CAMPUS.parseKey(v); CAMPUS.defaultArr(v); CAMPUS.teamColor(v, v); }
 });
@@ -394,7 +397,7 @@ test('demo without LAYOUT: sized from estimates, LAYOUT still seats everyone', (
   for (const k of KEYS) {
     const m = LAYOUT.build(d.floors[k], d.rosters[k], d.campus.teams);
     assert.strictEqual(m.unplaced.length, 0, k + ' unplaced ' + m.unplaced.length);
-    assert.ok(m.people.length >= 100, k + ' ' + m.people.length);
+    assert.ok(m.people.length >= (k.startsWith('B1') ? 50 : 100), k + ' ' + m.people.length);
   }
   assert.deepStrictEqual(deep(d.floors), deep(D.floors), 'same floors either way');
 });
@@ -444,6 +447,23 @@ if (ascii) {
     console.log(out.join('\n'));
   }
 }
+
+test('sampleSeat: sample people take the assigned desks of a hand-drawn floor, a team at a time, some left open', () => {
+  const desks = [];
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 6; r++) desks.push({ id: String(c * 6 + r + 1), x: c * 3, z: r * 1.6, a: 0, arr: 'bench' });
+  desks.push({ id: 'T1', x: 20, z: 0, a: 0, arr: 'hot' });
+  const rows = [];
+  for (let i = 0; i < 40; i++) rows.push({ desk: '9-Z' + i, name: 'P' + String(i).padStart(2, '0'), team: i % 2 ? 'Beta' : 'Alpha', title: 't' });
+  const out = CAMPUS.sampleSeat({ desks }, rows);
+  assert.equal(out.length, 21, '24 desks, one in eight left open');
+  assert(out.every(p => desks.some(d => d.id === p.desk && d.arr !== 'hot')), 'only the desks of that floor, never hot desks');
+  assert.equal(new Set(out.map(p => p.desk)).size, out.length, 'one person per desk');
+  const teams = out.map(p => p.team); assert.deepEqual(teams, teams.slice().sort(), 'teams sit together');
+  assert.deepEqual(CAMPUS.sampleSeat({ desks: [] }, rows), rows, 'no desks: unchanged');
+  assert.deepEqual(CAMPUS.sampleSeat({ desks }, rows), out, 'deterministic');
+  assert.equal(CAMPUS.sampleSeat({ desks }, out), out, 'people already at this floor’s desks stay put');
+  assert.equal(CAMPUS.sampleSeat({ desks, zones: [{ id: 'z1', team: 'Alpha' }] }, rows), rows, 'with team areas too, LAYOUT seats people itself');
+});
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exitCode = failed ? 1 : 0;

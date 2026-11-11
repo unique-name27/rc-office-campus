@@ -644,7 +644,7 @@ function mergeData(first){
     const k=CAMPUS.key(b.id,f),demoF=DEMO.floors[k]&&DEMO.floors[k].b===b.id?DEMO.floors[k]:null,dbF=dbFloors[k];
     // sample mode shows the sample people: floors the owner drew by hand stay, layouts generated from a real headcount don't
     floors[k]=real?(dbF||demoF):((dbF&&!dbF.auto)?dbF:demoF);
-    rosters[k]=real?(dbRosters[k]||[]):(DEMO.rosters[k]||[]);
+    rosters[k]=real?(dbRosters[k]||[]):(dbF&&!dbF.auto?CAMPUS.sampleSeat(dbF,DEMO.rosters[k]||[]):(DEMO.rosters[k]||[]));
   }
   for(const b of campus.buildings)for(let f=1;f<=b.floors;f++){const k=CAMPUS.key(b.id,f);if(!floors[k])floors[k]=blankSpec(b,f)}
   if(first||!prev){invalidate();return{all:true,changed:new Set(Object.keys(floors)),campus:true}}
@@ -696,9 +696,11 @@ function hideLoading(){$("fade").dataset.on="0"}
 
 /* ---------- auto floor plans for imported people (keeps the floor's rooms, re-divides team areas by headcount) ---------- */
 function autoFloor(base,roster,teams){
-  const spec=JSON.parse(JSON.stringify(base));spec.auto=true;spec.desks=[];spec.ramps=null;
+  const spec=JSON.parse(JSON.stringify(base));spec.auto=true;spec.ramps=null;
+  // a floor with hand-placed desks keeps them (untagged: anyone whose desk id isn't found sits there); only its zones are re-teamed
+  const hand=Array.isArray(base.desks)&&base.desks.length>0;spec.desks=hand?base.desks.map(d=>Object.assign({},d,{team:""})):[];
   const slots=(base.zones||[]).map(z=>({x:z.x,z:z.z,w:z.w,d:z.d,dir:z.dir}));
-  if(!slots.length)slots.push({x:0,z:0,w:Math.max(4,spec.w-4),d:Math.max(4,spec.d-4)});
+  if(!slots.length&&!hand)slots.push({x:0,z:0,w:Math.max(4,spec.w-4),d:Math.max(4,spec.d-4)});
   const counts=new Map();for(const p of roster){const t=p.team||"";counts.set(t,(counts.get(t)||0)+1)}
   const order=[...counts].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
   const cap=(s,team)=>{try{const c=LAYOUT.capacity(Object.assign({},spec,{zones:[{id:"t",team,arr:null,x:s.x,z:s.z,w:s.w,d:s.d,dir:s.dir}],desks:[]}),teams);return(c.byZone&&c.byZone.t)||0}catch(_){return 0}};
