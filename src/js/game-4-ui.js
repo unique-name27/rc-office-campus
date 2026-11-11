@@ -26,7 +26,7 @@ addEventListener("keydown",e=>{
   audio();
   if(!$("setup").hidden){if(e.key==="Escape"&&!$("dlg")){closeSetup()}return}
   if(e.key==="/"&&!typing()){e.preventDefault();openFind();return}
-  if(e.key==="Escape"){if(typing()){document.activeElement.blur();return}if(!$("mePop").hidden){closeMe();return}if(!$("stylePop").hidden){closeStyle();return}if($("panel").classList.contains("open")){closeFind();return}if(!$("result").hidden){closeResult();return}if(elevAt){elevDismissed=elevAt.id;hideElev();return}}
+  if(e.key==="Escape"){if(typing()){document.activeElement.blur();return}if(!$("mePop").hidden){closeMe();return}if(!$("stylePop").hidden){closeStyle();return}if($("panel").classList.contains("open")){closeFind();return}if(!$("result").hidden){closeResult();return}if(elevAt){elevDismissed=elevAt.id;hideElev();return}if(mode!=="overview"&&!fly&&!trans){setOpts(!optsOpen);return}}
   if(typing())return;
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   const tag=document.activeElement&&document.activeElement.tagName;
@@ -168,16 +168,16 @@ const AV_TIP={car:"RC car: hold Space through a turn for a turbo · Shift boost 
 const SKILL_TAG={car:"Turbo",dog:"Woof",cat:"2× Jump"};
 const SKILL_TOUCH={car:"Hold Drift through a turn for a turbo.",dog:"Woof pushes chairs away.",cat:"Hold Jump to double jump."};
 // P or the toolbar button: car -> dog -> cat, right where you are
-function cycleAvatar(){
-  if(fly||trans||mode==="walk")return;
+function cycleAvatar(){if(mode!=="walk")pickAvatar(AV_NEXT[me.kind]||"car")}
+function pickAvatar(next){
+  if(trans||next===me.kind)return;
   if((run&&run.phase!=="done")||race){toast(`Finish or cancel the ${race?"race":"coffee run"} first (Enter), then switch`);return}
-  const next=AV_NEXT[me.kind]||"car";
   setAvatar(next);toast(document.body.classList.contains("touch")?AV_WHO[next][0].toUpperCase()+AV_WHO[next].slice(1)+". "+SKILL_TOUCH[next]:AV_TIP[next]);
   if(mode==="drive")for(let k=0;k<6;k++)puff(me.x+(Math.random()-.5)*.3,me.y+.05,me.z+(Math.random()-.5)*.3,"#ffffff");
 }
 $("bAv").onclick=()=>cycleAvatar();
-AVATARS.forEach(([k,n])=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.av=k;b.textContent=n;b.setAttribute("role","radio");b.setAttribute("aria-checked","false");b.onclick=()=>setAvatar(k);$("avChips").appendChild(b)});
-$("avChips").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const i=AVATARS.findIndex(x=>x[0]===me.kind),n=(i+(/Right|Down/.test(e.key)?1:-1)+AVATARS.length)%AVATARS.length;setAvatar(AVATARS[n][0]);$("avChips").children[n].focus()});
+AVATARS.forEach(([k,n])=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.av=k;b.textContent=n;b.setAttribute("role","radio");b.setAttribute("aria-checked","false");b.onclick=()=>{if(mode==="overview")setAvatar(k);else pickAvatar(k)};$("avChips").appendChild(b)});
+$("avChips").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const i=AVATARS.findIndex(x=>x[0]===me.kind),n=(i+(/Right|Down/.test(e.key)?1:-1)+AVATARS.length)%AVATARS.length;if(mode==="overview")setAvatar(AVATARS[n][0]);else pickAvatar(AVATARS[n][0]);$("avChips").children[AVATARS.findIndex(x=>x[0]===me.kind)].focus()});
 {const pj=$("pJump"),off=()=>{tc.jump=false;pj.dataset.on="0"};
   pj.addEventListener("pointerdown",e=>{e.preventDefault();audio();if(mode!=="drive")return;me.jumpReq=true;tc.jump=true;pj.dataset.on="1";try{pj.setPointerCapture(e.pointerId)}catch(_){}});
   pj.addEventListener("pointerup",off);pj.addEventListener("pointercancel",off);pj.addEventListener("lostpointercapture",off);pj.addEventListener("contextmenu",e=>e.preventDefault())}
@@ -190,6 +190,26 @@ $("bSwap").onclick=()=>{if(!fly&&!trans)flyTo(mode==="walk"?"drive":"walk",1.1)}
 $("bCam").onclick=cycleCam;
 $("bar").addEventListener("click",e=>{const b=e.target.closest("button");if(b&&e.detail>0&&document.activeElement===b)b.blur()});
 $("bRun").onclick=()=>{if(run)runCancel("Coffee run cancelled");else runStart()};
+// While you drive or walk, the start card stays up as the options card (Esc, Hide or the toolbar button tuck it away).
+// A pointer click mustn't leave a chip focused there: arrow keys would change the chip instead of steering.
+let optsOpen=true;
+function setOpts(on){optsOpen=!!on;document.body.dataset.opts=optsOpen?"1":"0";$("bOpts").setAttribute("aria-expanded",String(optsOpen));if(!optsOpen&&$("start").contains(document.activeElement))document.activeElement.blur()}
+$("bOpts").onclick=()=>{if($("panel").classList.contains("open")){closeFind();setOpts(true)}else setOpts(!optsOpen)};
+$("optsHide").onclick=$("optsGo").onclick=()=>setOpts(false);
+$("start").addEventListener("click",e=>{const b=e.target.closest("button");if(b&&e.detail>0&&mode!=="overview"&&document.activeElement===b)b.blur()});
+// from the options card: straight to a floor's lobby or outside, staying in the driver's seat (or on foot)
+function jumpTo(k){
+  if(trans||k===WKEY)return;
+  const camp=k==="campus",p=camp?null:CAMPUS.parseKey(k),b=p&&bldg(p.b);
+  goWorld(k,{mode,title:camp?"Outside":(b?b.name:floorName(k)),sub:camp?(DATA.campus.name||"Campus"):"Floor "+p.f}).then(ok=>{
+    if(ok&&!camp){const m=modelFor(k),n=m&&m.stats&&m.stats.occupied;toast(floorName(k)+(n?" · "+plural(n,"person","people"):""))}});
+}
+// the game opens in the driver's seat: a short swoop down onto your car, with the options card open beside it
+function introDrive(){
+  ovPose(camPos,camLook);camera.fov=fovFor("overview");me.camH=me.h;camYawOff=0;camHintShown=false; // the keys hint follows (again, if a loading screen hid the first)
+  fly={t:0,dur:REDUCED?.3:1.5,p0:camPos.clone(),l0:camLook.clone(),f0:camera.fov,to:"drive"};document.body.dataset.fly="1";
+  setMode("drive");
+}
 $("bSound").onclick=()=>{audio();setMuted(!muted)};
 function closeTimes(){$("side").classList.remove("open");$("bTimes").setAttribute("aria-expanded","false");$("start").classList.remove("tucked")}
 $("bTimes").onclick=()=>{const o=$("side").classList.toggle("open");$("bTimes").setAttribute("aria-expanded",String(o));$("start").classList.toggle("tucked",o)};
@@ -205,8 +225,9 @@ function updateBrand(){
 }
 function renderStart(){
   if(!DATA)return;
-  const camp=WKIND==="campus",c=DATA.campus;
-  $("goWalk").textContent=camp?"Walk around":"Walk the floor";
+  const camp=WKIND==="campus",c=DATA.campus,live=mode!=="overview";
+  $("goWalk").textContent=camp?"Walk around":"Walk the floor";$("optsGo").textContent=mode==="walk"?"Walk":"Drive";
+  $("bldgs").hidden=!live&&!camp;
   $("myDesk").hidden=$("myLook").hidden=!myDesk;
   $("bSetup").hidden=$("bSetup2").hidden=!canSetup;
   const ban=$("banner");ban.hidden=!DATA.demo;ban.textContent=canSetup?"These are sample people. Load your real seating in Set up.":"These are sample people until the page owner loads real seating.";
@@ -227,7 +248,9 @@ function renderStart(){
       el.append(n,fl,s);box.appendChild(el);
     }
     $("ovKeys").textContent="Drag to spin · scroll to zoom · click a building to open a floor";
+    if(live)renderGoTo();
   }else{
+    if(live)renderGoTo();
     const p=CAMPUS.parseKey(WKEY),b=bldg(p.b),st=WM.stats||{};
     $("stKick").textContent=`${b.name} · Floor ${p.f} · ${nf_(st.occupied||0)} people · ${nf_(st.desks||0)} desks`;
     $("startH").textContent=`${b.short||b.name} · Floor ${p.f}`;
@@ -240,6 +263,21 @@ function renderStart(){
   renderLegend();
 }
 const nf_=nf;
+// the options card's "Go to": every building's floors and the outside; a press takes you straight there
+function renderGoTo(){
+  const box=$("bldgs");box.innerHTML="";
+  const chip=(k,label,aria,cls)=>{const b=document.createElement("button");b.type="button";b.className=cls||"fl";b.textContent=label;
+    const here=k===WKEY,mine=!!myDesk&&myDesk.w===k;b.setAttribute("aria-label",aria+(here?" (you're here)":"")+(mine?" (your desk)":""));b.title=aria;
+    if(here)b.setAttribute("aria-current","true");if(mine){const y=document.createElement("span");y.className="you";y.textContent="you";b.appendChild(y)}
+    b.onclick=()=>jumpTo(k);return b};
+  for(const b of DATA.campus.buildings){
+    const el=document.createElement("div");el.className="bl";const n=document.createElement("div");n.className="bn";n.textContent=b.name;
+    const fl=document.createElement("div");fl.className="fls";fl.setAttribute("role","group");fl.setAttribute("aria-label",b.name+" floors");
+    for(let f=1;f<=b.floors;f++)fl.appendChild(chip(CAMPUS.key(b.id,f),f+"F",`${b.name}, floor ${f}`));
+    el.append(n,fl);box.appendChild(el);
+  }
+  const row=document.createElement("div");row.className="fls";row.appendChild(chip("campus","Outside","Outside, around the buildings","fl out"));box.appendChild(row);
+}
 function rebuildScene(){clearRoot();buildWorld();buildCars();rebuildTags();restoreCups();setTarget(target);routeVisuals(true);updateGates();drawMapBase();labelsClear()}
 $("planT").onclick=()=>{planOn=!planOn;store.set("rc-plan",planOn?"1":"0");rebuildScene();renderStart()};
 function renderLegend(){
@@ -263,8 +301,8 @@ function buildIndex(){
   peopleIdx=out;findMyDesk();return out;
 }
 const results=$("results");let resList=[],resSel=-1,picked=null;
-function openFind(keepPick){$("panel").classList.add("open");$("bFind").setAttribute("aria-expanded","true");if(document.pointerLockElement)document.exitPointerLock();const idx=buildIndex();$("findK").textContent=`${DATA.campus.name||"Campus"} · ${nf(idx.filter(x=>x.kind==="desk").length)} people · ${nf(idx.filter(x=>x.kind!=="desk").length)} rooms`;if(!keepPick){$("pick").hidden=true;picked=null}if(!keepPick||innerWidth>760)q.focus()}
-function closeFind(){$("panel").classList.remove("open");$("bFind").setAttribute("aria-expanded","false");q.blur()}
+function openFind(keepPick){$("panel").classList.add("open");document.body.dataset.find="1";$("bOpts").setAttribute("aria-expanded","false");$("bFind").setAttribute("aria-expanded","true");if(document.pointerLockElement)document.exitPointerLock();const idx=buildIndex();$("findK").textContent=`${DATA.campus.name||"Campus"} · ${nf(idx.filter(x=>x.kind==="desk").length)} people · ${nf(idx.filter(x=>x.kind!=="desk").length)} rooms`;if(!keepPick){$("pick").hidden=true;picked=null}if(!keepPick||innerWidth>760)q.focus()}
+function closeFind(){$("panel").classList.remove("open");document.body.dataset.find="0";$("bOpts").setAttribute("aria-expanded",String(optsOpen));$("bFind").setAttribute("aria-expanded","false");q.blur()}
 $("bFind").onclick=()=>$("panel").classList.contains("open")?closeFind():openFind();
 function search(v){
   v=v.trim().toLowerCase();if(!v)return[];const toks=v.split(/\s+/);const out=[];
@@ -523,7 +561,7 @@ function startBoard(){
 }
 
 /* ---------- multiplayer: presence (who's where), names, race invites ---------- */
-const capUse=n=>(window.claude&&typeof window.claude.use==="function")?Promise.resolve(window.claude.use(n)).catch(()=>null):Promise.resolve(null);
+const capUse=n=>{try{return(window.claude&&typeof window.claude.use==="function")?Promise.resolve(window.claude.use(n)).catch(()=>null):Promise.resolve(null)}catch(_){return Promise.resolve(null)}};
 let roomSettled=false,user=null,db=null,room=null,assets=null,downloads=null,myId=null,myName="",canWrite=null,canSetup=false,presDirty=true,presT=0,lastPres="";
 const remotes=new Map();let joinable=null;
 function num(v,a,b){return typeof v==="number"&&isFinite(v)?clamp(v,a,b):null}
@@ -658,16 +696,23 @@ function mergeData(first){
   return{all:teamsChanged,changed,campus:campusChanged||[...changed].some(k=>/-1$/.test(k))};
 }
 let mergeT=0,applying=false;
-function scheduleMerge(){clearTimeout(mergeT);mergeT=setTimeout(()=>{if(edOpen||applying){scheduleMerge();return}const ch=mergeData();if(ch)applyChange(ch)},250)}
+function scheduleMerge(){clearTimeout(mergeT);mergeT=setTimeout(()=>{if(edOpen||applying){scheduleMerge();return}const ch=mergeData();if(ch)applyChange(ch);else if(seen.c)bootLate=false},250)}
 // rebuild the viewer's world only if what they're standing in changed; otherwise just refresh lists and cards
 function applyChange(ch){
+  if(bootLate&&seen.c){bootLate=false;refreshWorld(true);if(route)routeTo(route.to,true);return} // the page's campus arrived after the 4 s fallback
   const here=WKEY==="campus"?ch.campus:(ch.all||ch.changed.has(WKEY)||!floorKeys().includes(WKEY));
   if(here){refreshWorld();return}
   peopleIdx=null;recomputeLooks();findMyDesk();if(route)routeTo(route.to,true);updateBrand();renderStart();if(!$("setup").hidden)renderSetup();
 }
-function refreshWorld(){
+function refreshWorld(boot){
+  const keys=floorKeys();
+  if(boot){ // the page's own seating just replaced the sample floor the game opened on: open the saved floor (if it exists) afresh
+    const k=bootKey&&(bootKey==="campus"||keys.includes(bootKey))?bootKey:WKEY==="campus"||keys.includes(WKEY)?WKEY:(keys[0]||"campus");
+    enterWorld(k);if(mode==="drive")introDrive();else poseFor(mode,camPos,camLook);
+    peopleIdx=null;recomputeLooks();findMyDesk();renderStart();if(!$("setup").hidden)renderSetup();return;
+  }
   // keep the viewer where they are (and moving) if their floor still exists
-  const keys=floorKeys(),key=WKEY==="campus"||keys.includes(WKEY)?WKEY:"campus";
+  const key=WKEY==="campus"||keys.includes(WKEY)?WKEY:"campus";
   const p=mode==="walk"?{x:walker.x,z:walker.z,a:walker.yaw}:{x:me.x,z:me.z,a:me.h},m=mode,hadRun=!!run,vel={vx:me.vx,vz:me.vz,vF:me.vF,boost:me.boost};
   enterWorld(key,mode==="overview"?null:p);
   if(m!=="overview"&&mode===m){if(m==="walk"){walker.x=p.x;walker.z=p.z}else{spawnNear(p.x,p.z,p.a);if(Math.hypot(me.x-p.x,me.z-p.z)<.3)Object.assign(me,vel)}}
@@ -679,8 +724,8 @@ const fresh={c:false,f:false,r:false};
 const dataReady=()=>!db||(fresh.c&&fresh.f&&fresh.r);
 function watchData(){
   if(!db){dataSettled=true;findMyDesk();return}
-  const done=()=>{if(seen.c&&seen.f&&seen.r&&!dataSettled){dataSettled=true;const ch=mergeData();if(ch)refreshWorld();else{findMyDesk();renderStart()}hideLoading()}};
-  const onErr=()=>{seen.c=seen.f=seen.r=true;done();if(!$("setup").hidden)renderSetup()};
+  const done=()=>{if(seen.c&&seen.f&&seen.r&&!dataSettled){dataSettled=true;const ch=mergeData();if(ch)refreshWorld(true);else{findMyDesk();renderStart();if(mode==="drive")introDrive()}hideLoading()}};
+  const onErr=()=>{seen.c=seen.f=seen.r=true;bootLate=false;done();if(!$("setup").hidden)renderSetup()};
   const mark=(k,s)=>{seen[k]=true;if(s&&s.metadata&&!s.metadata.fromCache){const was=dataReady();fresh[k]=true;if(!was&&dataReady()&&!$("setup").hidden)renderSetup()}};
   try{
     db.doc("campus/main").onSnapshot(d=>{dbCampus=d.exists?validCampus(d.data()):null;mark("c",d);dataSettled?scheduleMerge():done()},onErr);
@@ -688,9 +733,9 @@ function watchData(){
     db.collection("roster").limit(200).onSnapshot(s=>{const o={};s.docs.forEach(d=>{const v=validRoster(d.data());if(v)o[d.id]=v});dbRosters=o;mark("r",s);dataSettled?scheduleMerge():done()},onErr);
     db.collection("deskxy").limit(200).onSnapshot(s=>{const o={};s.docs.forEach(d=>{const v=d.data();if(v&&Array.isArray(v.rows))o[d.id]=v.rows.slice(0,5000)});dbXY=o},()=>{});
   }catch(_){onErr()}
-  setTimeout(()=>{if(!dataSettled){dataSettled=true;const ch=mergeData();if(ch)refreshWorld();hideLoading()}},4000);
+  setTimeout(()=>{if(!dataSettled){dataSettled=true;if(!seen.c)bootLate=true;const ch=mergeData();if(ch)refreshWorld(true);else if(mode==="drive")introDrive();hideLoading()}},4000);
 }
-let dataSettled=false;
+let dataSettled=false,bootLate=false; // bootLate: the 4 s fallback ran before the campus doc, so its arrival restores the saved floor
 function showLoading(){const fd=$("fade"),ft=$("fadeT");ft.textContent="Loading the campus…";fd.dataset.on="1"}
 function hideLoading(){$("fade").dataset.on="0"}
 
@@ -928,7 +973,7 @@ function openEditor(key){
 
 /* ---------- my look: claim your desk ("This is me") and choose how your figure looks ---------- */
 let meItem=null,meLook=null,meOpener=null,meSaveT=0,meSaving=false,meQueued=null,meShown="",meTucked=false;
-const KIND_N={person:"Person",dog:"Dog",cat:"Cat"},HAT_N={none:"None",phones:"Headphones",beanie:"Beanie",cap:"Cap"};
+const KIND_N=PEOPLE.KIND_NAMES,HAT_N={none:"None",phones:"Headphones",beanie:"Beanie",cap:"Cap"};
 const meKey=()=>meItem.w+"|"+meItem.id.slice(5);
 const meSay=t=>{$("meNote").textContent=t};
 function meDesk(){const m=modelFor(meItem.w);return(m&&m.desks[meItem.di])||null}
@@ -993,8 +1038,9 @@ function renderMe(){
     meRadios($("meHat"),PEOPLE.HATS.map(h=>[h,HAT_N[h]]),L.hat,v=>setMe({hat:v}),"chip");$("meHatN").textContent=HAT_N[L.hat];
     meToggles($("meExtra"),[["glasses","Glasses"]].concat(d&&d.arr==="lab"?[]:[["mug","Mug on my desk"]]).concat([["labCoat","Lab coat"]]),L,(k,v)=>setMe({[k]:v}));
   }else{
-    const cs=COATS[L.kind],cur=cs.some(c=>c[0]===L.coat)?L.coat:cs[0][0];
+    const cs=PEOPLE.coatsOf(L.kind),cur=cs.some(c=>c[0]===L.coat)?L.coat:cs[0][0];
     meRadios($("meCoat"),cs.map(([h,n])=>[h,n,h]),cur,v=>setMe({coat:v}),"sw");$("meCoatN").textContent=(cs.find(c=>c[0]===cur)||[0,""])[1];
+    meToggles($("mePetExtra"),d&&d.arr==="lab"?[]:[["mug","Mug on my desk"]],L,(k,v)=>setMe({[k]:v}));$("mePetExtraL").hidden=$("mePetExtra").hidden=!!(d&&d.arr==="lab");
   }
 }
 // focus the same control after the panel is rebuilt (or the first sensible one if it is gone)
@@ -1002,7 +1048,7 @@ function meRefocus(box,v){const n=box&&$(box)&&[...$(box).children].find(x=>x.da
 // preview at once (this browser), save shortly after (one write at a time)
 function setMe(p){
   if(!meItem||!meLook)return;
-  if(p.kind&&p.kind!==meLook.kind)p=Object.assign({coat:null},p); // a dog's coat doesn't carry over to a cat
+  if(p.kind&&p.kind!==meLook.kind){const dl=meDefault();p=Object.assign({coat:dl.kind===p.kind?dl.coat:(PEOPLE.coatsOf(p.kind)[0]||[null])[0]},p)} // a dog's coat doesn't carry over to a cat
   const a=document.activeElement,box=a&&a.parentElement&&a.parentElement.id,v=a&&a.dataset&&a.dataset.v;
   Object.assign(meLook,p);
   LOOKS.set(meKey(),PEOPLE.chosenOf(meLook));if(meItem.w===WKEY)rebuildFigures();
@@ -1100,7 +1146,7 @@ function resize(){
   const w=innerWidth,h=innerHeight;renderer.setPixelRatio(HD.pixelRatio());renderer.setSize(w,h,false);HD.resizeFx(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();
 }
 addEventListener("resize",resize);
-let last=performance.now(),lblAcc=0,lookAcc=0,mapAcc=0,rosterAcc=0;
+let last=performance.now(),lblAcc=0,lookAcc=0,mapAcc=0,rosterAcc=0,movingCls=false;
 function walkBlocked(x,z){if(Math.abs(x)>PW/2-.5||Math.abs(z)>PD/2-.5)return true;const l=query(x,z,.35,4);for(let i=0;i<l.length;i++)if(circleVs(l[i],x,z,.3))return true;return false}
 function walkFrame(dt){
   if(tour){tour.t+=dt/tour.dur;const k=easeIO(Math.min(1,tour.t)),f=tour.from,t=tour.to;walker.x=f.x+(t.x-f.x)*k;walker.z=f.z+(t.z-f.z)*k;walker.yaw=f.yaw+(t.yaw-f.yaw)*k;walker.pitch=f.pitch+(t.pitch-f.pitch)*k;if(tour.t>=1)tour=null;return}
@@ -1135,6 +1181,7 @@ function frame(now){
   lblAcc+=dt;if(lblAcc>.2){lblAcc=0;updateLabels()}
   lookAcc+=dt;if(lookAcc>.1){lookAcc=0;updateLookCard()}
   mapAcc+=dt;if(mapAcc>.05&&mode!=="overview"){mapAcc=0;drawMap()}
+  {const mv=mode==="drive"&&!fly&&Math.abs(me.vF)>1.2;if(mv!==movingCls){movingCls=mv;document.body.classList.toggle("moving",mv)}}
   hudFrame();audioFrame();
   presT+=dt;if(presT>1/15){presT=0;sendPresence()}
   rosterAcc+=dt;if(rosterAcc>1){rosterAcc=0;if(mode==="overview")renderRoster()}
@@ -1147,8 +1194,11 @@ function audioFrame(){
   const f=115+sp*36+(me.boosting?80:0)+(me.air?55:0);
   M.o1.frequency.setTargetAtTime(f,t,.06);M.o2.frequency.setTargetAtTime(f*.5,t,.06);M.o3.frequency.setTargetAtTime(f*3,t,.06);M.wF.frequency.setTargetAtTime(f*3,t,.06);
   M.mF.frequency.setTargetAtTime(600+sp*240,t,.08);
-  M.mG.gain.setTargetAtTime(car?.03+Math.abs(me.thr)*.025+Math.min(sp,12)*.003:0,t,.1);
-  M.wG.gain.setTargetAtTime(car?Math.min(.025,sp*.0022)+(me.boosting?.012:0):0,t,.1);
+  const syn=M.real?0:1; // the recorded motor replaces the synth tone and whine once it has loaded
+  M.mG.gain.setTargetAtTime(car?(.03+Math.abs(me.thr)*.025+Math.min(sp,12)*.003)*syn:0,t,.1);
+  M.wG.gain.setTargetAtTime(car?(Math.min(.025,sp*.0022)+(me.boosting?.012:0))*syn:0,t,.1);
+  if(M.real){M.real.playbackRate.setTargetAtTime(clamp(.72+sp*.085+(me.boosting||me.turboT>0?.2:0)+(me.air?.12:0),.6,2.3),t,.08);
+    M.realG.gain.setTargetAtTime(car?.018+Math.abs(me.thr)*.022+Math.min(sp,12)*.0035+(me.boosting?.01:0):0,t,.1)}
   M.rG.gain.setTargetAtTime(car&&!me.air?Math.min(.09,sp*.011):0,t,.08);M.rF.frequency.setTargetAtTime(160+sp*35,t,.1);
   const slide=car&&!me.air&&(me.drift||Math.abs(me.lat)>1.6);
   M.sG.gain.setTargetAtTime(slide?Math.min(.03,.01+Math.abs(me.lat)*.008):0,t,.05);
@@ -1158,13 +1208,16 @@ function audioFrame(){
 /* ---------- boot ---------- */
 try{DEMO=CAMPUS.demo(LAYOUT)}catch(e){console.error(e);fatal("The campus couldn't be built. Reload the page to try again.");return}
 DATA=null;mergeData(true);
-{const V1=[0,1,2,3,0,0,0,0,0,4],V2=[0,1,2,3,0,0,4],ver=store.get("rc-style-v");let saved=parseInt(store.get("rc-style"),10);if(Number.isInteger(saved)&&ver!=="3")saved=(ver==="2"?V2:V1)[saved];const i=Number.isInteger(saved)&&saved>=0&&saved<ST.length?saved:(matchMedia("(prefers-color-scheme: dark)").matches?1:0);S=ST[i];cur=i;fxRestyle();styleUI(i)}
+{const V1=[0,1,2,3,0,0,0,0,0,4],V2=[0,1,2,3,0,0,4],ver=store.get("rc-style-v");let saved=parseInt(store.get("rc-style"),10);if(Number.isInteger(saved)&&ver!=="3")saved=(ver==="2"?V2:V1)[saved];const i=Number.isInteger(saved)&&saved>=0&&saved<ST.length?saved:0;S=ST[i];cur=i;fxRestyle();styleUI(i)} // Studio first for everyone (dark mode no longer means Neon night)
 HD.restyle(); // sizes the canvas for the quality level (and sets up Studio's post-processing)
-{const last_=store.get("rc-world");enterWorld(last_&&(last_==="campus"||floorKeys().includes(last_))?last_:"campus")}
-setAvatar(me.kind);setMuted(muted);setMode("overview");updateRunBtn();
-ovPose(camPos,camLook);camera.fov=fovFor("overview");
-addEventListener("pagehide",()=>store.set("rc-world",WKEY));
-setInterval(()=>store.set("rc-world",WKEY),5000);
+const bootKey=store.get("rc-world");
+{const ks=floorKeys();enterWorld(bootKey&&(bootKey==="campus"||ks.includes(bootKey))?bootKey:(ks[0]||"campus"))}
+setAvatar(me.kind);setMuted(muted);setOpts(true);updateRunBtn();
+introDrive();
+// remember the floor, but never the sample floor shown while the page's own data is still loading
+const saveWorld=()=>{if(dataSettled&&!bootLate)store.set("rc-world",WKEY)};
+addEventListener("pagehide",saveWorld);
+setInterval(saveWorld,5000);
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{signs.forEach(sg=>{const c=textCanvas(sg.lines,{stripe:sg.stripe});sg.s.material.map.dispose();sg.s.material.map=new THREE.CanvasTexture(c);sg.s.material.map.minFilter=THREE.LinearFilter;sg.s.material.needsUpdate=true;sg.s.scale.set(sg.h*c.width/c.height,sg.h,1)});labelsClear();rebuildTags();resolveNames()});
 requestAnimationFrame(frame);
 (async()=>{

@@ -279,8 +279,18 @@ function audio(){
   const rG=gain(0,bus),rF=filt("lowpass",220,.6,rG);loop(brownBuf,rF);
   const sG=gain(0,bus),sF=filt("bandpass",1400,1.1,sG);loop(noiseBuf,sF);
   motor={o1,o2,o3,mG,mF,wG,wF,rG,rF,sG,sF};
+  // real recordings (CC0, src/assets/sounds): decoded once; until they are ready, or where MP3 can't be decoded, the synth plays
+  const data=typeof SOUND_DATA!=="undefined"?SOUND_DATA:{};
+  for(const k in data){try{const b=atob(data[k]),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);
+    AC.decodeAudioData(u.buffer).then(buf=>{SND[k]=buf;if(k==="car-motor")realMotor()}).catch(()=>{})}catch(_){}}
   return AC;
 }
+const SND={};
+// the RC car's motor: a recorded small electric motor, looped, its pitch and level following speed and throttle (audioFrame)
+function realMotor(){if(!AC||!motor||motor.real)return;const s=AC.createBufferSource();s.buffer=SND["car-motor"];s.loop=true;const g=AC.createGain();g.gain.value=0;s.connect(g);g.connect(bus);s.start(0,Math.random()*2);motor.real=s;motor.realG=g}
+// play a recording; false when it isn't loaded (the caller falls back to the synth)
+function playSnd(k,vol,rate,at){if(!live()||!SND[k])return false;const s=AC.createBufferSource();s.buffer=SND[k];if(rate)s.playbackRate.value=rate;const g=AC.createGain();g.gain.value=vol;s.connect(g);g.connect(bus);s.start(AC.currentTime+(at||0));return true}
+const pick=(base,n)=>base+(1+Math.floor(Math.random()*n));
 const live=()=>AC&&!muted&&bus;
 // one shaped note: oscillator -> optional filter -> envelope (soft attack, exponential tail)
 function note(o){
@@ -305,7 +315,7 @@ function hiss(o){
 const bell=(f,at,vol,dur)=>{note({f,at,vol,dur:dur||.7,atk:.004});note({f:f*2.01,at,vol:(vol||.08)*.25,dur:(dur||.7)*.6,atk:.004})};
 const SFX={
   // a friendly two-note toy-car "meep meep"
-  horn:v=>{v=v==null?1:v;[0,.17].forEach(at=>{note({type:"sawtooth",f:640,to:610,dur:.14,vol:.07*v,lp:1500,at,atk:.012});note({f:320,dur:.14,vol:.05*v,at,atk:.012})})},
+  horn:v=>{v=v==null?1:v;if(playSnd("car-horn",.2*v))return;[0,.17].forEach(at=>{note({type:"sawtooth",f:640,to:610,dur:.14,vol:.07*v,lp:1500,at,atk:.012});note({f:320,dur:.14,vol:.05*v,at,atk:.012})})},
   bump:s=>{const v=Math.min(1,s/6);note({f:130,to:55,dur:.14,vol:.17*v});hiss({f:320,dur:.05,vol:.07*v,brown:true})},
   land:s=>{const v=Math.min(1,s/5);note({f:95,to:48,dur:.18,vol:.18*v});hiss({f:260,dur:.07,vol:.06*v,brown:true})},
   chime:()=>{bell(880,0,.06);bell(1318.5,.07,.05);bell(1760,.14,.04,.9)},
@@ -325,9 +335,9 @@ const SFX={
   gate:()=>{note({f:988,to:1480,dur:.1,vol:.07,glide:.08});note({f:1480,dur:.2,vol:.05,at:.07})},
   jump:k=>k==="cat"?note({f:620,to:1150,dur:.12,vol:.045,glide:.1}):k==="dog"?note({type:"triangle",f:330,to:640,dur:.13,vol:.05,lp:2000}):note({f:250,to:560,dur:.16,vol:.05}),
   // bark: a pitch-dropping voiced tone through a mouth-like band-pass, with a breathy burst on the attack; usually two
-  bark:v=>{v=v==null?1:v;[0,.2].forEach((at,i)=>{const s=i?.85:1;note({type:"sawtooth",f:420,to:190,glide:.12,dur:.15,vol:.11*v*s,lp:750,bp:true,q:2.2,at,atk:.006});note({type:"triangle",f:210,to:110,glide:.12,dur:.13,vol:.07*v*s,at,atk:.006});hiss({type:"bandpass",f:1100,dur:.06,vol:.06*v*s,q:1.5,at})})},
+  bark:v=>{v=v==null?1:v;const a=pick("dog-bark-",3);if(playSnd(a,.28*v)){let b=pick("dog-bark-",3);if(b===a)b=pick("dog-bark-",3);playSnd(b,.22*v,1,.26);return}[0,.2].forEach((at,i)=>{const s=i?.85:1;note({type:"sawtooth",f:420,to:190,glide:.12,dur:.15,vol:.11*v*s,lp:750,bp:true,q:2.2,at,atk:.006});note({type:"triangle",f:210,to:110,glide:.12,dur:.13,vol:.07*v*s,at,atk:.006});hiss({type:"bandpass",f:1100,dur:.06,vol:.06*v*s,q:1.5,at})})},
   // meow: rising then falling pitch with a little vibrato through two vowel-like formants
-  meow:v=>{v=v==null?1:v;[[950,.15],[2300,.06]].forEach(([fm,g])=>{if(!live())return;const t=AC.currentTime,o=AC.createOscillator(),f=AC.createBiquadFilter(),e=AC.createGain(),l=AC.createOscillator(),lg=AC.createGain();
+  meow:v=>{v=v==null?1:v;if(playSnd(pick("cat-meow-",3),.34*v,.97+Math.random()*.08))return;[[950,.15],[2300,.06]].forEach(([fm,g])=>{if(!live())return;const t=AC.currentTime,o=AC.createOscillator(),f=AC.createBiquadFilter(),e=AC.createGain(),l=AC.createOscillator(),lg=AC.createGain();
     o.type="sawtooth";o.frequency.setValueAtTime(480,t);o.frequency.linearRampToValueAtTime(820,t+.2);o.frequency.linearRampToValueAtTime(520,t+.55);
     l.frequency.value=6.5;lg.gain.value=12;l.connect(lg);lg.connect(o.frequency);
     f.type="bandpass";f.frequency.setValueAtTime(fm*.85,t);f.frequency.linearRampToValueAtTime(fm,t+.2);f.frequency.linearRampToValueAtTime(fm*.7,t+.55);f.Q.value=3;

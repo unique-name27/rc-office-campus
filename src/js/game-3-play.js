@@ -287,6 +287,7 @@ function setMode(m){
   if(m!=="walk"){tour=null;if(document.pointerLockElement)document.exitPointerLock()}
   if(m!=="drive"){if(run)runCancel();if(race)raceCancel();closeResult()}
   if(m!=="overview"){closeTimes();tip.hidden=true;cv.style.cursor=""}
+  if(was==="overview"&&m!=="overview"&&$("start").contains(document.activeElement))document.activeElement.blur(); // arrow keys steer, not a chip
   if(m==="overview")hideElev();
   if(was==="walk"&&m!=="walk"&&innerWidth<=760)closeFind();
   setHelp();updateLookCard(true);renderStart();
@@ -387,7 +388,7 @@ function enterWorld(key,at){
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 // fade to the theme color, swap worlds, fade back in
 async function goWorld(key,o){
-  o=o||{};if(trans)return false;trans=true;
+  o=o||{};if(trans)return false;trans=true;bootLate=false;
   const fd=$("fade"),ft=$("fadeT");ft.innerHTML="";const big=document.createElement("div");big.textContent=o.title||floorName(key);ft.appendChild(big);if(o.sub){const sm=document.createElement("small");sm.textContent=o.sub;big.appendChild(sm)}
   fd.dataset.on="1";await sleep(REDUCED?60:240);
   let ok=false;try{ok=enterWorld(key,o.at)}catch(e){console.error(e)}

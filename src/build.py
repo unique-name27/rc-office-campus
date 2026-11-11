@@ -6,7 +6,7 @@ usage: python -I build.py [out.html] [--test]
 import sys, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MODULES = ["layout.js", "campus.js", "nav.js", "importers.js", "editor.js", "people.js", "avatar-meshes.js", "kit-meshes.js"]
+MODULES = ["layout.js", "campus.js", "nav.js", "importers.js", "editor.js", "people.js", "avatar-meshes.js", "kit-meshes.js", "sound-data.js"]
 GAME = ["game-1-core.js", "game-1b-avatars.js", "game-2-world.js", "game-2b-people.js", "game-2c-hd.js", "game-3-play.js", "game-4-ui.js"]
 # three.js r165 as ES modules from jsDelivr: one copy, shared with the add-ons through the import map
 TV = "0.165.0"
@@ -40,7 +40,8 @@ window.__rc={get me(){return me},get bot(){return bot},get WKEY(){return WKEY},g
     const db=x=>x>0?(20*Math.log10(x)).toFixed(1):"-inf";return{peakDb:db(pk),rmsDb:db(Math.sqrt(ss/Math.max(1,last))),ms:Math.round(last/sr*1000)}},
   get renderer(){return renderer},get scene(){return scene},get camera(){return camera},ST,get elevAt(){return elevAt},get remotes(){return remotes},syncPeers,walker,get chairs(){return chairs},carStep,groundY,roomFor,onPlat,setAvatar,LAYOUT,CAMPUS,NAV,IMPORT,EDITOR,PEOPLE,
   get FIG(){return FIG},get FIGP(){return FIGP},get figG(){return figG},get LOOKS(){return LOOKS},get lookStatus(){return lookStatus},get lookDocs(){return lookDocs},get myDesk(){return myDesk},get myId(){return myId},
-  recomputeLooks,rebuildFigures,figFrame,openMe,closeMe,deskClaimState,showPick,tidyChairs,chairsStep};
+  recomputeLooks,rebuildFigures,figFrame,openMe,closeMe,deskClaimState,showPick,tidyChairs,chairsStep,
+  get SND(){return SND},get motor(){return motor},get AC(){return AC}};
 """
 
 
@@ -71,8 +72,27 @@ def main():
         # a full document for local servers / GitHub Pages (the artifact platform adds this skeleton itself)
         html = ('<!doctype html>\n<html lang="en">\n<meta charset="utf-8">\n'
                 '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n') + html + "</html>\n"
+    check_syntax(IMPORTS + "\n(function(){\n\"use strict\";\n" + body + "\n})();\n")
     open(out, "w", encoding="utf-8").write(html)
     print(f"wrote {out} ({len(html)//1024} KB)")
+
+
+def check_syntax(js):
+    """refuse to write a page whose game script doesn't parse (one stray comment once blanked the whole game); needs node"""
+    import shutil, subprocess, tempfile
+    node = shutil.which("node")
+    if not node:
+        print("note: node not found, script syntax not checked")
+        return
+    fd, tmp = tempfile.mkstemp(suffix=".mjs")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(js)
+        r = subprocess.run([node, "--check", tmp], capture_output=True, encoding="utf-8", errors="replace")
+        if r.returncode:
+            raise SystemExit("the game script has a syntax error, nothing written:\n" + (r.stderr or r.stdout)[-1500:])
+    finally:
+        os.remove(tmp)
 
 
 main()

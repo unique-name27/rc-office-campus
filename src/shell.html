@@ -51,6 +51,14 @@ kbd{font:500 10px var(--mono);color:var(--muted);border:1px solid var(--line);bo
 /* start card */
 #start{position:fixed;z-index:5;left:max(14px,env(safe-area-inset-left,0px));bottom:calc(14px + env(safe-area-inset-bottom,0px));width:min(430px,calc(100vw - 28px));padding:16px;display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 96px);overflow:auto;box-sizing:border-box}
 .kick{font:500 11px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+/* while driving or walking the start card is the options card: docked under the toolbar, faded while you move */
+body:not([data-mode="overview"]) #start{top:calc(64px + env(safe-area-inset-top,0px));bottom:auto;width:min(340px,calc(100vw - 28px));max-height:calc(100vh - 160px);padding:12px 14px;gap:8px;transition:opacity .25s}
+body[data-opts="0"]:not([data-mode="overview"]) #start,body[data-find="1"]:not([data-mode="overview"]) #start{display:none}
+body.moving:not([data-mode="overview"]) #start:not(:hover):not(:focus-within){opacity:.45}
+#start .opth{justify-content:space-between;flex-wrap:nowrap;align-items:flex-start}.opth .kick{min-width:0;padding-top:4px}
+body:not([data-mode="overview"]) .bl{padding:6px 8px;gap:4px 8px;grid-template-columns:minmax(72px,1fr) auto}body:not([data-mode="overview"]) .bl .fls{flex-wrap:wrap;justify-content:flex-end}body:not([data-mode="overview"]) .bl .bs{display:none}
+.fl.out{min-width:64px}
+@media (min-width:761px) and (max-width:1180px){body:not([data-mode="overview"]):not([data-opts="0"]):not([data-find="1"]) #status{left:370px;transform:none;max-width:calc(100vw - 370px - 250px)}}
 #start h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.05}
 #start p{margin:0;font-size:14px;line-height:1.45;color:var(--muted)}
 .lbl{font:500 11px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
@@ -215,6 +223,8 @@ body.animal #pDrift{display:none}body.animal #pBoost{grid-column:1/3}
 body.touch #speedo{right:auto;bottom:auto;left:max(12px,env(safe-area-inset-left,0px));top:calc(64px + env(safe-area-inset-top,0px));min-width:112px;padding:6px 10px}
 body.touch #speedo .v{font-size:26px}
 body.touch #speedo .tags{display:none}
+@media (min-width:761px){body.touch[data-opts="1"]:not([data-mode="overview"]):not([data-find="1"]) #speedo{left:calc(368px + env(safe-area-inset-left,0px))}}
+@media (min-width:761px){body.touch[data-mode="drive"] #start{max-height:calc(100vh - 236px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))}}
 body.touch #status{top:calc(250px + env(safe-area-inset-top,0px))}
 body.touch #toast{top:calc(176px + env(safe-area-inset-top,0px))}
 body.touch #look{bottom:calc(202px + env(safe-area-inset-bottom,0px))}
@@ -226,6 +236,9 @@ body.touch #help{display:none}
   #start.tucked{display:none}
   #side.open{display:flex;top:auto;bottom:calc(14px + env(safe-area-inset-bottom,0px));left:max(14px,env(safe-area-inset-left,0px));right:max(14px,env(safe-area-inset-right,0px));width:auto;z-index:8;background:var(--glass2)}
   #start{max-height:calc(100vh - 140px);gap:8px;padding:14px}
+  body:not([data-mode="overview"]) #start{top:auto;bottom:calc(14px + env(safe-area-inset-bottom,0px));width:auto;right:max(14px,env(safe-area-inset-right,0px));max-height:calc(100vh - 150px);z-index:7;background:var(--glass2)}
+  body:not([data-mode="overview"]) #optsHide{display:none}
+  #optsGo{width:100%}
   #start h1{font-size:22px}
   #start p,#ovKeys{display:none}
   #start .paints,#chipsA{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:4px 2px;margin:0 -2px}
@@ -256,6 +269,7 @@ body.touch #help{display:none}
 <header id="bar">
   <div class="brand glass"><b id="brandT">San Jose campus</b><span id="brandS">RC office</span></div>
   <nav class="tools glass hud" aria-label="Controls">
+    <button class="tb no-o" id="bOpts" type="button" aria-expanded="true" aria-controls="start">Options <kbd>Esc</kbd></button>
     <button class="tb no-o" id="bOver" type="button">Overview <kbd>O</kbd></button>
     <button class="tb no-d no-w no-c" id="bUp" type="button">Campus <kbd>O</kbd></button>
     <button class="tb no-w" id="bAv" type="button" title="Switch between the RC car, the dog and the cat">Car <kbd>P</kbd></button>
@@ -270,27 +284,29 @@ body.touch #help{display:none}
   </nav>
 </header>
 
-<section id="start" class="glass hud no-d no-w" aria-labelledby="startH">
-  <div class="kick" id="stKick"></div>
-  <div class="row no-c" id="stNav"><button class="tb" id="bUp2" type="button">← Campus</button><div class="fls" id="flChips" role="group" aria-label="Floors in this building"></div></div>
-  <h1 id="startH">Drive the campus</h1>
-  <p id="stP"></p>
+<section id="start" class="glass hud" aria-labelledby="startH">
+  <div class="row opth"><div class="kick" id="stKick"></div><button class="tb no-o" id="optsHide" type="button" title="Hide the options (Esc brings them back)">Hide <kbd>Esc</kbd></button></div>
+  <div class="row no-c no-d no-w" id="stNav"><button class="tb" id="bUp2" type="button">← Campus</button><div class="fls" id="flChips" role="group" aria-label="Floors in this building"></div></div>
+  <h1 id="startH" class="no-d no-w">Drive the campus</h1>
+  <p id="stP" class="no-d no-w"></p>
   <div id="banner" hidden></div>
-  <div class="bldgs no-f" id="bldgs"></div>
+  <div class="lbl no-o">Go to</div>
+  <div class="bldgs" id="bldgs"></div>
   <div class="lbl">Play as <b id="avName"></b></div>
   <div class="chips" id="avChips" role="radiogroup" aria-label="Play as"></div>
   <div class="lbl"><span id="paintLbl">Paint</span> <b id="paintName"></b></div>
   <div class="paints" id="paints" role="radiogroup" aria-label="Car paint"></div>
   <div class="lbl">Style <b id="styleName"></b></div>
   <div class="chips" id="chipsA" role="group" aria-label="Graphic style"></div>
-  <p class="sdesc" id="styleDescA"></p>
-  <div class="row">
+  <p class="sdesc no-d no-w" id="styleDescA"></p>
+  <div class="row no-d no-w">
     <button class="primary" id="go" type="button">Take the wheel</button>
     <button class="tb" id="goTop" type="button">Play top-down</button>
     <button class="tb" id="goWalk" type="button">Walk the floor</button>
   </div>
   <div class="row" id="stLinks"><button class="lnk" id="myDesk" type="button" hidden>Route to my desk</button><button class="lnk" id="myLook" type="button" hidden>My look</button><button class="lnk no-c" id="planT" type="button" hidden>Hide floor plan</button><button class="lnk" id="bSetup2" type="button" hidden>Set up the campus</button></div>
-  <div class="keys" id="ovKeys">Drag to spin · scroll to zoom · click a building to pick a floor</div>
+  <button class="primary phone no-o" id="optsGo" type="button">Drive</button>
+  <div class="keys no-d no-w" id="ovKeys">Drag to spin · scroll to zoom · click a building to pick a floor</div>
 </section>
 
 <aside id="side" class="glass hud no-d no-w" aria-label="Coffee run times and who's here">
@@ -342,7 +358,7 @@ body.touch #help{display:none}
       <div class="lbl">Headwear <b id="meHatN"></b></div><div class="chips" id="meHat" role="radiogroup" aria-label="Headwear"></div>
       <div class="lbl">Extras</div><div class="chips" id="meExtra" role="group" aria-label="Extras"></div>
     </div>
-    <div id="mePet" hidden><div class="lbl">Coat <b id="meCoatN"></b></div><div class="paints" id="meCoat" role="radiogroup" aria-label="Coat color"></div></div>
+    <div id="mePet" hidden><div class="lbl">Coat <b id="meCoatN"></b></div><div class="paints" id="meCoat" role="radiogroup" aria-label="Coat color"></div><div class="lbl" id="mePetExtraL">Extras</div><div class="chips" id="mePetExtra" role="group" aria-label="Extras"></div></div>
   </div>
   <p class="note" id="meNote" role="status"></p>
   <div class="row"><button class="lnk" id="meUnclaim" type="button" hidden>This isn't my desk</button></div>

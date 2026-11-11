@@ -1,9 +1,10 @@
 /* PEOPLE: how coworkers look in the 3D world (pure: no DOM, no three.js).
  *
- *   Everyone is the same simple seated figure: one body shape, no hair, no gendered clothing.
- *   Variety comes only from neutral things - the shirt (team color), pants, shoes, headwear, glasses, a mug -
- *   picked from a hash of the floor and desk id. Never from a person's name or title.
- *   Faces use one neutral, non-skin tone unless the person picks their own.
+ *   Coworkers are fun creatures by default - dragons, dogs, cats, foxes, robots, aliens and more (SPECIES) - each in a
+ *   coat color of its kind and a scarf in its team's color, picked from a hash of the floor and desk id. Never from a
+ *   person's name or title. Anyone can pick another creature for themselves, or the plain seated person: one body
+ *   shape, no hair, no gendered clothing, variety only from neutral things (shirt, pants, shoes, headwear, glasses, a mug)
+ *   and one neutral, non-skin face tone unless they pick their own.
  *
  *   A coworker can claim their desk ("This is me") and choose their own look. A claim is one doc per viewer,
  *   looks/<uid> = {w: floor key, desk: desk id, name: the seating name at that desk, look: {chosen fields}, at: ms}.
@@ -21,7 +22,27 @@ const PEOPLE = (() => {
   const SHOES = ['#2A2B2F', '#ECEBE7', '#6B4A33'];
   const ACC = ['#E4572E', '#3E7CB1', '#F2C14E', '#4F9D69', '#8E6CC4', '#2E3035', '#E8E6E1', '#D96C9A'];
   const HATS = ['none', 'phones', 'beanie', 'cap'];
-  const KINDS = ['person', 'dog', 'cat'];
+  // [id, name, how often it is picked by default, coats [[hex, name]]]; the game draws each one (game-2b-people.js)
+  const SPECIES = [
+    ['dragon', 'Dragon', 3, [['#4FA36B', 'Emerald'], ['#D9534A', 'Ruby'], ['#8E6CC4', 'Amethyst'], ['#3E7CB1', 'Sapphire'], ['#2BA69A', 'Teal'], ['#E0A43A', 'Gold']]],
+    ['dog', 'Dog', 1, [['#C8924E', 'Golden'], ['#6B4226', 'Chocolate'], ['#2B2622', 'Black'], ['#EFE8DC', 'Cream'], ['#8C8F94', 'Gray']]],
+    ['cat', 'Cat', 1, [['#E08A3C', 'Orange'], ['#2A2724', 'Black'], ['#F2EEE6', 'White'], ['#9AA0A6', 'Gray'], ['#C9B79A', 'Siamese']]],
+    ['fox', 'Fox', 1, [['#E07A2E', 'Red'], ['#EDEAE3', 'Arctic'], ['#8C8F94', 'Silver']]],
+    ['bear', 'Bear', 1, [['#8A5A3C', 'Brown'], ['#3A302B', 'Black'], ['#C8955B', 'Honey'], ['#EDEAE3', 'Polar']]],
+    ['panda', 'Panda', 1, [['#F2F0EB', 'Classic'], ['#EADFCB', 'Cream']]],
+    ['bunny', 'Bunny', 1, [['#F2EFEA', 'White'], ['#A88566', 'Brown'], ['#A9A9B0', 'Gray'], ['#3A3633', 'Black']]],
+    ['frog', 'Frog', 1, [['#6DBE4B', 'Green'], ['#3F8F4D', 'Forest'], ['#3E8FD1', 'Blue'], ['#F08A2E', 'Orange']]],
+    ['penguin', 'Penguin', 1, [['#2E3440', 'Classic'], ['#1F2A44', 'Navy'], ['#8C8F94', 'Fluffy gray']]],
+    ['owl', 'Owl', 1, [['#8A6A4A', 'Brown'], ['#B08A5A', 'Tawny'], ['#7E7A76', 'Gray'], ['#F0EDE6', 'Snowy']]],
+    ['robot', 'Robot', 1, [['#B8C0C8', 'Silver'], ['#D9534A', 'Red'], ['#3E7CB1', 'Blue'], ['#F2C14E', 'Yellow'], ['#A9D8C5', 'Mint']]],
+    ['unicorn', 'Unicorn', 1, [['#F4F1FA', 'White'], ['#F7D6E6', 'Pink'], ['#DCD3F5', 'Lavender'], ['#D5F0E3', 'Mint']]],
+    ['dino', 'Dino', 2, [['#6BB36B', 'Green'], ['#E07A9A', 'Pink'], ['#F2A33A', 'Orange'], ['#5EA8D6', 'Blue'], ['#9B7BD4', 'Purple']]],
+    ['alien', 'Alien', 1, [['#8BDC6B', 'Lime'], ['#6EC6E6', 'Sky'], ['#C59BF0', 'Violet'], ['#F59BC7', 'Pink']]],
+  ];
+  const KINDS = ['person'].concat(SPECIES.map(s => s[0]));
+  const KIND_NAMES = Object.fromEntries([['person', 'Person']].concat(SPECIES.map(s => [s[0], s[1]])));
+  const coatsOf = kind => { const s = SPECIES.find(x => x[0] === kind); return s ? s[3] : [] };
+  const SP_TOTAL = SPECIES.reduce((a, s) => a + s[2], 0);
   // the fields a person may choose; everything else (pants, shoes, accessory colors) stays as their desk's default
   const CHOSEN = ['kind', 'shirt', 'tone', 'hat', 'glasses', 'mug', 'labCoat', 'coat'];
 
@@ -35,8 +56,13 @@ const PEOPLE = (() => {
     const h = r();
     const hat = lab ? (h < .3 ? 'phones' : 'none') : h < .45 ? 'none' : h < .65 ? 'phones' : h < .83 ? 'beanie' : 'cap';
     const glasses = r() < (lab ? .55 : .28), mug = !lab && r() < .38;
-    return { kind: 'person', shirt: 'team', tone: DEFAULT_TONE, hat, glasses, mug, labCoat: lab, coat: null,
+    const look = { kind: 'person', shirt: 'team', tone: DEFAULT_TONE, hat, glasses, mug, labCoat: lab, coat: null,
       pants: pick(PANTS), shoes: pick(SHOES), hatColor: pick(ACC), mugColor: pick(ACC) };
+    // the creature at this desk (the person fields above stay ready for anyone who picks the person instead)
+    let w = r() * SP_TOTAL, sp = SPECIES[SPECIES.length - 1];
+    for (const s of SPECIES) { if (w < s[2]) { sp = s; break } w -= s[2] }
+    look.kind = sp[0]; look.coat = pick(sp[3])[0];
+    return look;
   }
 
   // keep only valid chosen fields (a partial look is fine); null when there is nothing usable
@@ -96,5 +122,5 @@ const PEOPLE = (() => {
     return { winners, status };
   }
 
-  return { TONES, DEFAULT_TONE, HATS, KINDS, CHOSEN, hash, defaultLook, validLook, merge, chosenOf, validClaim, norm, locate, resolve };
+  return { TONES, DEFAULT_TONE, HATS, KINDS, KIND_NAMES, SPECIES, coatsOf, CHOSEN, hash, defaultLook, validLook, merge, chosenOf, validClaim, norm, locate, resolve };
 })();

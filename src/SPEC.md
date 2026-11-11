@@ -3,7 +3,8 @@
 The page is ONE html file (a claude.ai artifact) built by concatenating modules into a single
 `(function(){"use strict"; ... })();` script inside one `<script type="module">`, which imports three.js r165 (and its post-processing
 add-ons) from jsDelivr through an import map; only the game/renderer uses `THREE`. Generated data modules: `js/avatar-meshes.js`
-(`AVMESH`, from `src/blender/avatars.py`) and `js/kit-meshes.js` (`KITMESH`, from `src/tools/pack_kit.py`). Studio is the HD style
+(`AVMESH`, from `src/blender/avatars.py`), `js/kit-meshes.js` (`KITMESH`, from `src/tools/pack_kit.py`) and `js/sound-data.js`
+(`SOUND_DATA`, the CC0 recordings in `src/assets/sounds`, from `src/tools/pack_sounds.py`). Studio is the HD style
 (`js/game-2c-hd.js`: color-managed, image-based light, GTAO, bloom, quality levels); the other styles keep the classic unmanaged colors.
 Today it is a single-floor RC-car game ("Floor 4 Walkthrough"). v4 turns it into a **San Jose campus: 2 buildings x 4 floors**
 with real coworkers loaded from facilities data, per-team desk arrangements, floor-plan import, routes and races.
@@ -186,10 +187,14 @@ EDITOR.open({
 ```
 
 ## 9. PEOPLE  (`PEOPLE`)  — how coworkers look (pure)
-Everyone is the same seated figure. Neutral variety only, picked from a hash of `"<floor key>|<desk id>"` (never a name or title).
+Coworkers are creatures by default; the plain seated person is a pick. Everything is chosen from a hash of `"<floor key>|<desk id>"`
+(never a name or title).
 ```js
-PEOPLE.defaultLook(key, arr) -> { kind:'person', shirt:'team', tone, hat:'none'|'phones'|'beanie'|'cap', glasses, mug, labCoat, coat:null,
-                                  pants, shoes, hatColor, mugColor }      // lab desks: lab coat, no mug
+PEOPLE.SPECIES -> [[id, name, weight, [[coatHex, coatName]]]]   // dragon (most common), dog, cat, fox, bear, panda, bunny, frog,
+                                                                 // penguin, owl, robot, unicorn, dino, alien
+PEOPLE.KINDS -> ['person', ...species ids];  PEOPLE.KIND_NAMES;  PEOPLE.coatsOf(kind) -> [[hex, name]]
+PEOPLE.defaultLook(key, arr) -> { kind:<species>, coat:<one of its coats>, shirt:'team', tone, hat:'none'|'phones'|'beanie'|'cap',
+                                  glasses, mug, labCoat, pants, shoes, hatColor, mugColor }   // person fields ready if they pick it; lab desks: no mug
 PEOPLE.validLook(v) -> chosen fields only {kind, shirt:'team'|#hex, tone:#hex, hat, glasses, mug, labCoat, coat:#hex} | null
 PEOPLE.merge(base, chosen);  PEOPLE.chosenOf(look);  PEOPLE.norm(name)
 PEOPLE.validClaim(v) -> { w, desk, name, look, at } | null

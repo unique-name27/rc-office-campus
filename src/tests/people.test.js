@@ -15,13 +15,25 @@ test('default looks are deterministic per desk and never take a name', () => {
   assert.notDeepEqual(PEOPLE.defaultLook('B2-3|3-A01', 'bench'), a, 'same desk id on another floor is a different person');
 });
 
-test('every default is a person in their team shirt with the neutral tone', () => {
+test('every default is a creature in one of its coats, with the person look ready (team shirt, neutral tone)', () => {
   for (let i = 0; i < 400; i++) {
     const l = PEOPLE.defaultLook('B1-2|2-C' + i, i % 5 ? 'bench' : 'lab');
-    assert.equal(l.kind, 'person'); assert.equal(l.shirt, 'team'); assert.equal(l.tone, PEOPLE.DEFAULT_TONE);
+    assert.ok(l.kind !== 'person' && PEOPLE.KINDS.includes(l.kind), l.kind);
+    assert.ok(PEOPLE.coatsOf(l.kind).some(c => c[0] === l.coat), l.kind + ' ' + l.coat);
+    assert.equal(l.shirt, 'team'); assert.equal(l.tone, PEOPLE.DEFAULT_TONE);
     assert.ok(PEOPLE.HATS.includes(l.hat));
     for (const k of ['pants', 'shoes', 'hatColor', 'mugColor']) assert.match(l[k], /^#[0-9A-F]{6}$/i);
   }
+});
+
+test('every creature turns up, dragons most', () => {
+  const n = {};
+  for (let i = 0; i < 3000; i++) { const k = PEOPLE.defaultLook('K|' + i, 'bench').kind; n[k] = (n[k] || 0) + 1 }
+  for (const [id] of PEOPLE.SPECIES) assert.ok(n[id] > 80, id + ' ' + JSON.stringify(n));
+  assert.ok(Object.values(n).every(v => v <= n.dragon), 'dragons are the most common ' + JSON.stringify(n));
+  assert.equal(PEOPLE.KINDS[0], 'person');
+  for (const k of PEOPLE.KINDS) assert.ok(PEOPLE.KIND_NAMES[k], k);
+  for (const [, , , coats] of PEOPLE.SPECIES) for (const [h] of coats) assert.match(h, /^#[0-9A-F]{6}$/);
 });
 
 test('defaults spread across the neutral options', () => {
@@ -44,7 +56,8 @@ test('validLook keeps only valid chosen fields', () => {
   assert.equal(PEOPLE.validLook({}), null);
   assert.deepEqual(PEOPLE.validLook({ kind: 'dog', shirt: '#123ABC', tone: '#A9D8C5', hat: 'cap', glasses: true, mug: false, labCoat: false, coat: '#FFFFFF' }),
     { kind: 'dog', shirt: '#123ABC', tone: '#A9D8C5', hat: 'cap', glasses: true, mug: false, labCoat: false, coat: '#FFFFFF' });
-  assert.deepEqual(PEOPLE.validLook({ kind: 'dragon', shirt: 'red', tone: '#12345', hat: 'crown', glasses: 'yes', coat: 5, pants: '#000000', extra: 1 }), null);
+  assert.deepEqual(PEOPLE.validLook({ kind: 'dragon', shirt: 'red', tone: '#12345', hat: 'crown', glasses: 'yes', coat: 5, pants: '#000000', extra: 1 }), { kind: 'dragon' });
+  assert.deepEqual(PEOPLE.validLook({ kind: 'wyvern', shirt: 'red', coat: 5, extra: 1 }), null);
   assert.deepEqual(PEOPLE.validLook({ shirt: 'team', hat: 'none' }), { shirt: 'team', hat: 'none' });
   const evil = JSON.parse('{"__proto__":{"polluted":1},"kind":"cat"}');
   assert.deepEqual(PEOPLE.validLook(evil), { kind: 'cat' });
@@ -56,7 +69,7 @@ test('merge puts chosen fields over the desk default and ignores the rest', () =
   const m = PEOPLE.merge(base, { tone: '#5A3A26', hat: 'beanie', pants: '#FF0000' });
   assert.equal(m.tone, '#5A3A26'); assert.equal(m.hat, 'beanie'); assert.equal(m.pants, base.pants);
   assert.deepEqual(PEOPLE.merge(base, null), base);
-  assert.deepEqual(PEOPLE.chosenOf(m), { kind: 'person', shirt: 'team', tone: '#5A3A26', hat: 'beanie', glasses: base.glasses, mug: base.mug, labCoat: false });
+  assert.deepEqual(PEOPLE.chosenOf(m), { kind: base.kind, shirt: 'team', tone: '#5A3A26', hat: 'beanie', glasses: base.glasses, mug: base.mug, labCoat: false, coat: base.coat });
 });
 
 test('validClaim checks the floor key, desk, name and sizes', () => {

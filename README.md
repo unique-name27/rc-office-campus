@@ -8,7 +8,8 @@ Drive a tiny remote-control car (or run around as a dog or a cat) on a two-build
 
 ## What's in it
 
-- **Campus overview.** Two buildings, four floors each. Click a building to open a floor, or drive in through a front door.
+- **Straight into the driver's seat.** The page opens with you driving on the floor you last visited (Building 1's lobby the first time), with the options card beside you: jump to any floor or outside, pick car, dog or cat, paint and style. Esc hides or shows it. On a phone it's a sheet you close with **Drive**.
+- **Campus overview.** Two buildings, four floors each (O). Click a building to open a floor, or drive in through a front door.
 - **Floors arranged by team.** Each team sits the way it really works: open benches, cubicles, private offices (finance, legal), lab benches with racks, scopes and test chambers (validation, characterization, failure analysis), or hot desks.
 - **Routes.** Search anyone or any room. Chevrons on the floor lead you there, including elevator rides and walking between buildings.
 - **Races.** "Race there" sets up gates from a standard start to any desk or room. There's also a coffee run on every floor: kitchen, then five desks.
@@ -19,8 +20,9 @@ Drive a tiny remote-control car (or run around as a dog or a cat) on a two-build
   - **Dog: big woof.** H barks and pushes nearby chairs (with whoever sits on them) and the Mailbot out of the way.
   - **Cat: double jump.** Press jump again in the air, or just keep holding it, for a flip and a second jump. Cats land softly and can reach desks, counters and cabinets.
   Dog and cat times have their own leaderboards.
-- **Coworkers at their desks.** Everyone is the same simple seated figure: no hair, no gendered clothes, a neutral gray face. Variety comes from the team-colored shirt and from headwear, glasses and a mug picked per desk, never from a name. Heads turn as you drive past, and a pushed chair rolls away with its person.
-- **My look.** Open your own desk and choose **This is me** to pick your shirt, face and hands color, headwear and extras, or to show up as a dog or a cat. With sample people (like on this page) your look is saved in your browser only.
+- **Coworkers at their desks are creatures.** Dragons, dogs, cats, foxes, bears, pandas, bunnies, frogs, penguins, owls, robots, unicorns, dinos and aliens, each typing away in a scarf of its team's color. Who gets what is picked per desk, never from a name. Heads turn as you drive past, and a pushed chair rolls away with whoever sits on it.
+- **My look.** Open your own desk and choose **This is me** to pick your creature and its coat, or the plain seated person (shirt, face and hands color, headwear, extras). With sample people (like on this page) your look is saved in your browser only.
+- **Real sounds.** The car's motor, horn, the dog's barks and the cat's meows are CC0 recordings (credits in `src/assets/sounds/CREDITS.md`); the motor's pitch follows your speed.
 - **Driving.** Drift (Space), boost (Shift), ramps, pushable chairs, a Mailbot, and chase, bumper, high and top-down cameras.
 - **Setup.** Load seating from a facilities CSV, then edit each floor: load a PNG, JPG or PDF plan and set its scale, trace rooms, import CAD walls (DXF), draw team areas, or place desks from facilities X/Y coordinates.
 
@@ -38,6 +40,7 @@ On this public page, setup changes and imported files stay in your browser tab a
 | Camera | V | — |
 | Find a person or room | / | Find |
 | Overview / campus | O | Overview |
+| Show / hide the options card | Esc | Options |
 | Walk ↔ drive | C | Walk |
 | Elevator floor | 1–4 on the elevator pad | tap a floor |
 | Coffee run | Enter | Coffee run |

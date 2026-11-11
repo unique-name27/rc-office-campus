@@ -100,15 +100,17 @@ function kitGeo(p,q){
   const P=new Int16Array(b64u8(p.p).buffer),I=p.w===4?new Uint32Array(b64u8(p.i).buffer):new Uint16Array(b64u8(p.i).buffer),pos=new Float32Array(P.length);
   for(let i=0;i<P.length;i++)pos[i]=P[i]/q;
   let g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setIndex(new THREE.BufferAttribute(I,1));
-  if(p.f){g=g.toNonIndexed();g.computeVertexNormals()} // flat-shaded: split per face, one normal per face
+  if(p.f){g=g.toNonIndexed();g.computeVertexNormals();fixNormals(g)} // flat-shaded: split per face, one normal per face
   else{
-    const N=new Int8Array(b64u8(p.n).buffer),nor=new Float32Array(N.length);for(let i=0;i<N.length;i+=3){const l=Math.hypot(N[i],N[i+1],N[i+2])||1;nor[i]=N[i]/l;nor[i+1]=N[i+1]/l;nor[i+2]=N[i+2]/l}
+    const N=new Int8Array(b64u8(p.n).buffer),nor=new Float32Array(N.length);for(let i=0;i<N.length;i+=3){const l=Math.hypot(N[i],N[i+1],N[i+2]);if(l>0){nor[i]=N[i]/l;nor[i+1]=N[i+1]/l;nor[i+2]=N[i+2]/l}else nor[i+1]=1}
     g.setAttribute('normal',new THREE.BufferAttribute(nor,3));
     if(p.u){const U=new Uint16Array(b64u8(p.u).buffer),uv=new Float32Array(U.length);for(let i=0;i<U.length;i++)uv[i]=U[i]/65535;g.setAttribute('uv',new THREE.BufferAttribute(uv,2))}
     if(p.a){const A=b64u8(p.a),col=new Float32Array(A.length*3);for(let i=0;i<A.length;i++)col[i*3]=col[i*3+1]=col[i*3+2]=A[i]/255;g.setAttribute('color',new THREE.BufferAttribute(col,3))}
   }
   g.computeBoundingBox();g.userData.keep=true;return g;
 }
+// a zero-length normal (from a paper-thin triangle) shades as NaN: bloom would spread it over the screen as a black flash
+function fixNormals(g){const n=g.attributes.normal.array;for(let i=0;i<n.length;i+=3)if(!(Math.abs(n[i])+Math.abs(n[i+1])+Math.abs(n[i+2])>1e-6)){n[i]=0;n[i+1]=1;n[i+2]=0}}
 function loadKit(){
   for(const n in KITMESH){
     const rec=KITMESH[n],box=new THREE.Box3(),parts=[];
@@ -117,7 +119,7 @@ function loadKit(){
   }
   // a lower office-chair back, so shoulders and shirts show over it from behind (and from the RC car)
   const ch=KIT.chairDesk;if(!ch)return;const ys=seatHeight('chairDesk');ch.seatY=ys;
-  for(const p of ch.parts){const pos=p.geo.attributes.position;for(let i=0;i<pos.count;i++){const y=pos.getY(i)-ch.box.min.y;if(y>ys+.02)pos.setY(i,ch.box.min.y+ys+.02+(y-ys-.02)*.45)}pos.needsUpdate=true;p.geo.computeBoundingBox();p.geo.computeVertexNormals()}
+  for(const p of ch.parts){const pos=p.geo.attributes.position;for(let i=0;i<pos.count;i++){const y=pos.getY(i)-ch.box.min.y;if(y>ys+.02)pos.setY(i,ch.box.min.y+ys+.02+(y-ys-.02)*.45)}pos.needsUpdate=true;p.geo.computeBoundingBox();p.geo.computeVertexNormals();fixNormals(p.geo)}
   ch.box=new THREE.Box3();for(const p of ch.parts)ch.box.union(p.geo.boundingBox);ch.size=ch.box.getSize(new THREE.Vector3());
 }
 const _m = new THREE.Matrix4(), _t = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), YAX = new THREE.Vector3(0, 1, 0);
@@ -369,6 +371,8 @@ function post(){
   {const ov=gtao.overrideVisibility.bind(gtao);gtao.overrideVisibility=()=>{ov();scene.traverse(o=>{if(o.isSprite||o.isLine||o.isPoints)o.visible=false})}}
   composer.addPass(gtao);
   bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.3,.35,1.5);composer.addPass(bloom); // only true emissives (LEDs, lamps) pass the threshold
+  // one NaN or infinite pixel would be blurred across the whole screen (a black flash): bloom ignores them
+  {const m=bloom.materialHighPassFilter,a='vec4 texel = texture2D( tDiffuse, vUv );';if(m.fragmentShader.includes(a)){m.fragmentShader=m.fragmentShader.replace(a,a+' if(any(isnan(texel))||any(isinf(texel)))texel=vec4(0.0); texel=min(texel,vec4(64.0));');m.needsUpdate=true}}
   composer.addPass(new OutputPass());
   return composer;
 }
@@ -436,5 +440,5 @@ function enter(){scene.environment=S.hd?environment():null;bootGrace=performance
 
 loadKit();
 return{floor,enter,restyle:()=>applyQuality(qLevel),draw:()=>{if(S.hd&&fxOn)composer.render(1/60);else renderer.render(scene,camera)},buildChairs,chairMatrix,chairPaint,mat:roleMat,applyQuality,setQuality,pixelRatio,render,resizeFx,qUI,KIT,LEVELS,
-  get quality(){return{mode:qMode,level:LEVELS[qLevel].n,gpuMs,fps,timer:!!TQ,fx:fxOn}}};
+  get quality(){return{mode:qMode,level:LEVELS[qLevel].n,gpuMs,fps,timer:!!TQ,fx:fxOn}},get passes(){return{composer,gtao,bloom}}};
 })();

@@ -24,7 +24,7 @@ function avData(kind){
       const Pq=new Int16Array(u8(M.p).buffer),Nq=new Int8Array(u8(M.n).buffer),A=u8(M.a),I=new Uint16Array(u8(M.i).buffer);
       const pos=new Float32Array(Pq.length),nor=new Float32Array(Nq.length),col=new Float32Array(A.length*3);
       for(let i=0;i<Pq.length;i++)pos[i]=Pq[i]/q;
-      for(let i=0;i<Nq.length;i+=3){const l=Math.hypot(Nq[i],Nq[i+1],Nq[i+2])||1;nor[i]=Nq[i]/l;nor[i+1]=Nq[i+1]/l;nor[i+2]=Nq[i+2]/l}
+      for(let i=0;i<Nq.length;i+=3){const l=Math.hypot(Nq[i],Nq[i+1],Nq[i+2]);if(l>0){nor[i]=Nq[i]/l;nor[i+1]=Nq[i+1]/l;nor[i+2]=Nq[i+2]/l}else nor[i+1]=1} // never a zero normal (NaN shading)
       for(let i=0;i<A.length;i++)col[i*3]=col[i*3+1]=col[i*3+2]=A[i]/255;
       const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.BufferAttribute(pos,3));g.setAttribute("normal",new THREE.BufferAttribute(nor,3));
       g.setAttribute("color",new THREE.BufferAttribute(col,3));g.setIndex(new THREE.BufferAttribute(I,1));g.computeBoundingSphere();g.userData.keep=true;
