@@ -6,8 +6,9 @@ usage: python -I build.py [out.html] [--test]
 import sys, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MODULES = ["layout.js", "campus.js", "nav.js", "importers.js", "editor.js", "people.js", "avatar-meshes.js", "kit-meshes.js", "sound-data.js"]
-GAME = ["game-1-core.js", "game-1b-avatars.js", "game-2-world.js", "game-2b-people.js", "game-2c-hd.js", "game-3-play.js", "game-4-ui.js"]
+MODULES = ["layout.js", "campus.js", "nav.js", "importers.js", "editor.js", "people.js", "avatar-meshes.js", "kit-meshes.js", "sound-data.js",
+           "pbr-data.js", "fx-data.js", "bake-data.js"]
+GAME = ["game-1-core.js", "game-1b-avatars.js", "game-2-world.js", "game-2b-people.js", "game-2c-hd.js", "game-2d-fx.js", "game-3-play.js", "game-4-ui.js"]
 # three.js r165 as ES modules from jsDelivr: one copy, shared with the add-ons through the import map
 TV = "0.165.0"
 IMPORTMAP = ('<script type="importmap">\n{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@%s/build/three.module.min.js",'

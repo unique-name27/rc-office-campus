@@ -134,6 +134,7 @@ function carStep(c,ctl,dt,isMe){
   }
   c.x=clamp(c.x,-PW/2+.25,PW/2-.25);c.z=clamp(c.z,-PD/2+.25,PD/2-.25);
   if(hit>1.4){if(isMe){SFX.bump(hit);shake=Math.max(shake,Math.min(.8,hit*.09))}if(hit>2.2)for(let k=0;k<Math.min(14,hit*2);k++)spark(hx,c.y+.08,hz,"#FFD27A",hit*.5)}
+  if(hit>2.2)FX.crash(hx,hz,hit,c,isMe); // pre-recorded physics moments (game-2d-fx.js)
 }
 function smokeCol(c){const s=S.smoke[0];return s==="paint"?bright(c.paint):s}
 function chairsStep(dt){
