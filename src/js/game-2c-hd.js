@@ -170,7 +170,7 @@ function batch(geo, mat, o = {}) {
       const colored = L.some(l => l[7]); const im = new THREE.InstancedMesh(geo, colored ? m(true) : mat, L.length);
       im.castShadow = o.cast !== false && !mat.transparent; im.receiveShadow = o.receive !== false;
       L.forEach((l, i) => { _q.setFromAxisAngle(YAX, l[6]); _m.compose(_v.set(l[0], l[1], l[2]), _q, _s.set(l[3], l[4], l[5])); im.setMatrixAt(i, _m); if (colored) im.setColorAt(i, _c.set(l[7] || '#FFFFFF')) });
-      root.add(im);
+      root.add(im); if (o.bake) BAKE.reg(im, geo === UNITCYL); // lightmapped when the world has a matching bake (game-2e-bake.js)
     }
   };
 }
@@ -200,13 +200,13 @@ function ground(m){
 
 }
 function cores(m){
-  const core = batch(UNITBOX, M.core()), coreTop = batch(UNITBOX, M.coreTop(), { cast: false });
+  const core = batch(UNITBOX, M.core(), { bake: 1 }), coreTop = batch(UNITBOX, M.coreTop(), { cast: false, bake: 1 });
   for (const r of m.rooms || []) if (r.solid && r.w > 0 && r.d > 0 && r.type !== 'open') { core.add(r.x, H / 2, r.z, r.w, H, r.d, 0, r.type === 'elevator' ? '#B9BEC3' : null); coreTop.add(r.x, H + .01, r.z, r.w + .04, .02, r.d + .04) }
   core.done(); coreTop.done();
 }
 function buildWalls(walls) {
-  const wb = batch(UNITBOX, M.wallWhite()), base = batch(UNITBOX, M.baseboard(), { cast: false }), span = batch(UNITBOX, M.spandrel()), sky = batch(UNITBOX, M.sky(), { cast: false, receive: false }),
-    alu = batch(UNITBOX, M.alu()), aluD = batch(UNITBOX, M.aluDark()), glass = batch(UNITBOX, M.glass(), { cast: false }), felt = batch(UNITBOX, M.felt());
+  const wb = batch(UNITBOX, M.wallWhite(), { bake: 1 }), base = batch(UNITBOX, M.baseboard(), { cast: false }), span = batch(UNITBOX, M.spandrel(), { bake: 1 }), sky = batch(UNITBOX, M.sky(), { cast: false, receive: false }),
+    alu = batch(UNITBOX, M.alu()), aluD = batch(UNITBOX, M.aluDark()), glass = batch(UNITBOX, M.glass(), { cast: false }), felt = batch(UNITBOX, M.felt(), { bake: 1 });
   for (const w of walls) {
     if (![w.x1, w.z1, w.x2, w.z2].every(isFinite)) continue; const L = Math.hypot(w.x2 - w.x1, w.z2 - w.z1); if (L < .02) continue;
     const a = Math.atan2(-(w.z2 - w.z1), w.x2 - w.x1), mx = (w.x1 + w.x2) / 2, mz = (w.z1 + w.z2) / 2, k = w.kind || 'int';
@@ -240,9 +240,9 @@ function waferMat() {
 function buildItems(items) {
   const waferAt = [];
   const by = {}; for (const it of items) { if (!isFinite(it.x) || !isFinite(it.z)) continue; (by[it.t] || (by[it.t] = [])).push(it) }
-  const white = batch(UNITBOX, M.white()), cw = batch(UNITBOX, M.casework()), ins = batch(UNITBOX, M.instr()), esdm = batch(UNITBOX, M.esdMat(), { cast: false }), aluD = batch(UNITBOX, M.aluDark()), wave = batch(UNITPLANE, screenMat('wave'), { cast: false }), offw = batch(UNITBOX, M.offwhite()), epoxy = batch(UNITBOX, M.epoxy()), dm = batch(UNITBOX, M.darkMetal()), steel = batch(UNITBOX, M.steel()),
-    rackF = batch(UNITBOX, M.rackFace()), led = batch(UNITBOX, M.led(), { cast: false }), scr = batch(UNITBOX, M.screen(), { cast: false }), felt = batch(UNITBOX, M.felt()), oak = batch(UNITBOX, M.oak()),
-    board = batch(UNITBOX, M.board()), alu = batch(UNITBOX, M.alu()), glass = batch(UNITBOX, M.glass(), { cast: false }), cyl = batch(UNITCYL, M.white()), cylMetal = batch(UNITCYL, M.steel()), lam = batch(UNITBOX, M.laminate());
+  const white = batch(UNITBOX, M.white(), { bake: 1 }), cw = batch(UNITBOX, M.casework(), { bake: 1 }), ins = batch(UNITBOX, M.instr()), esdm = batch(UNITBOX, M.esdMat(), { cast: false }), aluD = batch(UNITBOX, M.aluDark()), wave = batch(UNITPLANE, screenMat('wave'), { cast: false }), offw = batch(UNITBOX, M.offwhite(), { bake: 1 }), epoxy = batch(UNITBOX, M.epoxy(), { bake: 1 }), dm = batch(UNITBOX, M.darkMetal()), steel = batch(UNITBOX, M.steel()),
+    rackF = batch(UNITBOX, M.rackFace()), led = batch(UNITBOX, M.led(), { cast: false }), scr = batch(UNITBOX, M.screen(), { cast: false }), felt = batch(UNITBOX, M.felt(), { bake: 1 }), oak = batch(UNITBOX, M.oak(), { bake: 1 }),
+    board = batch(UNITBOX, M.board(), { bake: 1 }), alu = batch(UNITBOX, M.alu()), glass = batch(UNITBOX, M.glass(), { cast: false }), cyl = batch(UNITCYL, M.white(), { bake: 1 }), cylMetal = batch(UNITCYL, M.steel()), lam = batch(UNITBOX, M.laminate(), { bake: 1 });
   const put = (b, it, lx, y, lz, w, h, d, col) => { const [x, z] = loc(it, lx, lz); b.add(x, y, z, w, h, d, it.a || 0, col) };
   // lab gear: the Blender props when present, the code-built pieces otherwise
   const blp = n => !!KIT[n], blList = { oscilloscope: [], testChamber: [], probeStation: [], serverRack: [], powerSupply: [], waferPod: [] };
@@ -292,7 +292,7 @@ function buildDesks(m){
   desks.forEach((d,i)=>{if(d.arr!=='hot'&&d.arr!=='lab'&&isFinite(d.x)&&isFinite(d.z))drawn.push(i)});
   deskInst=new Array(desks.length).fill(-1);instDesk=drawn.slice();drawn.forEach((di,k)=>deskInst[di]=k);
   deskG=IG(new THREE.BoxGeometry(1,.03,1),'desk',drawn.length,{colored:true});
-  const legB=batch(UNITBOX,M.graphite()),scrB=batch(UNITBOX,M.team());
+  const legB=batch(UNITBOX,M.graphite(),{bake:1}),scrB=batch(UNITBOX,M.team(),{bake:1});
   desks.forEach((d,i)=>{
     if(!isFinite(d.x)||!isFinite(d.z))return;const w=d.w>0?d.w:1.56,dd=d.dd>0?d.dd:.78,it={x:d.x,z:d.z,a:d.a||0},sit=d.person>=0;
     if(deskInst[i]>=0){
@@ -309,7 +309,7 @@ function buildDesks(m){
     {const [x,z]=loc(it,.32,dd/2-.22);mouse.push({x,y:top,z,a:(d.a||0)+Math.PI,s:1.4})}
     if(d.arr!=='lab'&&rnd()<.35){const [x,z]=loc(it,-(w/2-.14),-(dd/2-.16));plants.push({x,y:top,z,a:rnd()*6,s:1.5+rnd()*.5,k:1+Math.floor(rnd()*3)})}
   });
-  deskG.commit();legB.done();scrB.done();
+  deskG.commit();if(deskG.mesh)BAKE.reg(deskG.mesh,false);legB.done();scrB.done();
   // screens: a document, code or a chip layout, picked per desk
   {const kinds=['doc','code','code','chip','chip'],sb={};for(const k of new Set(kinds))sb[k]=batch(UNITPLANE,screenMat(k),{cast:false});
     for(const q of mon){const c=Math.cos(q.a),s=Math.sin(q.a);sb[kinds[Math.floor(rnd()*kinds.length)]].add(q.x+.084*s,q.y+.27,q.z+.084*c,.5,.29,1,q.a)}for(const k in sb)sb[k].done()}
@@ -336,7 +336,7 @@ function buildChairs(list){
   }
   return all;
 }
-function chairMatrix(c,M_,M2){M_.makeRotationY(c.a);M_.setPosition(c.x,0,c.z);M2.multiplyMatrices(M_,c.hs.pre);for(const g of c.hs.ig)g.set(c.hk,M2)}
+function chairMatrix(c,M_,M2){BAKE.chair(c);M_.makeRotationY(c.a);M_.setPosition(c.x,0,c.z);M2.multiplyMatrices(M_,c.hs.pre);for(const g of c.hs.ig)g.set(c.hk,M2)}
 function chairPaint(c,col){for(const g of c.hs.ig)if(g.tint)g.paint(c.hk,col)}
 
 /* ---------- materials for everything else the game draws (cars, pets, people, ramps, the campus) ---------- */
@@ -390,9 +390,9 @@ function applyQuality(i,user){
   if(S&&S.hd){
     const c=post(),dpr=pixelRatio(),pr=L.msaa&&dpr>=1.75?0:L.msaa; // at very high density MSAA buys little
     for(const t of [c.renderTarget1,c.renderTarget2])if(t.samples!==pr){t.samples=pr;t.dispose()}
-    aoScale=dpr>=1.5?L.ao*.67:L.ao;fxOn=L.post;gtao.enabled=bloom.enabled=L.post;
+    aoScale=dpr>=1.5?L.ao*.67:L.ao;fxOn=L.post;bloom.enabled=L.post;gtao.enabled=L.post&&!BAKE.on; // baked light already holds the AO
   }else fxOn=false;
-  if(aoBlobs)aoBlobs.visible=!fxOn; // the soft blobs under furniture stand in for AO when it is off
+  if(aoBlobs)aoBlobs.visible=!fxOn&&!BAKE.on; // the soft blobs under furniture stand in for AO when it is off
   qChanged=performance.now();if(user)bootGrace=0;resize();qUI();
 }
 function setQuality(q){qMode=q==='auto'?'auto':'fixed';store.set('rc-quality',q);applyQuality(q==='auto'?qLevel:+q,true)}
@@ -418,7 +418,7 @@ function qUI(){
   box.querySelectorAll('.chip').forEach(b=>b.setAttribute('aria-checked',String(b.dataset.q===(qMode==='auto'?'auto':String(qLevel)))));
   $('qnote').textContent=qMode==='auto'?`Auto is using ${LEVELS[qLevel].n}${LEVELS[qLevel].n==='Lowest'?' (reduced resolution)':''}${gpuMs>=0?` · ${fps} fps, GPU ${gpuMs.toFixed(1)} ms`:fps?` · ${fps} fps`:''}`:`${LEVELS[qLevel].n}, fixed${gpuMs>=0?` · ${fps} fps, GPU ${gpuMs.toFixed(1)} ms`:fps?` · ${fps} fps`:''}`;
 }
-function render(dt){
+function render(dt){BAKE.frame();
   FX.frame(dt);
   let tq=null;if(TQ&&qPend.length<6){tq=gl.createQuery();gl.beginQuery(TQ.TIME_ELAPSED_EXT,tq)}
   if(S.hd&&fxOn)composer.render(dt);else renderer.render(scene,camera);
@@ -437,7 +437,7 @@ function floor(m){
   return (m.items||[]).filter(it=>!TYPES.has(it.t)); // anything else is drawn by the game's own builder
 }
 // a new world: light it, and give Auto a few seconds before it judges the frame rate
-function enter(){FX.clear();scene.environment=S.hd?environment():null;bootGrace=performance.now()+5000;gpuMs=-1}
+function enter(){FX.clear();BAKE.enter();scene.environment=S.hd?environment():null;bootGrace=performance.now()+5000;gpuMs=-1}
 
 loadKit();
 return{floor,enter,restyle:()=>applyQuality(qLevel),draw:()=>{if(S.hd&&fxOn)composer.render(1/60);else renderer.render(scene,camera)},buildChairs,chairMatrix,chairPaint,mat:roleMat,applyQuality,setQuality,pixelRatio,render,resizeFx,qUI,KIT,LEVELS,

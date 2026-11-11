@@ -167,6 +167,7 @@ function crShapes(sm){
     // two eyes facing forward: a dark eye and a small highlight
     eyes:(H,x,y,z,r)=>{for(const k of[-1,1]){H(CR_DK,s.at(s.E(r,r*1.12,r*.6),k*x,y,z));H(CR_WH,s.at(s.E(r*.34,r*.34,r*.2),k*x-k*r*.3,y+r*.42,z-r*.45))}},
     // the seated body: an egg (or a box) on the seat, a belly, thighs and feet over the seat's front edge, arms to the desk
+    // (arms and paws carry their side, -1 or 1: the idle shader moves them about the shoulder)
     body:(B,o)=>{
       const by=o.by||.74,bw=o.bw||.19,bh=o.bh||.24,bd=o.bd||.17;
       B("c",o.box?s.at(s.Bx(bw*2,bh*2,bd*2),0,by,.04):s.at(s.E(bw,bh,bd),0,by,.04));
@@ -175,30 +176,32 @@ function crShapes(sm){
       for(const k of[-1,1]){
         B(lc,o.box?s.at(s.Bx(.11,.1,.2),k*.095,.565,-.12):s.at(s.E(.068,.06,.11),k*.095,.565,-.12));
         B(fc,o.box?s.at(s.Bx(.1,.06,.12),k*.095,.53,-.25):s.at(s.E(.055,.04,.07),k*.095,.53,-.25));
-        if(o.shortArms){B(ac,s.at(s.E(.035,.07,.035),k*.15,.83,-.13,1.2,0,0));B(pc,s.at(s.E(.03,.025,.03),k*.15,.81,-.19))}
-        else{B(ac,o.box?s.at(s.Cy(.035,.035,.29),k*.155,.845,-.16,1.33,0,0):s.at(s.E(.05,.15,.05),k*.155,.845,-.16,1.33,0,0));
-          B(pc,o.box?s.at(s.Bx(.07,.05,.07),k*.14,.81,-.3):s.at(s.E(.045,.04,.05),k*.14,.81,-.3))}
+        if(o.shortArms){B(ac,s.at(s.E(.035,.07,.035),k*.15,.83,-.13,1.2,0,0),k);B(pc,s.at(s.E(.03,.025,.03),k*.15,.81,-.19),k)}
+        else{B(ac,o.box?s.at(s.Cy(.035,.035,.29),k*.155,.845,-.16,1.33,0,0):s.at(s.E(.05,.15,.05),k*.155,.845,-.16,1.33,0,0),k);
+          B(pc,o.box?s.at(s.Bx(.07,.05,.07),k*.14,.81,-.3):s.at(s.E(.045,.04,.05),k*.14,.81,-.3),k)}
       }
     }};
   return s;
 }
-// one geometry from colored parts: position, normal, and color (white = the coat)
-function crMerge(parts){
-  const list=parts.map(([c,g])=>{const n=g.index?g.toNonIndexed():g;if(n!==g)g.dispose();if(!n.attributes.normal)n.computeVertexNormals();return[c,n]});
+// one geometry from colored parts: position, normal, color (white = the coat) and the idle weights (see IDLE below).
+// parts are [color, geometry, arm side]; headLift is set for a head (how far its pivot is above the seat)
+function crMerge(parts,headLift){
+  const list=parts.map(([c,g,arm])=>{const n=g.index?g.toNonIndexed():g;if(n!==g)g.dispose();if(!n.attributes.normal)n.computeVertexNormals();return[c,n,arm]});
   let len=0;for(const[,g]of list)len+=g.attributes.position.count*3;
-  const pos=new Float32Array(len),nor=new Float32Array(len),col=new Float32Array(len),cc=new THREE.Color();let o=0;
-  for(const[c,g]of list){
+  const pos=new Float32Array(len),nor=new Float32Array(len),col=new Float32Array(len),idl=new Float32Array(len/3*4),cc=new THREE.Color();let o=0;
+  for(const[c,g,arm]of list){
     pos.set(g.attributes.position.array,o);nor.set(g.attributes.normal.array,o);
     if(c==="c")cc.setRGB(1,1,1);else{cc.set(c);if(Math.min(cc.r,cc.g,cc.b)>.99)cc.multiplyScalar(.97)} // a fixed white must not read as the coat
-    for(let k=0;k<g.attributes.position.count;k++){col[o+k*3]=cc.r;col[o+k*3+1]=cc.g;col[o+k*3+2]=cc.b}
+    for(let k=0;k<g.attributes.position.count;k++){col[o+k*3]=cc.r;col[o+k*3+1]=cc.g;col[o+k*3+2]=cc.b;
+      const w=(o/3+k)*4;if(headLift!=null){idl[w+1]=headLift;idl[w+2]=1}else if(arm){idl[w]=arm;idl[w+1]=IDLE_SH}else idleBodyW(pos[o+k*3+1],idl,w)}
     o+=g.attributes.position.count*3;g.dispose();
   }
-  const out=new THREE.BufferGeometry();out.setAttribute("position",new THREE.BufferAttribute(pos,3));out.setAttribute("normal",new THREE.BufferAttribute(nor,3));out.setAttribute("color",new THREE.BufferAttribute(col,3));return out;
+  const out=new THREE.BufferGeometry();out.setAttribute("position",new THREE.BufferAttribute(pos,3));out.setAttribute("normal",new THREE.BufferAttribute(nor,3));out.setAttribute("color",new THREE.BufferAttribute(col,3));out.setAttribute("aIdle",new THREE.BufferAttribute(idl,4));return out;
 }
 // head parts are listed around the head pivot; body parts in the chair's frame
 function creatureGeo(kind,sm){
-  const b=[],h=[],s=crShapes(sm);CREATURE[kind].build((c,g)=>b.push([c,g]),(c,g)=>h.push([c,g]),s);
-  return{b:crMerge(b),h:crMerge(h)};
+  const b=[],h=[],s=crShapes(sm);CREATURE[kind].build((c,g,arm)=>b.push([c,g,arm||0]),(c,g)=>h.push([c,g]),s);
+  return{b:crMerge(b),h:crMerge(h,(CREATURE[kind].head||CR_HEAD)[1]-IDLE_SEAT)};
 }
 function scarfGeo(sm){
   const r=new THREE.TorusGeometry(.095,.042,sm?8:4,sm?20:8);r.rotateX(Math.PI/2);r.scale(1,.8,1);
@@ -214,6 +217,164 @@ const figBase=(f,M)=>{const c=f.ch;M.makeRotationY(c.a);M.setPosition(c.x,0,c.z)
 function figShirt(f){return f.look.labCoat?"#F2F1EC":f.look.shirt==="team"?teamColorOf(f.d.team):f.look.shirt}
 function figTone(f){return f.look.tone===PEOPLE.DEFAULT_TONE&&S.mat==="toon"?"#DCE0EA":f.look.tone}
 
+/* ---------- idle motion: typing, breathing, a look around, a stretch ----------
+   All of it happens in the vertex shader, so a full floor costs one uniform a frame (IDLE_U, the clock) and no work per
+   coworker. Every geometry that moves carries two extra attributes:
+     aIdle  (per vertex)   x: arm (-1 / 1 = which side, on a creature's arm and paw; 0..1 along a person's forearm)
+                           y: how far above the seat the vertex is (it rises with the breath and the stretch)
+                           z: 1 on a head (it looks around, about the head pivot)   w: how much the chest swells here
+     aIdleI (per instance) x: a seed in 0..1 from the desk's key (its own schedule: the floor never moves in step)
+                           y: 0 = creature or plain part, -1 / 1 = a person's forearm or hand (side), 2 = no arm motion
+   Outline hulls (Comic) get the same patch on their own copy of HULL, the shadow pass gets a patched depth material, and
+   the edge lines (Neon, Blueprint, Vector), which IG bakes into world space, also carry where their instance is (aIdleB:
+   position and heading) so the shader can move them the same way. With prefers-reduced-motion nothing is patched.
+   The patch only touches the vertex shader, chains whatever onBeforeCompile / customProgramCacheKey the material already
+   had, and adds "|idle" (or "|idle-l" for lines) to the program key. */
+const IDLE_ON=!REDUCED,IDLE_U={value:0},IDLE_SEAT=.6,IDLE_SH=.275;   // seat height; a creature's shoulder above it
+const IDLE_GLSL=`
+uniform float uIdleT;
+attribute vec4 aIdle;
+attribute vec2 aIdleI;
+#ifdef IDLE_LINES
+attribute vec4 aIdleB;
+#endif
+float idArm, idSpread, idTap, idLift, idSwell, idYaw, idRoll, idPitch;
+float idH( float n ) { return fract( sin( n * 12.9898 ) * 43758.5453 ); }
+vec3 idRX( vec3 v, float a ) { float c = cos( a ), s = sin( a ); return vec3( v.x, v.y * c - v.z * s, v.y * s + v.z * c ); }
+vec3 idRY( vec3 v, float a ) { float c = cos( a ), s = sin( a ); return vec3( v.x * c + v.z * s, v.y, v.z * c - v.x * s ); }
+vec3 idRZ( vec3 v, float a ) { float c = cos( a ), s = sin( a ); return vec3( v.x * c - v.y * s, v.x * s + v.y * c, v.z ); }
+void idleCalc() {
+	float s = aIdleI.x, t = uIdleT + s * 97.0;
+	float side = abs( aIdleI.y ) > 0.5 ? aIdleI.y : aIdle.x;
+	// breathing: a slow swell, each at its own pace
+	float br = sin( t * ( 1.2 + 0.7 * idH( s + 0.3 ) ) ) * 0.5 + 0.5;
+	// a stretch now and then: arms up, chin up, a little taller (about 3.5 s, in some of the 30-60 s slots)
+	float Ts = 30.0 + 30.0 * idH( s + 0.7 ), ks = t / Ts, ss = floor( ks ), fs = ( ks - ss ) * Ts;
+	float st = step( 0.5, idH( ss * 1.37 + s * 31.0 ) ) * smoothstep( 0.0, 0.9, fs ) * ( 1.0 - smoothstep( 2.6, 3.6, fs ) );
+	// a look around: the head turns away from the screen for a moment
+	float Tl = 6.0 + 6.0 * idH( s + 1.9 ), kl = t / Tl + 0.37, sl = floor( kl ), fl = kl - sl;
+	float lk = step( 0.55, idH( sl * 2.11 + s * 53.0 ) ) * smoothstep( 0.08, 0.2, fl ) * ( 1.0 - smoothstep( 0.5, 0.66, fl ) ) * ( 1.0 - st );
+	float hy = idH( sl + s * 7.0 ) - 0.5;
+	idYaw = lk * sign( hy ) * ( 0.3 + 0.7 * abs( hy ) );
+	idRoll = lk * ( idH( sl * 3.3 + s * 11.0 ) - 0.5 ) * 0.4;
+	idPitch = st * 0.32;
+	// typing: bursts with pauses, the two paws out of step
+	float Tt = 1.5 + 1.7 * idH( s + 2.3 ), kt = t / Tt, sb = floor( kt ), fb = kt - sb;
+	float burst = step( 0.3, idH( sb * 1.73 + s * 19.0 ) ) * smoothstep( 0.0, 0.12, fb ) * ( 1.0 - smoothstep( 0.85, 1.0, fb ) ) * ( 1.0 - st ) * ( 1.0 - 0.7 * lk );
+	float w = t * ( 15.0 + 6.0 * idH( s + 3.1 ) ) + ( side > 0.0 ? 3.1416 : 0.0 );
+	idTap = burst * max( 0.0, sin( w ) ) * ( 0.65 + 0.35 * sin( w * 0.37 + side ) );
+	idArm = idTap * 0.12 + st * ( 1.85 + 0.3 * idH( s + 4.0 ) );
+	idSpread = st * 0.55;
+	idLift = aIdle.y * ( br * 0.012 + st * 0.05 );
+	idSwell = aIdle.w * ( br * 0.03 + st * 0.03 );
+}
+vec3 idHead( vec3 v ) { return idRY( idRZ( idRX( v, idPitch ), idRoll ), idYaw ); }
+vec3 idArmR( vec3 v ) { return idRZ( idRX( v, idArm ), - aIdle.x * idSpread ); }
+vec3 idleN( vec3 n ) {
+	if ( aIdle.z > 0.5 ) return idHead( n );
+	if ( abs( aIdleI.y ) < 0.5 && aIdle.x != 0.0 ) return idArmR( n );
+	return n;
+}
+vec3 idleP( vec3 p ) {
+	float m = abs( aIdleI.y ), up = idLift;
+#ifdef IDLE_LINES
+	// baked world-space lines: back into the instance's frame (a turn about y and a move), then out again
+	vec3 d = p - aIdleB.xyz; float bc = cos( aIdleB.w ), bs = sin( aIdleB.w ), by = aIdleB.y;
+	vec3 q = vec3( bc * d.x - bs * d.z, d.y, bs * d.x + bc * d.z );
+#else
+	vec3 q = p;
+	#ifdef USE_INSTANCING
+	float by = instanceMatrix[ 3 ].y;
+	#else
+	float by = 1.0;
+	#endif
+#endif
+	vec3 q0 = q;
+	if ( aIdle.z > 0.5 ) q = idHead( q );
+	else if ( m > 0.5 ) { if ( m < 1.5 ) up += aIdle.x * idTap * 0.03 * step( 0.735, by ); } // a person's forearm and hand tap only while up at the desk (not in the lap)
+	else if ( aIdle.x != 0.0 ) { vec3 pv = vec3( aIdle.x * 0.155, 0.875, -0.02 ); q = pv + idArmR( q - pv ); } // a creature's arm, about its shoulder
+	else q.xz = ( q.xz - vec2( 0.0, 0.04 ) ) * ( 1.0 + idSwell ) + vec2( 0.0, 0.04 );
+#ifdef IDLE_LINES
+	d = q - q0; return p + vec3( bc * d.x + bs * d.z, d.y + up, bc * d.z - bs * d.x );
+#else
+	#ifdef USE_INSTANCING
+	mat3 im = mat3( instanceMatrix ); q += ( vec3( 0.0, up, 0.0 ) * im ) / vec3( dot( im[ 0 ], im[ 0 ] ), dot( im[ 1 ], im[ 1 ] ), dot( im[ 2 ], im[ 2 ] ) ); // straight up, whatever the instance's turn and scale
+	#else
+	q.y += up;
+	#endif
+	return q;
+#endif
+}
+`;
+function idleVS(vs,lines){
+  return vs.replace("#include <common>","#include <common>\n"+(lines?"#define IDLE_LINES\n":"")+IDLE_GLSL)
+    .replace(/void\s+main\s*\(\s*\)\s*\{/,m=>m+"\n\tidleCalc();")
+    .replace("#include <beginnormal_vertex>","#include <beginnormal_vertex>\n\tobjectNormal = idleN( objectNormal );")
+    .replace("#include <begin_vertex>","#include <begin_vertex>\n\ttransformed = idleP( transformed );");
+}
+// add the idle motion to a material (once), keeping any shader patch it already has
+function idleMat(m,lines){
+  if(!IDLE_ON||!m||m===INVIS||m.userData.idle)return m;
+  const ob=m.onBeforeCompile,ck=m.customProgramCacheKey,tag="|idle"+(lines?"-l":"");
+  m.userData.idle=1;
+  m.onBeforeCompile=function(sh,r){ob.call(this,sh,r);sh.uniforms.uIdleT=IDLE_U;sh.vertexShader=idleVS(sh.vertexShader,lines)};
+  m.customProgramCacheKey=function(){return ck.call(this)+tag};
+  return m;
+}
+let idleHullM=null,idleHullOf=null,idleDepthM=null;
+function idleHull(){if(idleHullOf!==HULL){idleHullOf=HULL;idleHullM=idleMat(HULL.clone())}return idleHullM}
+function idleDepth(){return idleDepthM||(idleDepthM=idleMat(new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking})))}
+const idleSeed=key=>{let h=2166136261;for(let i=0;i<key.length;i++)h=Math.imul(h^key.charCodeAt(i),16777619);return((h>>>0)%8192)/8192};
+// a seated body's weights by height: above the seat it rises and swells
+function idleBodyW(y,arr,w){const h=y-IDLE_SEAT;if(h>0){arr[w+1]=h;arr[w+3]=Math.min(1,h/.15)}}
+// give a geometry its aIdle weights: one value for all of it, or fn(y, array, offset) per vertex
+function idleGeo(geo,a,b,c,d){
+  if(!geo)return geo;const p=geo.attributes.position,arr=new Float32Array(p.count*4);
+  for(let v=0;v<p.count;v++){if(typeof a==="function")a(p.getY(v),arr,v*4);else{arr[v*4]=a;arr[v*4+1]=b;arr[v*4+2]=c;arr[v*4+3]=d}}
+  geo.setAttribute("aIdle",new THREE.BufferAttribute(arr,4));return geo;
+}
+// the plain person: the chest breathes, the head (with its hat and glasses) looks around, forearms and hands type
+function idleFigGeos(G){
+  const hl=FIG_HEAD.y-IDLE_SEAT;
+  idleGeo(G.torso,idleBodyW);idleGeo(G.badge,0,.27,0,1);
+  for(const k of["head","eyes","glasses","phones","beanie","cap"])idleGeo(G[k],0,hl,1,0);
+  idleGeo(G.arm,(y,arr,w)=>{arr[w]=-y});idleGeo(G.hand,1,0,0,0);
+  return G;
+}
+// switch the motion on for one instanced group: seedOf(i) and flagOf(i) fill aIdleI
+function idleIG(g,seedOf,flagOf){
+  if(!IDLE_ON||!g||!g.mesh)return;
+  const n=g.count,a=new Float32Array(n*2),geo=g.mesh.geometry;
+  for(let i=0;i<n;i++){a[2*i]=seedOf(i);a[2*i+1]=flagOf?flagOf(i):0}
+  geo.setAttribute("aIdleI",new THREE.InstancedBufferAttribute(a,2));idleMat(g.mesh.material);
+  if(g.mesh.castShadow)g.mesh.customDepthMaterial=idleDepth();
+  if(g.hull){g.hull.geometry.setAttribute("aIdleI",new THREE.InstancedBufferAttribute(a,2));g.hull.material=idleHull()}
+  if(!g.lines)return;
+  // edge lines: every line vertex gets its weights (looked up by position), its instance's seed, and its instance's base
+  const eb=g.eb,nv=eb.length/3,src=geo.attributes.position.array,w=geo.attributes.aIdle.array,at=new Map(),key=(b,v)=>b[3*v]+","+b[3*v+1]+","+b[3*v+2];
+  for(let v=0;v<src.length/3;v++)at.set(key(src,v),v);
+  const vw=new Float32Array(nv*n*4),vi=new Float32Array(nv*n*2),vb=new Float32Array(nv*n*4);
+  for(let v=0;v<nv;v++){const j=at.get(key(eb,v));if(j!=null)for(let c=0;c<4;c++)vw[4*v+c]=w[4*j+c]}
+  for(let i=1;i<n;i++)vw.copyWithin(i*nv*4,0,nv*4);
+  for(let i=0;i<n;i++)for(let v=0;v<nv;v++){vi[(i*nv+v)*2]=a[2*i];vi[(i*nv+v)*2+1]=a[2*i+1]}
+  const lg=g.lines.geometry,ba=new THREE.BufferAttribute(vb,4);
+  lg.setAttribute("aIdle",new THREE.BufferAttribute(vw,4));lg.setAttribute("aIdleI",new THREE.BufferAttribute(vi,2));lg.setAttribute("aIdleB",ba);idleMat(g.lines.material,true);
+  const set0=g.set,commit0=g.commit;let lo=1e9,hi=-1;
+  g.set=(i,M)=>{set0(i,M);const e=M.elements,an=Math.atan2(e[8],e[0]);for(let k=i*nv*4,end=k+nv*4;k<end;k+=4){vb[k]=e[12];vb[k+1]=e[13];vb[k+2]=e[14];vb[k+3]=an}if(i<lo)lo=i;if(i>hi)hi=i};
+  g.commit=()=>{commit0();if(hi>=lo){ba.clearUpdateRanges();if(lo>0||hi<n-1)ba.addUpdateRange(lo*nv*4,(hi-lo+1)*nv*4);ba.needsUpdate=true;lo=1e9;hi=-1}};
+}
+// the person's groups and the scarves (the creatures' two groups are switched on where they are made)
+function idleFigures(){
+  if(!IDLE_ON||!figG)return;
+  const G=figG,P=i=>FIGP[i].seed,own={glasses:[],phones:[],beanie:[],cap:[]},cs=[];
+  for(const f of FIG){if(f.sp)cs[f.si]=f;else{if(f.gl>=0)own.glasses[f.gl]=f;if(f.hat>=0)own[f.look.hat][f.hat]=f}}
+  for(const k of["torso","badge","head","eyes"])idleIG(G[k],P);
+  for(const k in own)idleIG(G[k],i=>own[k][i].seed);
+  idleIG(G.arm,i=>FIGP[i>>2].seed,i=>i&1?(i&2?1:-1):2);   // 4 per person: side * 2 + (0 upper arm, 1 forearm)
+  idleIG(G.hand,i=>FIGP[i>>1].seed,i=>i&1?1:-1);
+  idleIG(G.scarf,i=>cs[i].seed);
+}
+
 function buildFigures(){
   figReset();
   if(WKIND!=="floor"||!root||!WM)return;
@@ -221,9 +382,9 @@ function buildFigures(){
   for(const c of chairs){
     if(c.desk<0)continue;const d=desks[c.desk];if(!d||d.person<0||!people[d.person])continue;
     const key=WKEY+"|"+d.id,look=PEOPLE.merge(PEOPLE.defaultLook(key,d.arr),LOOKS.get(key));
-    const f={ch:c,di:c.desk,d,key,look,yaw:0,tyaw:0,n:-1,hat:-1,gl:-1,mug:-1,sp:null,ci:-1,si:-1};FIG.push(f);figByChair.set(c,f);
+    const f={ch:c,di:c.desk,d,key,look,seed:idleSeed(key),yaw:0,tyaw:0,n:-1,hat:-1,gl:-1,mug:-1,sp:null,ci:-1,si:-1};FIG.push(f);figByChair.set(c,f);
   }
-  const G=figGeos(),cnt={phones:0,beanie:0,cap:0,glasses:0,mug:0},bySp=new Map();let nC=0;
+  const G=idleFigGeos(figGeos()),cnt={phones:0,beanie:0,cap:0,glasses:0,mug:0},bySp=new Map();let nC=0;
   for(const f of FIG){
     if(f.look.mug&&f.d.arr!=="lab")f.mug=cnt.mug++;
     if(f.look.kind!=="person"&&CREATURE[f.look.kind]){const l=bySp.get(f.look.kind)||[];f.sp=f.look.kind;f.kb="cb_"+f.sp;f.kh="ch_"+f.sp;f.ci=l.length;l.push(f);bySp.set(f.sp,l);f.si=nC++;continue}
@@ -240,12 +401,13 @@ function buildFigures(){
     badge:IG(G.badge,"badge",n,o({noCast:1,noHull:1})),
     phones:IG(G.phones,"hat",cnt.phones,o()),beanie:IG(G.beanie,"hat",cnt.beanie,o()),cap:IG(G.cap,"hat",cnt.cap,o()),
     mug:IG(G.mug,"mug",cnt.mug,o({noCast:1})),
-    scarf:IG(scarfGeo(S.mat!=="basic"),"shirt",nC,o({noCast:1})),
+    scarf:IG(idleGeo(scarfGeo(S.mat!=="basic"),0,CR_NECK[0]-IDLE_SEAT,0,0),"shirt",nC,o({noCast:1})),
   };
   // creatures: two groups per kind on this floor; the coat color rides on the vertex colors (shaded styles only)
   const vc=faces&&S.mat!=="basic";
   for(const [sp,list] of bySp){const g=creatureGeo(sp,S.mat!=="basic");figG["cb_"+sp]=IG(g.b,"figure",list.length,o(vc?{mat:coatMat()}:{}));figG["ch_"+sp]=IG(g.h,"figure",list.length,o(vc?{mat:coatMat()}:{}));
-    for(const k of["cb_","ch_"])if(figG[k+sp].mesh)figPick.set(figG[k+sp].mesh,list)}
+    for(const k of["cb_","ch_"]){if(figG[k+sp].mesh)figPick.set(figG[k+sp].mesh,list);idleIG(figG[k+sp],i=>list[i].seed)}}
+  idleFigures();
   if(figG.torso.mesh)figPick.set(figG.torso.mesh,FIGP);if(figG.head.mesh)figPick.set(figG.head.mesh,FIGP);
   // Neon night: dark faces with colored edges (shirts in the team color, hats and mugs in their own)
   const neon=faces&&S.mat==="basic",dark=pal("chair"),P=(g,i,hex)=>g.paint(i,neon?dark:hex),E=(g,i,hex)=>{if(S.teamEdges)g.edge(i,bright(hex))};
@@ -308,6 +470,7 @@ function figDeskOf(h){if(!figG||!h)return -1;const L=figPick.get(h.object),f=L&&
 function figMeshes(){return figG?[...figPick.keys()]:[]}
 // heads turn toward you when you drive or walk past (within about 3 m), then drift back to their screens
 function figFrame(dt){
+  IDLE_U.value=(IDLE_U.value+dt)%3600; // the idle shader's clock: the only per-frame cost of the idle motion
   if(!FIG.length||WKIND!=="floor")return;
   let tx=null,tz=null;
   if(mode==="drive"&&!fly){tx=me.x;tz=me.z}else if(mode==="walk"&&!fly){tx=walker.x;tz=walker.z}

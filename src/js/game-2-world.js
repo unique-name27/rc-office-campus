@@ -379,4 +379,5 @@ function buildWorld(){
   lights();
   if(!WM)return;
   if(WKIND==="campus")buildCampusWorld(WM);else buildFloorWorld(WM);
+  if(S.hd)BAKE.world(WKEY,WM,WKIND); // baked light when this world has a matching bake (game-2e-bake.js)
 }
