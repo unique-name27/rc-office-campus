@@ -169,6 +169,7 @@ function crShapes(sm){
     // the seated body: an egg (or a box) on the seat, a belly, thighs and feet over the seat's front edge, arms to the desk
     // (arms and paws carry their side, -1 or 1: the idle shader moves them about the shoulder)
     body:(B,o)=>{
+      if(s.stand)return s.standBody(B,o);
       const by=o.by||.74,bw=o.bw||.19,bh=o.bh||.24,bd=o.bd||.17;
       B("c",o.box?s.at(s.Bx(bw*2,bh*2,bd*2),0,by,.04):s.at(s.E(bw,bh,bd),0,by,.04));
       if(o.belly)B(o.belly,o.box?s.at(s.Bx(bw*1.2,bh*1.1,.02),0,by-.01,.04-bd-.008):o.bellyBig?s.at(s.E(bw*.8,bh*.85,bd*.6),0,by-.02,-.05):s.at(s.E(bw*.72,bh*.75,bd*.55),0,by-.03,-.04));
@@ -179,6 +180,24 @@ function crShapes(sm){
         if(o.shortArms){B(ac,s.at(s.E(.035,.07,.035),k*.15,.83,-.13,1.2,0,0),k);B(pc,s.at(s.E(.03,.025,.03),k*.15,.81,-.19),k)}
         else{B(ac,o.box?s.at(s.Cy(.035,.035,.29),k*.155,.845,-.16,1.33,0,0):s.at(s.E(.05,.15,.05),k*.155,.845,-.16,1.33,0,0),k);
           B(pc,o.box?s.at(s.Bx(.07,.05,.07),k*.14,.81,-.3):s.at(s.E(.045,.04,.05),k*.14,.81,-.3),k)}
+      }
+    },
+    // standing, for a coworker who gets up and walks: the same body on two legs, arms at its sides. It is built in the seated
+    // frame like everything else and walkerGeo() then moves the whole creature down by WALK_DY (there is no chair under it),
+    // so tails, wings and heads keep their places. Legs and feet carry limb code ±1, arms and paws ±2 (the walk shader
+    // swings them about the hip and shoulder heights left in s.hipY / s.shY).
+    standBody:(B,o)=>{
+      const by=o.by||.74,bw=o.bw||.19,bh=o.bh||.24,bd=o.bd||.17,D=-WALK_DY,hip=by-bh+.04,lo=D+.03;
+      s.hipY=hip+WALK_DY;s.shY=by+bh*.4+WALK_DY;
+      B("c",o.box?s.at(s.Bx(bw*2,bh*2,bd*2),0,by,.04):s.at(s.E(bw,bh,bd),0,by,.04));
+      if(o.belly)B(o.belly,o.box?s.at(s.Bx(bw*1.2,bh*1.1,.02),0,by-.01,.04-bd-.008):o.bellyBig?s.at(s.E(bw*.8,bh*.85,bd*.6),0,by-.02,-.05):s.at(s.E(bw*.72,bh*.75,bd*.55),0,by-.03,-.04));
+      const lc=o.legs||"c",fc=o.feet||lc,ac=o.arms||"c",pc=o.paws||ac;
+      for(const k of[-1,1]){
+        B(lc,o.box?s.at(s.Bx(.1,hip-lo,.11),k*.09,(hip+lo)/2,.04):s.at(s.E(.065,(hip-lo)/2+.02,.065),k*.09,(hip+lo)/2,.04),k);
+        B(fc,o.box?s.at(s.Bx(.1,.06,.15),k*.09,D+.03,-.01):s.at(s.E(.06,.035,.085),k*.09,D+.035,-.01),k);
+        if(o.shortArms){B(ac,s.at(s.E(.035,.07,.035),k*.15,.83,-.13,1.2,0,0),2*k);B(pc,s.at(s.E(.03,.025,.03),k*.15,.81,-.19),2*k)}
+        else{B(ac,o.box?s.at(s.Cy(.035,.035,.26),k*(bw+.04),by-.02,.04):s.at(s.E(.045,.14,.045),k*(bw+.025),by-.02,.04,0,0,k*.15),2*k);
+          B(pc,o.box?s.at(s.Bx(.07,.05,.07),k*(bw+.05),by-.17,.04):s.at(s.E(.042,.038,.045),k*(bw+.045),by-.16,.04),2*k)}
       }
     }};
   return s;
@@ -208,6 +227,71 @@ function scarfGeo(sm){
   const t=new THREE.BoxGeometry(.06,.13,.022);t.rotateZ(.18);t.translate(.055,-.075,-.1);
   return mergeGeos([r,t]);
 }
+/* ---------- walking coworkers: the standing creature and its walk cycle ----------
+   One geometry per kind (body and head together: a walker's head doesn't turn), with aWalk per vertex
+   (x: 0 = body, ±1 = a leg or foot, ±2 = an arm or paw; y: the hip or shoulder height it swings about) and aWalkI per
+   instance (x: a phase seed, y: gait, 0 standing .. 1 walking). The swing and a small bob happen in the vertex shader from
+   one clock uniform; the line-art styles (whose edge lines are baked on the CPU) and reduced motion get no swing, and the
+   line-art styles bob through the instance matrix instead. */
+const WALK_DY=-.2,WALK_U={value:0},WALK_SWING=!REDUCED;
+function walkerGeo(kind,sm){
+  const parts=[],s=crShapes(sm),hp=CREATURE[kind].head||CR_HEAD;s.stand=true;
+  CREATURE[kind].build((c,g,code)=>parts.push([c,g,code||0,0]),(c,g)=>{g.translate(hp[0],hp[1],hp[2]);parts.push([c,g,0,1])},s);
+  const list=parts.map(([c,g,code,hd])=>{g.translate(0,WALK_DY,0);const n=g.index?g.toNonIndexed():g;if(n!==g)g.dispose();if(!n.attributes.normal)n.computeVertexNormals();return[c,n,code,hd]});
+  let len=0;for(const[,g]of list)len+=g.attributes.position.count*3;
+  const pos=new Float32Array(len),nor=new Float32Array(len),col=new Float32Array(len),wk=new Float32Array(len/3*2),head=new Uint8Array(len/3),cc=new THREE.Color();let o=0;
+  for(const[c,g,code,hd]of list){
+    pos.set(g.attributes.position.array,o);nor.set(g.attributes.normal.array,o);
+    if(c==="c")cc.setRGB(1,1,1);else{cc.set(c);if(Math.min(cc.r,cc.g,cc.b)>.99)cc.multiplyScalar(.97)}
+    const piv=Math.abs(code)>1.5?s.shY:code?s.hipY:0;
+    for(let k=0;k<g.attributes.position.count;k++){col[o+k*3]=cc.r;col[o+k*3+1]=cc.g;col[o+k*3+2]=cc.b;const w=(o/3+k)*2;wk[w]=code;wk[w+1]=piv;head[o/3+k]=hd}
+    o+=g.attributes.position.count*3;g.dispose();
+  }
+  const out=new THREE.BufferGeometry();out.setAttribute("position",new THREE.BufferAttribute(pos,3));out.setAttribute("normal",new THREE.BufferAttribute(nor,3));
+  out.setAttribute("color",new THREE.BufferAttribute(col,3));out.setAttribute("aWalk",new THREE.BufferAttribute(wk,2));out.userData.head=head;return out;
+}
+const WALK_GLSL=`
+uniform float uWalkT;
+attribute vec2 aWalk;
+attribute vec2 aWalkI;
+float wkSw, wkBob;
+vec3 wkRX( vec3 v, float a ) { float c = cos( a ), s = sin( a ); return vec3( v.x, v.y * c - v.z * s, v.y * s + v.z * c ); }
+void walkCalc() { float ph = uWalkT * 7.0 + aWalkI.x * 6.2832; wkSw = sin( ph ) * aWalkI.y; wkBob = abs( cos( ph ) ) * 0.028 * aWalkI.y; }
+// legs swing about the hip, arms about the shoulder and against the leg on their side
+float wkAng() { float L = aWalk.x; if ( abs( L ) < 0.5 ) return 0.0; return abs( L ) > 1.5 ? 0.45 * wkSw * sign( L ) : - 0.5 * wkSw * sign( L ); }
+vec3 walkN( vec3 n ) { return wkRX( n, wkAng() ); }
+vec3 walkP( vec3 p ) {
+	float a = wkAng();
+	if ( a != 0.0 ) { vec3 pv = vec3( 0.0, aWalk.y, 0.04 ); p = pv + wkRX( p - pv, a ); }
+	if ( abs( aWalk.x ) < 0.5 || abs( aWalk.x ) > 1.5 ) p.y += wkBob; // the body bobs, the feet stay on the floor
+	return p;
+}
+`;
+function walkMat(m){
+  if(!WALK_SWING||S.edges||!m||m===INVIS||m.userData.walk)return m;
+  const ob=m.onBeforeCompile,ck=m.customProgramCacheKey;m.userData.walk=1;
+  m.onBeforeCompile=function(sh,r){ob.call(this,sh,r);sh.uniforms.uWalkT=WALK_U;
+    sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\n"+WALK_GLSL).replace(/void\s+main\s*\(\s*\)\s*\{/,x=>x+"\n\twalkCalc();")
+      .replace("#include <beginnormal_vertex>","#include <beginnormal_vertex>\n\tobjectNormal = walkN( objectNormal );").replace("#include <begin_vertex>","#include <begin_vertex>\n\ttransformed = walkP( transformed );")};
+  m.customProgramCacheKey=function(){return ck.call(this)+"|walk"};
+  return m;
+}
+let walkHullM=null,walkHullOf=null,walkDepthM=null;
+function walkHull(){if(walkHullOf!==HULL){walkHullOf=HULL;walkHullM=walkMat(HULL.clone())}return walkHullM}
+function walkDepth(){return walkDepthM||(walkDepthM=walkMat(new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking})))}
+// a walker group: n slots, all hidden; its seeds and gaits live in aWalkI
+function walkIG(geo,role,n,o,seed){
+  const g=IG(geo,role,n,o);if(!g.mesh)return g;
+  if(g.colored)g.paint(0,"#ffffff"); // instance colors exist from the start, so HD.warm compiles the variant the first walk uses
+  g.mesh.userData.walk=true;          // HD's shadow gate counts walkers by where they are (walkShadowSig), not by this buffer
+  const a=new Float32Array(n*2);for(let i=0;i<n;i++)a[2*i]=seed+i*.37;
+  const at=new THREE.InstancedBufferAttribute(a,2);g.mesh.geometry.setAttribute("aWalkI",at);g.wa=at;
+  for(const o2 of [g.mesh,g.hull])if(o2)o2.userData.dyn=true; // hidden slots sit at the origin: never part of a baked-light layout
+  if(WALK_SWING&&!S.edges){walkMat(g.mesh.material);if(g.mesh.castShadow)g.mesh.customDepthMaterial=walkDepth();if(g.hull){g.hull.geometry.setAttribute("aWalkI",at);g.hull.material=walkHull()}}
+  for(let i=0;i<n;i++)g.set(i,WALK_HIDE);
+  return g;
+}
+const WALK_HIDE=new THREE.Matrix4().makeScale(0,0,0);
 // the coat color goes only where a vertex is pure white (see the note above)
 const COAT_VS="#if defined( USE_COLOR ) && defined( USE_INSTANCING_COLOR )\n\tvColor = color * mix( vec3( 1.0 ), instanceColor.xyz, step( 0.999, min( color.r, min( color.g, color.b ) ) ) );\n#else\n#include <color_vertex>\n#endif";
 function coatMat(){const m=mat("figure");if(!("vertexColors" in m)||!m.color)return m;m.vertexColors=true;m.onBeforeCompile=sh=>{sh.vertexShader=sh.vertexShader.replace("#include <color_vertex>",COAT_VS)};m.customProgramCacheKey=()=>"coat-mask";return m}
@@ -408,6 +492,19 @@ function buildFigures(){
   for(const [sp,list] of bySp){const g=creatureGeo(sp,S.mat!=="basic");figG["cb_"+sp]=IG(g.b,"figure",list.length,o(vc?{mat:coatMat()}:{}));figG["ch_"+sp]=IG(g.h,"figure",list.length,o(vc?{mat:coatMat()}:{}));
     for(const k of["cb_","ch_"]){if(figG[k+sp].mesh)figPick.set(figG[k+sp].mesh,list);idleIG(figG[k+sp],i=>list[i].seed)}}
   idleFigures();
+  // walkers: standing slots per kind (enough that a kind almost never runs out: about 5% of coworkers are up at once), one scarf each
+  let nW=0;
+  for(const [sp,list] of bySp){
+    const n=Math.min(list.length,WALK_POOL+Math.ceil(list.length/6)),wg=walkerGeo(sp,S.mat!=="basic"),g=walkIG(wg,"figure",n,o(vc?{mat:coatMat()}:{}),idleSeed(WKEY+sp));
+    if(!g.mesh)continue;figG["wk_"+sp]=g;g.base=nW;g.slots=new Array(n).fill(null);figPick.set(g.mesh,g.slots);nW+=n;
+    // which of the edge-line vertices are the head's (walkEdge leaves those in the style's own edge color, as when seated)
+    if(g.lines&&wg.userData.head){const src=wg.attributes.position.array,hd=wg.userData.head,key=(b,v)=>b[3*v]+","+b[3*v+1]+","+b[3*v+2],at=new Map();
+      for(let v=0;v<src.length/3;v++)at.set(key(src,v),v);const nv=g.eb.length/3;g.ehead=new Uint8Array(nv);for(let v=0;v<nv;v++){const j=at.get(key(g.eb,v));g.ehead[v]=j!=null&&hd[j]?1:0}}
+  }
+  if(nW){const sg=scarfGeo(S.mat!=="basic");sg.setAttribute("aWalk",new THREE.BufferAttribute(new Float32Array(sg.attributes.position.count*2),2));figG.wscarf=walkIG(sg,"shirt",nW,o({noCast:1}),0)}
+  // everything here moves (or hides at the origin when someone gets up): never part of a baked-light layout
+  for(const k in figG){const g=figG[k];for(const m of [g.mesh,g.hull])if(m)m.userData.dyn=true}
+  walkReset();
   if(figG.torso.mesh)figPick.set(figG.torso.mesh,FIGP);if(figG.head.mesh)figPick.set(figG.head.mesh,FIGP);
   // Neon night: dark faces with colored edges (shirts in the team color, hats and mugs in their own)
   const neon=faces&&S.mat==="basic",dark=pal("chair"),P=(g,i,hex)=>g.paint(i,neon?dark:hex),E=(g,i,hex)=>{if(S.teamEdges)g.edge(i,bright(hex))};
@@ -428,6 +525,7 @@ function buildFigures(){
 function figPose(f){
   const c=f.ch;
   if(!figG)return;
+  if(f.sp&&f.away){figG[f.kb].set(f.ci,WALK_HIDE);figG[f.kh].set(f.ci,WALK_HIDE);figG.scarf.set(f.si,WALK_HIDE);return} // up and about: the chair is empty
   if(f.sp){const B=figBase(f,_FB),nk=CREATURE[f.sp].neck||CR_NECK;figG[f.kb].set(f.ci,B);
     _FA.makeTranslation(0,nk[0],.02);_FA.scale(_FS.set(nk[1],nk[1],nk[1]));_FM.multiplyMatrices(B,_FA);figG.scarf.set(f.si,_FM);figHead(f,B);return}
   const B=figBase(f,_FB),G=figG,i=f.n;
@@ -458,7 +556,7 @@ function figCommit(){if(figG)for(const k in figG)figG[k].commit()}
 function figChair(ch){const f=figByChair.get(ch);if(f)figPose(f)}
 function figAll(){FIG.forEach(figPose)}
 // clearRoot already disposed everything under root: just forget it
-function figReset(){figG=null;FIG=[];FIGP=[];figByChair=new Map();figPick=new Map();figTurned.clear()}
+function figReset(){walkReset();figG=null;FIG=[];FIGP=[];figByChair=new Map();figPick=new Map();figTurned.clear()}
 // a look changed: rebuild only the figures (the rest of the floor stays)
 function rebuildFigures(){
   if(WKIND!=="floor"||!root)return;
@@ -467,23 +565,179 @@ function rebuildFigures(){
 }
 // which desk a ray hit on a figure points at (-1 if none)
 function figDeskOf(h){if(!figG||!h)return -1;const L=figPick.get(h.object),f=L&&L[h.instanceId];return f?f.di:-1}
-function figMeshes(){return figG?[...figPick.keys()]:[]}
+// (three caches an instanced mesh's bounding sphere once and rejects rays outside it: walkers move and seated creatures hide,
+// so the spheres are recomputed from the current matrices for each pick)
+function figMeshes(){if(!figG)return[];const out=[...figPick.keys()];for(const m of out)m.boundingSphere=null;return out}
 // heads turn toward you when you drive or walk past (within about 3 m), then drift back to their screens
 function figFrame(dt){
   IDLE_U.value=(IDLE_U.value+dt)%3600; // the idle shader's clock: the only per-frame cost of the idle motion
+  WALK_U.value=(WALK_U.value+dt)%3600;
   if(!FIG.length||WKIND!=="floor")return;
+  walkStep(dt);
   let tx=null,tz=null;
   if(mode==="drive"&&!fly){tx=me.x;tz=me.z}else if(mode==="walk"&&!fly){tx=walker.x;tz=walker.z}
   const want=new Set();
-  if(tx!=null&&!REDUCED)for(const c of chairsNear(tx,tz,3.2)){const f=figByChair.get(c);if(!f)continue;const dx=tx-c.x,dz=tz-c.z,dist=Math.hypot(dx,dz);if(dist>3.2||dist<.08)continue;f.tyaw=clamp(angDiff(c.a,Math.atan2(-dx,-dz)),-1.15,1.15);want.add(f)}
+  if(tx!=null&&!REDUCED)for(const c of chairsNear(tx,tz,3.2)){const f=figByChair.get(c);if(!f||f.away)continue;const dx=tx-c.x,dz=tz-c.z,dist=Math.hypot(dx,dz);if(dist>3.2||dist<.08)continue;f.tyaw=clamp(angDiff(c.a,Math.atan2(-dx,-dz)),-1.15,1.15);want.add(f)}
   for(const f of figTurned)if(!want.has(f))f.tyaw=0;
   for(const f of want)figTurned.add(f);
   if(!figTurned.size)return;
   const k=1-Math.exp(-dt*5);
   for(const f of figTurned){
     let ny=f.yaw+(f.tyaw-f.yaw)*k;const done=f.tyaw===0&&Math.abs(ny)<.003;if(done)ny=0;
-    if(ny!==f.yaw){f.yaw=ny;if(figG)figHead(f,figBase(f,_FB))}
+    if(ny!==f.yaw){f.yaw=ny;if(figG&&!f.away)figHead(f,figBase(f,_FB))}
     if(done)figTurned.delete(f);
+  }
+}
+
+/* ---------- walks: coworkers get up now and then ----------
+   The schedule is PEOPLE.walkTrip / walkAt on the shared wall clock, so every viewer on the floor sees the same creature
+   leave, take the same path (NAV, from its chair's home spot to a room or amenity near its desk, or a teammate's desk),
+   stay a while facing it and come back the same way. Only creatures walk; the plain seated person stays at the desk.
+   Locally a walker steps aside for cars close by and hops when bumped or woofed at: that shifts it for a moment and never
+   changes where its walk goes. While up it is a small kinematic body in the physics world (PHYS.track), so it nudges
+   loose boxes out of its way. A viewer who arrives mid-walk sees the walker where everyone else does. */
+const WALK_POOL=3;           // standing slots per kind on a floor, plus one per 6 of that kind (see buildFigures)
+let walkScan=0,walkFresh=true,walkDests=null,walkLastT=0;
+const walkers=new Set(),_W={x:0,z:0,a:0},_WS=new THREE.Sphere(new V3(),1);
+function walkReset(){for(const f of walkers){if(f.kin)PHYS.untrack(f.kin);f.kin=null;f.away=false;f.slot=-1}walkers.clear();walkScan=0;walkFresh=true;walkDests=null}
+// where coworkers go: rooms and amenities (not the exit, and not the elevator pads where players arrive), and the
+// standing point at every desk
+function walkPlaces(){
+  if(walkDests)return walkDests;const desk=new Map(),rooms=[];
+  for(const d of (WM&&WM.dests)||[]){if(!isFinite(d.x)||!isFinite(d.z))continue;if(d.kind==="desk")desk.set(d.id,d);else if(d.id!=="exit"&&!String(d.id).startsWith("elev:"))rooms.push(d)}
+  return walkDests={desk,rooms};
+}
+function walkDest(f,tr){
+  const P=walkPlaces(),home=P.desk.get("desk:"+f.d.id);if(!home)return null;
+  const dist=d=>Math.hypot(d.x-home.x,d.z-home.z);
+  if(tr.mate&&f.d.team){
+    const mates=[];for(const g of FIG)if(g!==f&&g.d.team===f.d.team){const d=P.desk.get("desk:"+g.d.id);if(d&&dist(d)<18&&dist(d)>1.5)mates.push(d)}
+    mates.sort((a,b)=>dist(a)-dist(b)||(a.id<b.id?-1:1));
+    if(mates.length)return{home,to:mates[Math.floor(tr.pick*Math.min(4,mates.length))]};
+  }
+  const near=P.rooms.slice().sort((a,b)=>dist(a)-dist(b)||(a.id<b.id?-1:1)).slice(0,6);
+  return near.length?{home,to:near[Math.floor(tr.pick*tr.pick*near.length)]}:null;   // nearer rooms more often
+}
+// The path: from a step behind the chair (its home spot, the same for everyone) along NAV to a spot of this coworker's own
+// on a ring around the destination, so two who go to the same room stand side by side. Only the static NAV grid decides,
+// so every viewer gets the same path and length.
+function walkPath(f,dd){
+  const g=navGrid(WKEY);if(!g)return null;
+  const find=(x,z)=>{let r=null;try{r=NAV.findPath(g,dd.home.x,dd.home.z,x,z)}catch(_){}return r&&r.pts&&r.pts.length>=2?r:null};
+  let r=null;const j=PEOPLE.hash(f.key+"|spot")%6;
+  for(let n=0;n<6&&!r;n++){const an=(dd.to.a||0)+Math.PI/2+((j+n)%6)*Math.PI/3,gx=dd.to.x+Math.sin(an)*.55,gz=dd.to.z+Math.cos(an)*.55,q=find(gx,gz);
+    if(q){const e=q.pts[q.pts.length-1];if(Math.hypot(e[0]-gx,e[1]-gz)<.2)r=q}}   // NAV snaps a blocked end elsewhere: only take one that got there
+  if(!r)r=find(dd.to.x,dd.to.z);if(!r)return null;
+  const c=f.ch,pts=[[c.hx+Math.sin(c.ha)*.5,c.hz+Math.cos(c.ha)*.5],...r.pts],cum=[0];   // behind the seat (a creature faces -z in its chair)
+  for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
+  return{pts,cum,L:cum[cum.length-1],face:dd.to.a};
+}
+// the point s metres along a path, and the heading of its segment
+function pathAt(P,s,out){
+  const{pts,cum,L}=P;s=clamp(s,0,L);let lo=0,hi=pts.length-2;
+  while(lo<hi){const m=(lo+hi+1)>>1;if(cum[m]<=s)lo=m;else hi=m-1}
+  const a=pts[lo],b=pts[lo+1],sl=cum[lo+1]-cum[lo],t=sl>0?(s-cum[lo])/sl:0;
+  out.x=a[0]+(b[0]-a[0])*t;out.z=a[1]+(b[1]-a[1])*t;
+  let k=lo;while(k<pts.length-2&&cum[k+1]-cum[k]<1e-6)k++;out.a=Math.atan2(-(pts[k+1][0]-pts[k][0]),-(pts[k+1][1]-pts[k][1]));
+  return out;
+}
+// a walker's edge lines in its team color, except the head's (seated, only the body has team edges)
+function walkEdge(g,i,hex){
+  if(!g.lines)return;const cc=new THREE.Color(hex),b=g.eb.length,a=g.lines.geometry.attributes.color.array;
+  for(let v=0;v<b/3;v++){if(g.ehead&&g.ehead[v])continue;const k=i*b+v*3;a[k]=cc.r;a[k+1]=cc.g;a[k+2]=cc.b}g.cd=true;
+}
+function walkStart(f){
+  const g=figG&&figG["wk_"+f.sp];if(!g||!g.slots)return false;const i=g.slots.indexOf(null);if(i<0)return false;
+  g.slots[i]=f;f.slot=i;f.away=true;walkers.add(f);figPose(f);
+  const neon=!S.faceIsBg&&!S.depthOnly&&S.mat==="basic",coat=crCoat(f),team=teamColorOf(f.d.team),sc=figG.wscarf,j=g.base+i;
+  g.paint(i,neon?pal("chair"):coat);if(S.teamEdges)walkEdge(g,i,bright(team));
+  if(g.wa){g.wa.array[2*i+1]=0;g.wa.needsUpdate=true}
+  if(sc&&sc.mesh){sc.paint(j,neon?pal("chair"):team);if(S.teamEdges)sc.edge(j,bright(team));if(sc.wa&&g.wa){sc.wa.array[2*j]=g.wa.array[2*i];sc.wa.array[2*j+1]=0;sc.wa.needsUpdate=true}}
+  pathAt(f.wp,0,_W);f.wh=f.ch.a;f.wg=0;f.wox=f.woz=0;f.hopT=0;f.hopCd=0;f.px=NaN;   // stands up facing the desk, then turns to go
+  f.kin={x:_W.x+f.ch.x-f.ch.hx,y:groundY(_W.x,_W.z),z:_W.z+f.ch.z-f.ch.hz,h:f.wh,kind:"dog"};PHYS.track(f.kin);
+  return true;
+}
+function walkEnd(f){
+  const g=figG&&figG["wk_"+f.sp],sc=figG&&figG.wscarf;
+  if(g&&f.slot>=0){g.set(f.slot,WALK_HIDE);g.slots[f.slot]=null;if(g.wa){g.wa.array[2*f.slot+1]=0;g.wa.needsUpdate=true}
+    if(sc&&sc.mesh){sc.set(g.base+f.slot,WALK_HIDE);if(sc.wa){sc.wa.array[2*(g.base+f.slot)+1]=0;sc.wa.needsUpdate=true}}}
+  if(f.kin)PHYS.untrack(f.kin);f.kin=null;f.slot=-1;f.away=false;walkers.delete(f);figPose(f);
+}
+// the cars (and the walking player) a walker makes room for
+function walkCars(){
+  const out=[];
+  if(!fly&&mode==="drive")out.push(me);else if(!fly&&mode==="walk")out.push(walker);
+  for(const r of remotes.values())if(r.has&&r.w===WKEY&&r.m!=="o"&&r.car)out.push(r.car);
+  if(BOTPATH.length>1)out.push(bot);
+  return out;
+}
+// a woof (or anything loud) nearby: walkers within r hop
+function walkStartle(x,z,r){for(const f of walkers)if(f.kin&&Math.hypot(f.kin.x-x,f.kin.z-z)<r&&f.hopCd<=0){f.hopT=.5;f.hopCd=1.2}}
+// for HD's shadow gate: only the walkers inside the sun's shadow box count, by where they are (the walker groups' instance
+// buffers change whenever anyone anywhere on the floor walks)
+function walkShadowSig(fr){
+  let h=0,n=0;
+  for(const f of walkers){if(!f.kin)continue;_WS.center.set(f.kin.x,.6,f.kin.z);_WS.radius=1.2;if(!fr.intersectsSphere(_WS))continue;n++;h+=(f.kin.x*1.7+f.kin.z*2.3+f.wh*.9+f.hopT*3.1+f.wg*1.3)*(1+n*1e-3)}
+  return h+n*977;
+}
+// how much of a step aside is clear for both a car (spotFree) and someone on foot (walkBlocked: desks and tables too)
+function walkClear(x,z,tx,tz){
+  let s=1;while(s>.2&&(walkBlocked(x+tx*s,z+tz*s)||!spotFree(x+tx*s,z+tz*s)))s*=.5;
+  return s>.2?s:0;
+}
+function walkStep(dt){
+  if(!figG)return;
+  const T=Date.now()/1000;
+  if((walkScan-=dt)<=0){walkScan=.25;
+    // after a gap (a hidden tab, the editor open, a stall) the walks that began meanwhile join where everyone else sees them
+    const fresh=walkFresh||T-walkLastT>PEOPLE.WALK.up,due=[];
+    for(const f of FIG){
+      if(!f.sp||f.away)continue;
+      const k=PEOPLE.walkCycle(f.key,T);
+      if(f.wk!==k){f.wk=k;f.trip=PEOPLE.walkTrip(f.key,k);f.wp=undefined;f.tm=null}
+      const tr=f.trip;if(!tr||T<tr.t0||T>=tr.end||tr.skip)continue;
+      if(f.wp===undefined){const dd=walkDest(f,tr);f.wp=dd?walkPath(f,dd):null;f.tm=f.wp?PEOPLE.walkTimes(tr,f.wp.L):null}
+      if(!f.tm||T>=tr.t0+f.tm.total){tr.skip=true;continue}
+      if(!fresh&&tr.t0<walkLastT){tr.skip=true;continue}   // it was due at the last scan and didn't start (no free slot)
+      due.push(f);
+    }
+    // in schedule order, so in the rare case a kind runs out of slots every viewer leaves the same walk out
+    due.sort((a,b)=>a.trip.t0-b.trip.t0||(a.key<b.key?-1:1));
+    for(const f of due)if(!walkStart(f))f.trip.skip=true;
+    walkFresh=false;walkLastT=T;
+  }
+  if(!walkers.size)return;
+  const cars=walkCars(),ke=1-Math.exp(-dt*8),kg=1-Math.exp(-dt*6),sc=figG.wscarf;
+  for(const f of [...walkers]){
+    const a=PEOPLE.walkAt(f.trip,f.tm,T);
+    if(a.ph==="done"||a.ph==="wait"){walkEnd(f);continue}
+    pathAt(f.wp,a.s,_W);let x=_W.x,z=_W.z,h=_W.a;
+    if(a.ph==="back")h+=Math.PI;else if(a.ph==="stay"&&f.wp.face!=null)h=f.wp.face;else if(a.ph==="down")h=f.ch.a;
+    // a chair pushed away from home: get up from it and sit back down on it, blending into the shared path over the first metre
+    {const c=f.ch,ox=c.x-c.hx,oz=c.z-c.hz,od=Math.hypot(ox,oz);if(od>.02){const w=clamp(1-a.s/Math.max(1,od),0,1);x+=ox*w;z+=oz*w}}
+    const dh=angDiff(f.wh,h);f.wh=Math.abs(dh)<1e-4?h:f.wh+dh*ke;
+    const dg=a.gait-f.wg;f.wg=Math.abs(dg)<.002?a.gait:f.wg+dg*kg;f.hopCd-=dt;
+    // step aside for a car close by, across the way it is walking (never into a wall, a desk or a table)
+    let tx=0,tz=0;
+    if(a.gait)for(const c of cars){const dx=x-c.x,dz=z-c.z,d=Math.hypot(dx,dz);if(d<1.5&&d>1e-3){const rx=Math.cos(f.wh),rz=-Math.sin(f.wh),k=.7*(1-d/1.5)*((dx*rx+dz*rz)>=0?1:-1);tx+=rx*k;tz+=rz*k}}
+    {const m=Math.hypot(tx,tz);if(m>.7){tx*=.7/m;tz*=.7/m}}
+    if(tx||tz){const k=walkClear(x,z,tx,tz);tx*=k;tz*=k}
+    const ex=tx-f.wox,ez=tz-f.woz;if(Math.abs(ex)+Math.abs(ez)<1e-4){f.wox=tx;f.woz=tz}else{f.wox+=ex*kg;f.woz+=ez*kg}x+=f.wox;z+=f.woz;
+    // bumped (not by something jumping over its head): the walker hops, the player's car is eased back out of it
+    for(const c of cars){const dx=c.x-x,dz=c.z-z,d=Math.hypot(dx,dz);if(d>=.48||(c.y||0)>1)continue;
+      if(f.hopCd<=0&&(c!==me||Math.hypot(me.vx||0,me.vz||0)>1)){f.hopT=.5;f.hopCd=1.2;if(c===me)pop(x,1.2,z,"!","#FFB547")}
+      if(c===me&&mode==="drive"){const ux=d>1e-3?dx/d:1,uz=d>1e-3?dz/d:0;if(spotFree(x+ux*.48,z+uz*.48)){me.x=x+ux*.48;me.z=z+uz*.48}const vn=(me.vx||0)*ux+(me.vz||0)*uz;if(vn<0){me.vx-=vn*ux;me.vz-=vn*uz}}}
+    const gy=groundY(x,z);let y=gy;   // up and over ramps and humps
+    if(f.hopT>0){f.hopT=Math.max(0,f.hopT-dt);y+=Math.sin(Math.PI*(1-f.hopT/.5))*.22}
+    if(S.edges&&!REDUCED)y+=Math.abs(Math.cos(WALK_U.value*7+(f.slot*.37)*6.2832))*.028*f.wg; // line-art styles bob here, not in the shader
+    if(f.kin){f.kin.x=x;f.kin.y=gy;f.kin.z=z;f.kin.h=f.wh}
+    const g=figG["wk_"+f.sp];
+    if(g.wa&&g.wa.array[2*f.slot+1]!==f.wg&&(Math.abs(g.wa.array[2*f.slot+1]-f.wg)>.005||f.wg===a.gait)){g.wa.array[2*f.slot+1]=f.wg;g.wa.needsUpdate=true;if(sc&&sc.wa){sc.wa.array[2*(g.base+f.slot)+1]=f.wg;sc.wa.needsUpdate=true}}
+    // write the matrices only when the walker moved: a still walker must not look like a change to HD's shadow gate
+    if(!(Math.abs(x-f.px)+Math.abs(y-f.py)+Math.abs(z-f.pz)+Math.abs(angDiff(f.wh,f.pa))<1e-4)){
+      f.px=x;f.py=y;f.pz=z;f.pa=f.wh;_FA.makeRotationY(f.wh);_FA.setPosition(x,y,z);g.set(f.slot,_FA);
+      if(sc&&sc.mesh){const nk=CREATURE[f.sp].neck||CR_NECK;_FH.makeTranslation(0,nk[0]+WALK_DY,.02);_FH.scale(_FS.set(nk[1],nk[1],nk[1]));_FM.multiplyMatrices(_FA,_FH);sc.set(g.base+f.slot,_FM)}
+    }
   }
 }
 

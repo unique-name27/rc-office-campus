@@ -175,6 +175,7 @@ function payTurbo(c,tier,vF,P,isMe){
 // chairs within 2.4 m slide away (the nearer, the faster) and spin; the Mailbot backs off
 function woofAt(x,z,src){
   PHYS.blast(x,z,2.6,3.2); // loose boxes, bins and cones blow over too
+  walkStartle(x,z,2.4);     // and coworkers walking by hop
   for(const ch of chairsNear(x,z,2.4)){
     const dx=ch.x-x,dz=ch.z-z,d=Math.hypot(dx,dz);if(d>2.4)continue;
     const a=d>1e-3?Math.atan2(dz,dx):Math.random()*Math.PI*2,v=1+3*(1-d/2.4),ux=Math.cos(a),uz=Math.sin(a),vn=ch.vx*ux+ch.vz*uz;

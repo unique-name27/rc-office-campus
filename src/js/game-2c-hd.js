@@ -594,14 +594,14 @@ function shadowSig(){
   sun.shadow.updateMatrices(sun);const fr=sun.shadow.getFrustum(); // three only does this when it draws the map
   let h=0,n=0;
   scene.traverseVisible(o=>{
-    if(!o.castShadow)return;
+    if(!o.castShadow||o.userData.walk)return; // walking coworkers: counted below by where they are
     if((o.isMesh||o.isLine||o.isPoints)&&o.frustumCulled&&!fr.intersectsObject(o))return; // three wouldn't draw it into the map either
     const e=o.matrixWorld.elements;n++;
     const x=(e[0]*1.31+e[2]*1.73+e[5]*2.17+e[8]*2.71+e[10]*3.13+e[12]*3.37+e[13]*3.79+e[14]*4.19)*(1+n*1e-4);
     if(x===x)h+=x; // one broken (NaN) matrix must not make every frame look changed
     if(o.isInstancedMesh)h+=o.instanceMatrix.version*5.3+o.count*7.1;
   });
-  return h+n*1e5+sun.shadow.camera.right*11.3+sun.shadow.mapSize.x;
+  return h+n*1e5+sun.shadow.camera.right*11.3+sun.shadow.mapSize.x+walkShadowSig(fr);
 }
 function shadowsBefore(){
   const sm=renderer.shadowMap;if(!sm.enabled||!sun||!sun.castShadow){sm.autoUpdate=true;return}

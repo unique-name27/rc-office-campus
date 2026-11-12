@@ -221,6 +221,20 @@ PEOPLE.validClaim(v) -> { w, desk, name, look, at } | null
 PEOPLE.locate(claim, peopleOn(w) -> [{desk,name}], floorKeys) -> { key, moved } | null   // same desk+name, else the one person with that name
 PEOPLE.resolve(claims, locateFn, nameMatch) -> { winners: Map key -> claim, status: Map uid -> { key, state:'ok'|'moved'|'lost'|'taken' } }
 ```
+Walks (creatures only; every viewer computes the same ones from the shared wall clock `T` in seconds and the desk key):
+```js
+PEOPLE.WALK -> { cycle: 150, p: 0.2, speed: 0.9, up: 0.9, minStay: 2 }   // s, chance per cycle, m/s, s to stand up / sit down
+PEOPLE.walkCycle(key, T) -> k                       // cycles are shifted per desk
+PEOPLE.walkTrip(key, k) -> null | { k, t0, end, stay, pick, mate }   // starts in the cycle's first third; pick/mate choose the place
+PEOPLE.walkTimes(trip, L) -> { up, walk, stay, total } | null      // null when a path of L m can't fit before the cycle ends
+PEOPLE.walkAt(trip, times, T) -> { ph: 'wait'|'up'|'out'|'stay'|'back'|'down'|'done', s (m along the path), gait 0|1 }
+```
+The game (`game-2b-people.js`) walks a NAV path from the chair's home spot to one of the 6 rooms/amenities nearest the desk (nearer
+ones more often) or, with `mate`, a teammate's desk within 18 m. A walker is a standing creature (`walkerGeo`: the seated parts
+moved down `WALK_DY`, legs and arms tagged for the walk shader) in a per-kind group of `WALK_POOL` slots; the seated figure is hidden
+while it is away. Locally only: walkers step aside for cars within 1.5 m (never into a wall), hop when bumped or woofed at, and ease
+the player's car back out of them; while up they are kinematic bodies in `PHYS` (`PHYS.track`). Walker meshes carry `userData.dyn`.
+
 Claims: db doc `looks/<uid>` = `{ w, desk, name, look, at }`, one per viewer. Rules: `looks` read view / write admin (editors can
 remove a claim), `looks/{self}` read view / write interact. Two claims on one person: the claimant whose own profile name matches the
 seating name wins, then the earliest `at`. With sample people, or no db, your claim lives in localStorage `rc-mylook` (this browser only).

@@ -122,5 +122,43 @@ const PEOPLE = (() => {
     return { winners, status };
   }
 
-  return { TONES, DEFAULT_TONE, HATS, KINDS, KIND_NAMES, SPECIES, coatsOf, CHOSEN, hash, defaultLook, validLook, merge, chosenOf, validClaim, norm, locate, resolve };
+  /* ---------- walks: now and then a coworker gets up, walks somewhere, waits and comes back ----------
+     Every viewer works out the same walks from the shared wall clock (seconds) and the desk key, with no messages.
+     A coworker's time is cut into cycles of WALK.cycle seconds, each shifted by an offset of its own; with chance WALK.p a
+     cycle holds one trip, which starts somewhere in its first third. The trip's destination is chosen by `pick` (0..1) among
+     rooms near the desk, or a teammate's desk when `mate` is set. The game finds the path (NAV) and asks walkAt() where
+     along it the walker is: getting up, walking out, staying, walking back, sitting down. */
+  const WALK = { cycle: 150, p: 0.2, speed: 0.9, up: 0.9, minStay: 2 };
+  const wr = (key, k, n) => rng(hash(key + '|' + k + '|' + n))();
+  function walkCycle(key, T, W = WALK) { return Math.floor((T + wr(key, 'o', 0) * W.cycle) / W.cycle) }
+  // trip in cycle k: null, or { k, t0, end (the cycle's end), stay, pick, mate }
+  function walkTrip(key, k, W = WALK) {
+    if (wr(key, k, 0) >= W.p) return null;
+    const c0 = k * W.cycle - wr(key, 'o', 0) * W.cycle;
+    return { k, t0: c0 + 4 + wr(key, k, 1) * W.cycle * 0.33, end: c0 + W.cycle, stay: 5 + wr(key, k, 2) * 12,
+      pick: wr(key, k, 3), mate: wr(key, k, 4) < 0.3 };
+  }
+  // the trip's timeline for a path of length L (m): null when it can't fit in its cycle
+  function walkTimes(trip, L, W = WALK) {
+    if (!trip || !(L >= 0)) return null;
+    const walk = L / W.speed, room = trip.end - 1 - trip.t0 - 2 * W.up - 2 * walk;
+    if (room < W.minStay) return null;
+    return { up: W.up, walk, stay: Math.min(trip.stay, room), total: 2 * W.up + 2 * walk + Math.min(trip.stay, room) };
+  }
+  // where in the trip the walker is at time T: { ph: 'wait' | 'up' | 'out' | 'stay' | 'back' | 'down' | 'done', s (m from
+  // the desk along the path), gait (1 while walking) }
+  function walkAt(trip, tm, T) {
+    const u = T - trip.t0;
+    if (u < 0) return { ph: 'wait', s: 0, gait: 0 };
+    if (u < tm.up) return { ph: 'up', s: 0, gait: 0 };
+    const L = tm.walk * WALK.speed;
+    if (u < tm.up + tm.walk) return { ph: 'out', s: (u - tm.up) * WALK.speed, gait: 1 };
+    if (u < tm.up + tm.walk + tm.stay) return { ph: 'stay', s: L, gait: 0 };
+    if (u < tm.up + 2 * tm.walk + tm.stay) return { ph: 'back', s: L - (u - tm.up - tm.walk - tm.stay) * WALK.speed, gait: 1 };
+    if (u < tm.total) return { ph: 'down', s: 0, gait: 0 };
+    return { ph: 'done', s: 0, gait: 0 };
+  }
+
+  return { TONES, DEFAULT_TONE, HATS, KINDS, KIND_NAMES, SPECIES, coatsOf, CHOSEN, hash, defaultLook, validLook, merge, chosenOf, validClaim, norm, locate, resolve,
+    WALK, walkCycle, walkTrip, walkTimes, walkAt };
 })();

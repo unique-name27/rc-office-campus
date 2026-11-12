@@ -130,5 +130,41 @@ test('resolve marks a moved claim', () => {
   assert.deepEqual(r.status.get('m'), { key: 'B1-2|2-A01', state: 'moved' });
 });
 
+test('walks are the same for every viewer and about one in five cycles holds one', () => {
+  let trips = 0;
+  for (let i = 0; i < 2000; i++) {
+    const key = 'B2-1|1-W' + i, T = 1.7e9 + i * 37.3, k = PEOPLE.walkCycle(key, T);
+    assert.equal(PEOPLE.walkCycle(key, T), k);
+    const t = PEOPLE.walkTrip(key, k);
+    assert.deepEqual(PEOPLE.walkTrip(key, k), t, 'deterministic');
+    if (!t) continue;
+    trips++;
+    const c0 = t.end - PEOPLE.WALK.cycle;
+    assert.ok(t.t0 >= c0 + 4 && t.t0 < c0 + 4 + PEOPLE.WALK.cycle * 0.33, 'starts in the first third of its cycle');
+    assert.ok(t.stay >= 5 && t.stay <= 17 && t.pick >= 0 && t.pick < 1);
+    assert.ok(PEOPLE.walkCycle(key, t.t0) === t.k, 'the trip lies in its own cycle');
+  }
+  assert.ok(trips > 330 && trips < 470, 'about 20%: ' + trips);
+});
+
+test('a walk goes out, stays, comes back the same way and ends inside its cycle', () => {
+  const W = PEOPLE.WALK;
+  let key = null, t = null;
+  for (let i = 0; !t; i++) { key = 'B1-3|3-X' + i; t = PEOPLE.walkTrip(key, 100) }
+  const tm = PEOPLE.walkTimes(t, 18);
+  assert.ok(tm && t.t0 + tm.total <= t.end - 1 + 1e-9);
+  assert.equal(PEOPLE.walkTimes(t, 400), null, 'a walk too long for its cycle is skipped');
+  const seq = [];let prev = null;
+  for (let T = t.t0 - 1; T < t.t0 + tm.total + 1; T += 0.05) {
+    const a = PEOPLE.walkAt(t, tm, T);
+    if (a.ph !== prev) { seq.push(a.ph); prev = a.ph }
+    assert.ok(a.s >= -1e-9 && a.s <= 18 + 1e-9);
+    assert.equal(a.gait, a.ph === 'out' || a.ph === 'back' ? 1 : 0);
+  }
+  assert.deepEqual(seq, ['wait', 'up', 'out', 'stay', 'back', 'down', 'done']);
+  const mid = PEOPLE.walkAt(t, tm, t.t0 + W.up + tm.walk / 2);
+  assert.ok(Math.abs(mid.s - 9) < 0.05, 'halfway out at half the walk time');
+});
+
 console.log(`people: ${passed} passed, ${failed} failed`);
 if (failed) process.exitCode = 1;

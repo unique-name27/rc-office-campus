@@ -21,6 +21,7 @@ function world(opt) {
     SFX: new Proxy({}, { get: (_, k) => (...a) => calls.push(['SFX.' + k, ...a]) }),
     skillFx: (c, ev, vol, tier) => calls.push(['fx', ev, tier]),
     PHYS: { blast: (...a) => calls.push(['blast', ...a]) },
+    walkStartle: (...a) => calls.push(['walkStartle', ...a]),
     FX: { crash: (...a) => calls.push(['FX.crash', ...a]), land: (...a) => calls.push(['FX.land', ...a]) },
   };
   const names = Object.keys(env);
