@@ -12,7 +12,7 @@
 // floor (the editor, an import, a code change) misses the hash, and the world falls back to realtime Studio.
 const BAKE=(()=>{
 const VER=1,PAD=3,CAP=4;   // packer version, px of padding around each rectangle, px of the shared constant blocks
-let enabled=true,regs=[],flat=[],on=false,rec=null,worldKey='',faces=null,blobs=null,blobDirty=false;
+let enabled=true,regs=[],flat=[],on=false,rec=null,worldKey='',faces=null,blobs=null,blobDirty=false,pending=Promise.resolve(),loading=null; // pending: this world's bake has been applied (or won't be); loading: its images are on the way
 const texCache=new Map(),bad=new Set();
 const U={bkFloor:{value:new THREE.Vector4()}};
 const _M4=new THREE.Matrix4(),_P=new V3(),_Q=new THREE.Quaternion(),_S=new V3(),_B=new THREE.Box3();
@@ -20,7 +20,7 @@ const _M4=new THREE.Matrix4(),_P=new V3(),_Q=new THREE.Quaternion(),_S=new V3(),
 /* ---------- registration (HD's batches call reg; flat ground pieces are found after the build) ---------- */
 function reg(im,cyl){if(S&&S.hd&&im)regs.push({im,cyl:!!cyl})}
 function enter(){
-  regs=[];flat=[];faces=null;blobs=null;
+  regs=[];flat=[];faces=null;blobs=null;pending=Promise.resolve();loading=null;
   if(on){on=false;renderer.toneMappingExposure=S&&S.exposure||1;HD.restyle()}   // GTAO and the furniture blobs come back
   rec=null;worldKey='';
 }
@@ -111,16 +111,40 @@ function variant(base,kind,lm,K,vars){
   vars.set(key,m);return m;
 }
 
-/* ---------- textures: decoded from the page itself, a few worlds kept ---------- */
-async function decode(b64){
-  const blob=await (await fetch(b64)).blob();
-  const bm=await createImageBitmap(blob,{imageOrientation:'none',premultiplyAlpha:'none',colorSpaceConversion:'none'});
+/* ---------- textures: each world's two images are files beside the page (BAKE_DIR), not part of it ---------- */
+// The world you are in loads its own when it is entered; once a world is lit, the others download in the background, so later
+// floors light up as soon as they are entered. (A build with --inline-bakes carries them in the page as data URLs instead.)
+// A world whose images can't be loaded keeps realtime Studio light and tries again on its next visit; one whose images
+// arrive but can't be decoded (no AVIF in this browser) stays realtime.
+const BM_OPTS={imageOrientation:'none',premultiplyAlpha:'none',colorSpaceConversion:'none'};
+const files=new Map();
+function bytes(name){ // a file's bytes, fetched once per page; a failed download is forgotten so a later visit tries again
+  if(files.has(name))return files.get(name);
+  const p=fetch(BAKE_DIR+name).then(r=>r.ok?r.blob():null).catch(()=>null);
+  files.set(name,p);p.then(b=>{if(!b&&files.get(name)===p)files.delete(name)});return p;
+}
+let prefetched=false;
+function prefetch(){
+  if(prefetched)return;prefetched=true;
+  const go=()=>{for(const k in BAKES){const r=BAKES[k];for(const n of [r.f,r.a])if(n&&!/^data:/.test(n))bytes(n)}};
+  if(window.requestIdleCallback)requestIdleCallback(go,{timeout:5000});else setTimeout(go,2000);
+}
+async function decode(src){
+  let bm=null;
+  if(/^data:/.test(src))bm=await createImageBitmap(await (await fetch(src)).blob(),BM_OPTS);
+  else{
+    const b=await bytes(src);
+    if(b){try{bm=await createImageBitmap(b,BM_OPTS)}catch(e){e.bkBad=true;throw e}}
+    // where fetch isn't allowed, an <img> may be. CORS mode: a cross-origin (or file://) image then fails to load here instead of
+    // decoding into a bitmap WebGL refuses, which would light the world with a black lightmap
+    else{const img=new Image();img.crossOrigin='anonymous';img.src=BAKE_DIR+src;await img.decode();bm=await createImageBitmap(img,BM_OPTS)}
+  }
   const t=new THREE.Texture(bm);t.flipY=false;t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;t.needsUpdate=true;return t;
 }
 function textures(key,r){
   if(texCache.has(key))return texCache.get(key);
   const p=Promise.all([decode(r.f),r.a?decode(r.a):null]).then(([f,a])=>{f.generateMipmaps=true;f.minFilter=THREE.LinearMipmapLinearFilter;if(a){a.generateMipmaps=false;a.minFilter=THREE.LinearFilter}return{f,a}});
-  texCache.set(key,p);
+  texCache.set(key,p);p.catch(()=>{if(texCache.get(key)===p)texCache.delete(key)});
   if(texCache.size>3){const [k0,p0]=texCache.entries().next().value;texCache.delete(k0);p0.then(t=>{for(const x of [t.f,t.a])if(x){if(x.image&&x.image.close)x.image.close();x.dispose()}}).catch(()=>{})}
   return p;
 }
@@ -144,8 +168,11 @@ function world(key,m,kind){
   if(P.h!==r.h){console.info(`baked light for ${key} doesn't match this layout (${P.h} vs ${r.h}): realtime Studio`);return}
   faces=P.list.length?pack(P.list,P.G.S,r.d):{rects:[]};
   if(!faces)return;
-  const rootNow=root;
-  textures(key,r).then(t=>{if(root===rootNow&&worldKey===key&&S.hd)apply(key,m,kind,r,P,t)}).catch(e=>{console.warn('baked light failed to load for '+key,e);bad.add(key)});
+  const rootNow=root,tok={};loading=tok;
+  const done=()=>{if(loading===tok)loading=null};
+  pending=textures(key,r).then(
+    t=>{done();if(root===rootNow&&worldKey===key&&S.hd){try{apply(key,m,kind,r,P,t)}catch(e){bad.add(key);console.warn('baked light failed for '+key,e);HD.warm()}}},
+    e=>{done();if(e&&e.bkBad)bad.add(key);console.warn('baked light failed to load for '+key+(e&&e.bkBad?'':' (tries again on the next visit)'),e);if(root===rootNow)HD.warm()}); // realtime it is: warm that up
 }
 function apply(key,m,kind,r,P,t){
   const vars=new Map(),olds=new Set(),K=r.K*(r.g||1),G=P.G;
@@ -175,6 +202,10 @@ function apply(key,m,kind,r,P,t){
   renderer.shadowMap.enabled=false;
   scene.traverse(o=>{if(o.material)(Array.isArray(o.material)?o.material:[o.material]).forEach(x=>x.needsUpdate=true)});
   on=true;rec=r;HD.restyle();
+  // the lights and the shadow map just changed every shader's variant: compile the hidden ones again (smoke, sparks...), after the
+  // next frame has drawn the new materials (warming them before that made the GL driver report queries of deleted programs)
+  requestAnimationFrame(()=>requestAnimationFrame(()=>HD.warm()));
+  prefetch(); // the other worlds' images, in the background
 }
 
 /* ---------- soft contact blobs under chairs (there is no shadow map on a baked floor) ---------- */
@@ -225,7 +256,11 @@ function capture(){
     if(!o.isMesh||regSet.has(o)||flatSet.has(o)||dyn.has(o)||o.userData.dyn||!o.visible)return;const mt=o.material;if(Array.isArray(mt)||!mt||mt.transparent||mt.isMeshBasicMaterial||o.isSprite)return;
     const g=o.geometry;if(!g||!g.attributes.position)return;const n=o.isInstancedMesh?o.count:1;
     if(!g.boundingBox)g.computeBoundingBox();const gb=g.boundingBox.getSize(v);if(Math.max(gb.x,gb.y,gb.z)*(o.isInstancedMesh?1:o.matrixWorld.getMaxScaleOnAxis())<.2)return; // keyboards, mice: too small to matter for light
-    for(let i=0;i<n;i++){if(o.isInstancedMesh){o.getMatrixAt(i,_M4);_M4.premultiply(o.matrixWorld)}else _M4.copy(o.matrixWorld);const c=albedo(mt,o.isInstancedMesh?o:null,i);each(g,(a,b,cc)=>tri(O,g,_M4,a,b,cc,null,c))}
+    // a model whose parts HD merged into one mesh (game-2c-hd.js mergeParts) keeps each part's own color here, as before the merge
+    const parts=g.userData.parts&&g.index?g.userData.parts.filter(p=>p.s>=.2).map(p=>({p,c:lin(col.copy(p.c).multiplyScalar(p.vc?.9:1))})):null; // (the same 20 cm cut per part)
+    for(let i=0;i<n;i++){if(o.isInstancedMesh){o.getMatrixAt(i,_M4);_M4.premultiply(o.matrixWorld)}else _M4.copy(o.matrixWorld);
+      if(parts){const ix=g.index;for(const {p,c} of parts)for(let t=p.k0;t<p.k1;t+=3)tri(O,g,_M4,ix.getX(t),ix.getX(t+1),ix.getX(t+2),null,c);continue}
+      const c=albedo(mt,o.isInstancedMesh?o:null,i);each(g,(a,b,cc)=>tri(O,g,_M4,a,b,cc,null,c))}
   });
   const pxw=kind==='campus'?2048:1024;
   return{key,kind,hash:P.h,ver:VER,w:m.w,d:m.d,H,sunDir:[sunDir.x,sunDir.y,sunDir.z],
@@ -237,5 +272,5 @@ function capture(){
     O:{p:b64f(new Float32Array(O.p)),c:b64f(new Float32Array(O.c)),n:O.c.length/3}};
 }
 
-return{reg,enter,world,chair,frame,capture,enable:v=>{enabled=!!v},get on(){return on},get info(){return{on,key:worldKey,K:rec&&rec.K,faces:faces&&faces.rects?faces.rects.length:0}}};
+return{reg,enter,world,chair,frame,capture,ready:()=>pending,get loading(){return !!loading},enable:v=>{enabled=!!v},get on(){return on},get info(){return{on,key:worldKey,K:rec&&rec.K,faces:faces&&faces.rects?faces.rects.length:0}}};
 })();

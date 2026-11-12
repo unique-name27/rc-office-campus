@@ -1,10 +1,10 @@
 # RC Campus v4 — module contracts
 
-The page is ONE html file (a claude.ai artifact) built by concatenating modules into a single
+The page is ONE html file (a claude.ai artifact; the baked-light images in `src/assets/bake/` sit beside it, section 11) built by concatenating modules into a single
 `(function(){"use strict"; ... })();` script inside one `<script type="module">`, which imports three.js r165 (and its post-processing
 add-ons) from jsDelivr through an import map; only the game/renderer uses `THREE`. Generated data modules: `js/avatar-meshes.js`
 (`AVMESH`, from `src/blender/avatars.py`), `js/kit-meshes.js` (`KITMESH`, from `src/tools/pack_kit.py`) and `js/sound-data.js`
-(`SOUND_DATA`, the CC0 recordings in `src/assets/sounds`, from `src/tools/pack_sounds.py`). Studio is the HD style
+(`SOUND_DATA`, the recordings in `src/assets/sounds`, from `src/tools/pack_sounds.py`). Studio is the HD style
 (`js/game-2c-hd.js`: color-managed, image-based light, GTAO, bloom, quality levels); the other styles keep the classic unmanaged colors.
 Today it is a single-floor RC-car game ("Floor 4 Walkthrough"). v4 turns it into a **San Jose campus: 2 buildings x 4 floors**
 with real coworkers loaded from facilities data, per-team desk arrangements, floor-plan import, routes and races.
@@ -267,10 +267,25 @@ PHYS.ready, PHYS.state ("idle" | "wait" | "loading" | "ready" | "failed"), PHYS.
 ## 11. Baked light, Blender materials, pre-recorded moments  (`BAKE`, `PBR_DATA`, `FX`; Studio only for the bake)
 * `BAKE.world(key, model, kind)` runs at the end of `buildWorld` (before `PHYS.build`). It hashes the world's static geometry
   (the batches HD registers with `BAKE.reg` plus the flat ground pieces) and uses `BAKES[key]` only when the hash matches;
-  otherwise realtime Studio. Anything that moves must not enter that hash: mark its meshes `userData.dyn = true`
+  otherwise realtime Studio. `BAKES[key].f`/`.a` name the world's floor and atlas images in `BAKE_DIR` (`src/assets/bake/`, beside the
+  page, named after a hash of their bytes); a world's pair is fetched when the world is entered (a CORS `<img>` is tried when
+  `fetch` is refused) and, once a world is lit, the others' bytes in the background. A failed download leaves the world
+  realtime until its next visit; an image that can't be decoded keeps it realtime. `BAKE.ready()` resolves once this world's
+  bake is applied (or won't be): `goWorld` waits for it behind the fade, up to 0.9 s. `build.py --inline-bakes` puts the images
+  in the page as data URLs (the bake tools build that way).
+  Anything that moves must not enter that hash: mark its meshes `userData.dyn = true`
   (the physics props and debris and the brawl items do; the figures and chairs are skipped by the capture itself). Full details and re-baking: `src/tools/bake/README.md`.
 * On a baked world the sun, fill light and shadow map are off and GTAO is skipped; a hemisphere light measured from the
   bake lights cars, creatures, chairs and the physics props.
+* Elsewhere (realtime Studio and the other styles) `HD.render` draws the sun's shadow map at most once a frame and only when a
+  caster inside the sun's shadow box changed its world matrix, instance matrices or visibility, entered or left the box, or the
+  sun's view changed (`shadowSig`); a still scene keeps the last map (and a restored WebGL context redraws it). Code that renders
+  outside `HD.render` and needs fresh shadows sets `renderer.shadowMap.needsUpdate = true`. Studio's Low and Lowest use a
+  smaller map on desktop; on touch devices only Lowest does (`HD.shadowSize()`).
+* `placeKit` draws a model's plain opaque parts (standard material without textures or glow) as ONE merged mesh whose vertices
+  carry color, roughness and metalness (`rm`), and its LEDs as one more; screens, glass and tinted parts stay separate.
+  The merged geometry keeps each part's index range and color in `userData.parts`, so `BAKE.capture` colors the light
+  blockers per part as before.
 * `PBR_DATA` (`js/pbr-data.js`, from `src/blender/pbr_textures.py` + `src/tools/pack_pbr.py`): tiling albedo, normal and
   roughness sets for concrete, terrazzo, tile, carpet, birch, oak and metal; HD falls back to its canvas finishes without them.
 * `FX.crash(x, z, speed, car, isMe)` (from `carStep` on a hit over 2.2 m/s): desk scatter or a coffee splash, replayed from

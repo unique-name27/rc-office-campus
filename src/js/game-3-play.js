@@ -1,7 +1,9 @@
 /* ===================== game part 3: play (cars, modes, camera, input, worlds, elevator, doors, routes, races, coffee) ===================== */
 function newCar(x,z,h,paint,kind){return{kind:kind||"car",jumpReq:false,jumpCd:0,phase:0,x,z,y:0,vy:0,h,camH:h,vx:0,vz:0,vF:0,lat:0,air:false,pitch:0,roll:0,steer:0,thr:0,boost:1,boosting:false,drift:false,driftDir:0,driftT:0,gPrev:0,squash:0,paint,vis:null,cup:false,sk:[null,null],stuck:0,rev:0,wi:0,lastHit:0,airT:0,
-  // skills: car drift charge (tier) and turbo; boost lockout; jump buffer; cat air jumps and flip; dog woof; sx counts skill events for presence
-  driftTier:0,driftCd:0,turboT:0,turboPend:0,boostLock:false,jumpBuf:0,airJumps:0,bonk:false,flipT:0,woofReq:false,woofCd:0,woofT:0,sx:0,sl:0}}
+  // skills: car drift charge (tier) and turbo; boost lockout; jump buffer; cat air jumps and flip; dog woof; sx counts skill events for presence,
+  // skEv names the last one ("t1"/"t2"/"j"/"w", sent as "sk"). Not c.sk: that is the two wheels' last skid-mark points, and a string there
+  // made every later frame throw (the game froze after the first turbo, double jump or woof)
+  driftTier:0,driftCd:0,turboT:0,turboPend:0,boostLock:false,jumpBuf:0,airJumps:0,bonk:false,flipT:0,woofReq:false,woofCd:0,woofT:0,sx:0,sl:0,skEv:""}}
 const PAINTS=[["#E4572E","Tomato"],["#2F6FED","Cobalt"],["#F2C14E","Taxi"],["#2E9C7A","Racing green"],["#8E6FBF","Grape"],["#FF2E97","Hot pink"],["#22B8CF","Teal"],["#F4F1EA","Pearl"],["#1F2421","Carbon"]];
 let paint=store.get("rc-paint");if(!PAINTS.some(p=>p[0]===paint))paint=PAINTS[Math.floor(Math.random()*7)][0];
 const me=newCar(0,0,0,paint,(()=>{const a=store.get("rc-av");return a==="dog"||a==="cat"?a:"car"})());
@@ -33,6 +35,7 @@ function carStep(c,ctl,dt,isMe){
   const P=AVP[c.kind]||AVP.car,fx_=-Math.sin(c.h),fz_=-Math.cos(c.h),rx=-fz_,rz=fx_;
   let vF=c.vx*fx_+c.vz*fz_;const vR=c.vx*rx+c.vz*rz,sp=Math.abs(vF);let ground=!c.air;
   c.jumpCd=Math.max(0,c.jumpCd-dt);c.jumpBuf=Math.max(0,c.jumpBuf-dt);c.driftCd=Math.max(0,c.driftCd-dt);c.woofCd=Math.max(0,c.woofCd-dt);c.turboT=Math.max(0,c.turboT-dt);
+  c.rubT=Math.max(0,(c.rubT||0)-dt); // touching a wall lately: the grind sound
   if(ctl.park){c.jumpBuf=0;c.turboPend=0} // countdowns, cut-scenes, result cards: no skill fires
   // jump: a press you can't use yet is kept for .2 s and fires when you land. Cats get one more jump in the air:
   // press again, or just keep holding jump and it fires by itself near the top of the first leap.
@@ -40,7 +43,7 @@ function carStep(c,ctl,dt,isMe){
   if(c.kind==="cat"&&ctl.jumpHeld&&!ground&&c.hop&&!c.bonk&&c.airJumps<1&&c.vy<=.5&&!ctl.park)vF=airJump(c,P,vF,isMe);
   if(c.jumpBuf>0&&ground&&c.jumpCd<=0&&!ctl.park){c.jumpBuf=0;c.bonk=false;c.vy=Math.max(P.jump,Math.max(c.vy,0)+P.jump*.6);c.hop=true;c.y+=.01;c.air=true;ground=false;c.jumpCd=.3;c.squash=.4;if(isMe){SFX.jump(c.kind);for(let k=0;k<3;k++)puff(c.x+(Math.random()-.5)*.2,.03,c.z+(Math.random()-.5)*.2,smokeCol(c))}}
   // the dog's big woof: pushes chairs (and the Mailbot) away; at most once every 1.5 s
-  if(c.woofReq){c.woofReq=false;if(c.kind==="dog"&&c.woofCd<=0&&!ctl.park){c.woofCd=1.5;woofAt(c.x,c.z,c);if(isMe){c.sx++;c.sk="w";presDirty=true;skillFx(c,"woof",1)}}}
+  if(c.woofReq){c.woofReq=false;if(c.kind==="dog"&&c.woofCd<=0&&!ctl.park){c.woofCd=1.5;woofAt(c.x,c.z,c);if(isMe){c.sx++;c.skEv="w";presDirty=true;skillFx(c,"woof",1)}}}
   // a turbo earned in the air (drift released mid-jump) pays out on landing
   if(c.turboPend&&ground){vF=payTurbo(c,c.turboPend,vF,P,isMe);c.turboPend=0}
   // boost: an empty meter locks until it has refilled to a quarter (no flicker while Shift stays held)
@@ -92,7 +95,7 @@ function carStep(c,ctl,dt,isMe){
    if(wall){
      let sx=c.x,sz=c.z;{const b0=Math.max(c.y,c.gPrev)+.015;let a=0,b=1;for(let i=0;i<6;i++){const m=(a+b)/2;if(groundY(px0+mx*m,pz0+mz*m)>b0)b=m;else a=m}if(b<1){sx=px0+mx*b;sz=pz0+mz*b}}const gx=groundY(sx+.05,sz)-groundY(sx-.05,sz),gz=groundY(sx,sz+.05)-groundY(sx,sz-.05),gl=Math.hypot(gx,gz);
      c.x=px0;c.z=pz0;
-     if(gl>1e-6){const dx=gx/gl,dz=gz/gl,vn=c.vx*dx+c.vz*dz;if(vn>0){c.vx-=1.3*vn*dx;c.vz-=1.3*vn*dz;if(isMe&&vn>1.4){SFX.bump(vn);shake=Math.max(shake,Math.min(.6,vn*.08))}}}else{c.vx*=-.3;c.vz*=-.3}
+     if(gl>1e-6){const dx=gx/gl,dz=gz/gl,vn=c.vx*dx+c.vz*dz;if(vn>0){c.vx-=1.3*vn*dx;c.vz-=1.3*vn*dz;if(isMe&&vn>1.4){SFX.bump(vn);if(c.kind==="car"&&vn>3)SFX.crash(vn);shake=Math.max(shake,Math.min(.6,vn*.08))}}}else{c.vx*=-.3;c.vz*=-.3}
    }}
   // vertical
   const y0=c.y;c.vy-=G*dt;c.y+=c.vy*dt;
@@ -113,7 +116,7 @@ function carStep(c,ctl,dt,isMe){
   let hit=0,hx=0,hz=0;
   for(let it=0;it<2;it++)for(const s of[1,-1]){
     const ox=nfx*P.ax*s,oz=nfz*P.ax*s,bh=BODY_H[c.kind]||.2;
-    const touch=col=>{if(circleVs(col,c.x+ox,c.z+oz,P.r)){c.x+=HIT.nx*HIT.pen;c.z+=HIT.nz*HIT.pen;const vn=c.vx*HIT.nx+c.vz*HIT.nz;
+    const touch=col=>{if(circleVs(col,c.x+ox,c.z+oz,P.r)){c.rubT=.12;c.x+=HIT.nx*HIT.pen;c.z+=HIT.nz*HIT.pen;const vn=c.vx*HIT.nx+c.vz*HIT.nz;
         if(vn<0){c.vx-=1.3*vn*HIT.nx;c.vz-=1.3*vn*HIT.nz;c.vx*=.94;c.vz*=.94;if(-vn>hit){hit=-vn;hx=c.x+ox-HIT.nx*P.r;hz=c.z+oz-HIT.nz*P.r}}}};
     let list=query(c.x+ox,c.z+oz,P.r+.05,1);
     for(let q=0;q<list.length;q++){const col=list[q];if((c.y>.7&&!col.tall)||(col.top!=null&&c.y>=col.top-.03)||(col.minY!=null&&c.y<col.minY))continue;touch(col)}
@@ -133,7 +136,7 @@ function carStep(c,ctl,dt,isMe){
     }
   }
   c.x=clamp(c.x,-PW/2+.25,PW/2-.25);c.z=clamp(c.z,-PD/2+.25,PD/2-.25);
-  if(hit>1.4){if(isMe){SFX.bump(hit);shake=Math.max(shake,Math.min(.8,hit*.09))}if(hit>2.2)for(let k=0;k<Math.min(14,hit*2);k++)spark(hx,c.y+.08,hz,"#FFD27A",hit*.5)}
+  if(hit>1.4){if(isMe){SFX.bump(hit);if(c.kind==="car"&&hit>3)SFX.crash(hit);shake=Math.max(shake,Math.min(.8,hit*.09))}if(hit>2.2)for(let k=0;k<Math.min(14,hit*2);k++)spark(hx,c.y+.08,hz,"#FFD27A",hit*.5)}
   if(hit>2.2)FX.crash(hx,hz,hit,c,isMe); // pre-recorded physics moments (game-2d-fx.js)
 }
 function smokeCol(c){const s=S.smoke[0];return s==="paint"?bright(c.paint):s}
@@ -159,14 +162,14 @@ const _CB={b:1,x0:0,x1:0,z0:0,z1:0};
 function airJump(c,P,vF,isMe){
   c.airJumps++;c.vy=Math.sqrt(Math.max(c.vy,0)**2+2*G*.75);c.hop=true;c.squash=.25;
   if(vF<P.max){const fx_=-Math.sin(c.h),fz_=-Math.cos(c.h),add=Math.min(P.max,vF+1.2)-vF;c.vx+=fx_*add;c.vz+=fz_*add;vF+=add}
-  if(isMe){c.sx++;c.sk="j";presDirty=true;skillFx(c,"jump2",1)}
+  if(isMe){c.sx++;c.skEv="j";presDirty=true;skillFx(c,"jump2",1)}
   return vF;
 }
 // a drift turbo: tier 1 = +2.6 m/s for .4 s, tier 2 = +4 m/s for .7 s (never past 13 m/s), and some boost back
 function payTurbo(c,tier,vF,P,isMe){
   if(vF<=0)return vF;
   vF=Math.min(P.bmax+1.5,vF+(tier===2?4:2.6));c.boost=Math.min(1,c.boost+(tier===2?.25:.15));c.turboT=Math.max(c.turboT,tier===2?.7:.4);
-  if(isMe){c.sx++;c.sl=tier;c.sk="t"+tier;presDirty=true;skillFx(c,"turbo",1,tier)}
+  if(isMe){c.sx++;c.sl=tier;c.skEv="t"+tier;presDirty=true;skillFx(c,"turbo",1,tier)}
   return vF;
 }
 // chairs within 2.4 m slide away (the nearer, the faster) and spin; the Mailbot backs off
@@ -360,7 +363,7 @@ function camFrame(dt,now){
   if(sun){
     const dist=camPos.distanceTo(camLook),hs=dist<3?9:dist<10?16:dist<24?28:dist<60?50:Math.min(140,Math.max(PW,PD)*.62);
     const sc=sun.shadow.camera;if(hs!==shadowHS){shadowHS=hs;sc.left=-hs;sc.right=hs;sc.top=hs;sc.bottom=-hs;sc.near=1;sc.far=hs*4+60;sc.updateProjectionMatrix()}
-    const tx_=Math.round(camLook.x/(2*hs/SM))*(2*hs/SM),tz_=Math.round(camLook.z/(2*hs/SM))*(2*hs/SM),sd=hs*1.6+30;
+    const tex=2*hs/(sun.shadow.mapSize.x||SM),tx_=Math.round(camLook.x/tex)*tex,tz_=Math.round(camLook.z/tex)*tex,sd=hs*1.6+30; // whole texels: no shimmer
     sun.target.position.set(tx_,0,tz_);sun.position.set(tx_+sunDir.x*sd,sunDir.y*sd,tz_+sunDir.z*sd);
   }
   if(scene.fog){const big=WKIND==="campus",off=camPos.distanceTo(camLook)*.8;scene.fog.near=S.fog[0]*(big?2.2:1)+off;scene.fog.far=S.fog[1]*(big?2.6:1)+off}
@@ -396,6 +399,7 @@ async function goWorld(key,o){
   let ok=false;try{ok=enterWorld(key,o.at)}catch(e){console.error(e)}
   if(ok&&o.mode){fly=null;document.body.dataset.fly="0";setMode(o.mode);if(o.mode==="drive")me.camH=me.h;poseFor(o.mode,camPos,camLook);camera.fov=fovFor(o.mode)}
   else if(ok&&!fly){camYawOff=0;me.camH=me.h;poseFor(mode,camPos,camLook)} // snap the camera to the new world instead of sliding across it
+  await Promise.race([BAKE.ready(),sleep(900)]); // behind the fade: the baked light switches on (and its shaders compile) before you see the floor
   await sleep(REDUCED?40:o.hold||160);fd.dataset.on="0";trans=false;
   stopKeys();if(mode==="drive")reassertPedals(); // a pedal held through the door keeps driving
   return ok;

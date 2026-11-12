@@ -1,8 +1,8 @@
 """
 make_sounds.py -- build the RC Office Campus sound effects from raw CC0 recordings.
 
-Outputs (written to src/assets/sounds/ by default, plus CREDITS.md):
-  car-motor.mp3                       steady electric-motor loop, ends crossfaded
+Outputs (written to src/assets/sounds/ by default; their credit lines are printed. src/assets/sounds/CREDITS.md is
+edited by hand, because it also credits the car sounds from make_car_sounds.py and make_engine_loops.py):
   car-horn.mp3                        one short horn beep
   dog-bark-1.mp3 .. dog-bark-3.mp3    one bark each
   cat-meow-1.mp3 .. cat-meow-3.mp3    one meow each
@@ -88,11 +88,6 @@ CC0 = 'CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/)'
 #   end       where the clip ends; fade_out = length of the closing fade
 #   loop      start window, loop-length window and crossfade length for a loop
 CLIPS = [
-    dict(out='car-motor.mp3', src='DamonHD_680074_small_dc_motor_variable_speed.mp3',
-         loop=dict(start=(34.8, 35.4), length=(2.4, 2.7), xfade=0.25),
-         title='motor-noises-small-variable-speed.flac', author='DamonHD',
-         url=FS + 'DamonHD/sounds/680074/', license=CC0,
-         note='steady excerpt looped with an equal-power crossfade'),
     dict(out='car-horn.mp3', src='Julien_Matthey_436589_mini_countryman_horn.mp3',
          search=(0.0, 0.30), end=0.66, fade_out=0.08,
          title='JM_TRANSPORT_EXT_Horn 01a - Car_Short_Mini Countryman.wav', author='Julien_Matthey',
@@ -346,22 +341,14 @@ def verify(path, tmpdir):
 
 # ---------------------------------------------------------------- credits
 
-def write_credits(out_dir, clips):
-    lines = [
-        '# Sound credits',
-        '',
-        'All game sounds are real recordings released under CC0 1.0 (public domain',
-        'dedication), so attribution is not required. It is given here anyway.',
-        'Every file was trimmed, normalized, converted to MP3 (mono, 64 kbit/s) by',
-        '`src/tools/make_sounds.py`.',
-        '',
-    ]
+def print_credits(clips):
+    # CREDITS.md also credits sounds this script doesn't make (the car's engine, crashes, screech and grind, under other
+    # licenses), so it is edited by hand: paste these lines into it rather than overwrite it
+    print('Credit lines for src/assets/sounds/CREDITS.md:')
     for c in clips:
         extra = ('; ' + c['note']) if c.get('note') else ''
-        lines.append('- `%s`: "%s", %s, by %s. License: %s. Trimmed, normalized, converted to MP3%s.'
-                     % (c['out'], c['title'], c['url'], c['author'], c['license'], extra))
-    with open(os.path.join(out_dir, 'CREDITS.md'), 'w', encoding='utf-8', newline='\n') as f:
-        f.write('\n'.join(lines) + '\n')
+        print('- `%s`: "%s", %s, by %s. License: %s. Trimmed, normalized, converted to MP3%s.'
+              % (c['out'], c['title'], c['url'], c['author'], c['license'], extra))
 
 
 # ---------------------------------------------------------------- main
@@ -404,8 +391,7 @@ def main():
                        size=os.path.getsize(out), **v)
             rows.append(row)
             print('RESULT ' + json.dumps(row), flush=True)
-        if not only:
-            write_credits(args.out, CLIPS)
+        print_credits(clips)
     finally:
         if args.keep_temp:
             print('temp files kept in', tmpdir)

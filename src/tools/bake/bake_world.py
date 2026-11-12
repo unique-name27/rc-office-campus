@@ -5,7 +5,7 @@ usage:
       [--reencode]   redo the denoise and encoding from the saved EXRs (no Cycles)
 Writes <out dir>/<key>/: lm-floor.png, lm-atlas.png (8-bit sRGB of light/K, dithered), lm-*.exr (raw light, half
 float) and bake.json (K, hash, packing density, the light for moving things, exposure). src/tools/bake/pack_bakes.py
-turns them into src/js/bake-data.js.
+encodes them as AVIF files in src/assets/bake/ and writes their table to src/js/bake-data.js.
 
 Light (indoors): the sun on the game's compass bearing but 28 degrees up (a morning sun that reaches into the room), a
 sky, a grid of soft 0.6 x 1.2 m ceiling panels plus one in any closed room the grid misses, and a white ceiling that

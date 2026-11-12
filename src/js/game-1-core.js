@@ -23,7 +23,8 @@ const nf=n=>Number(n).toLocaleString("en-US");
 
 /* ---------- renderer ---------- */
 let renderer;
-try{renderer=new THREE.WebGLRenderer({antialias:true,alpha:true})}catch(e){fatal("This browser can't show 3D graphics (WebGL), so the campus can't be shown here.");return}
+// high-performance: on a laptop with two graphics chips, ask for the fast one (the browser may still choose)
+try{renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:"high-performance"})}catch(e){fatal("This browser can't show 3D graphics (WebGL), so the campus can't be shown here.");return}
 renderer.setClearColor(0x000000,0);renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 const stage=$("stage"),cv=renderer.domElement;stage.appendChild(cv);cv.tabIndex=-1;
 const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(50,1,.03,900);
@@ -279,15 +280,72 @@ function audio(){
   const rG=gain(0,bus),rF=filt("lowpass",220,.6,rG);loop(brownBuf,rF);
   const sG=gain(0,bus),sF=filt("bandpass",1400,1.1,sG);loop(noiseBuf,sF);
   motor={o1,o2,o3,mG,mF,wG,wF,rG,rF,sG,sF};
-  // real recordings (CC0, src/assets/sounds): decoded once; until they are ready, or where MP3 can't be decoded, the synth plays
+  // real recordings (src/assets/sounds): decoded once; until they are ready, or where MP3 can't be decoded, the synth plays
   const data=typeof SOUND_DATA!=="undefined"?SOUND_DATA:{};
   for(const k in data){try{const b=atob(data[k]),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);
-    AC.decodeAudioData(u.buffer).then(buf=>{SND[k]=buf;if(k==="car-motor")realMotor()}).catch(()=>{})}catch(_){}}
+    AC.decodeAudioData(u.buffer).then(buf=>{SND[k]=buf;startEngine()}).catch(()=>{})}catch(_){}}
   return AC;
 }
 const SND={};
-// the RC car's motor: a recorded small electric motor, looped, its pitch and level following speed and throttle (audioFrame)
-function realMotor(){if(!AC||!motor||motor.real)return;const s=AC.createBufferSource();s.buffer=SND["car-motor"];s.loop=true;const g=AC.createGain();g.gain.value=0;s.connect(g);g.connect(bus);s.start(0,Math.random()*2);motor.real=s;motor.realG=g}
+/* ---------- the car: a real engine, tyre screech and wall grind (audioFrame drives them) ---------- */
+// The engine is a real recording: a 1985 Ford Escort (CC0, src/tools/make_engine_loops.py), cut into an idle loop and a
+// pulling-under-throttle loop. Each file is [60 ms wrap-around][the loop][60 ms wrap-around], so the game loops from
+// 60 ms to 60 ms + n samples and any shift the MP3 decoder adds can't open a seam. `hz` is each loop's firing frequency.
+// The game runs the engine like a car's: a firing frequency from the road speed through six gears, rising through each
+// gear and dropping back on every upshift; under 80 Hz the idle loop takes over. Lifting off quietens it and dulls it.
+// Screech, crash and grind are "FREE CAR SFX" by LMGLolo (CC BY-ND 4.0), unedited (src/tools/make_car_sounds.py).
+const ENGINE_LOOPS={"car-engine-idle":{n:110047,hz:51.5},"car-engine-load":{n:110152,hz:115.6}},LOOP_PAD=2646/44100;
+const CAR_N={"car-grind":529200}; // LMGLolo's "(Loop)" file: loops end to end
+const GEAR_V=[0,2.4,3.6,5,6.9,9.6,14];     // gear g runs from GEAR_V[g-1] to GEAR_V[g] m/s (the car tops out at 7.2 in 5th, boost 11.5 in 6th)
+const F_IDLE=52,F_TOP=158;                 // firing frequency (Hz): idling, and where it shifts up (it drops to 105-115 Hz)
+let eng=null,crashAt=0;
+function startEngine(){
+  if(eng||!AC||!bus||!SND["car-engine-idle"]||!SND["car-engine-load"]||!SND["car-grind"])return;
+  const out=AC.createBiquadFilter();out.type="lowpass";out.frequency.value=3000;out.Q.value=.5;out.connect(bus); // the engine's tone
+  const loop=(k,to)=>{const b=SND[k],E=ENGINE_LOOPS[k],s=AC.createBufferSource();let a,L;
+    if(E){a=LOOP_PAD;L=E.n/44100}else{L=CAR_N[k]/44100;a=b.duration-L>.004?1105/44100:0} // 1105: LAME's encoder delay, where a decoder keeps it
+    s.buffer=b;s.loop=true;s.loopStart=a;s.loopEnd=Math.min(b.duration,a+L);
+    const g=AC.createGain();g.gain.value=0;s.connect(g);g.connect(to);s.start(0,a+Math.random()*L);return{s,g}};
+  eng={idle:loop("car-engine-idle",out),load:loop("car-engine-load",out),out,grind:loop("car-grind",bus),scr:null,scrT:0,gear:1,vs:0,rev:0,air:0,dip:0,f:F_IDLE,on:0};
+}
+// let a playing sound fade out and stop
+function fadeStop(o,t,tau){try{o.g.gain.setTargetAtTime(0,t,tau);o.s.stop(t+tau*7)}catch(_){}}
+function engineFrame(dt,t,car,sp,thr,air,boost,slide,lat,rub){
+  const E=eng,gas=Math.max(0,thr);
+  // what the engine "feels": the road speed, able to climb only so fast (the RC car reaches top speed in well under a
+  // second and would rattle through the gears) and to fall a little faster
+  E.vs+=clamp(sp-E.vs,-9*dt,(boost?4.5:3.2)*dt);
+  let g=E.gear;while(g<6&&E.vs>GEAR_V[g])g++;while(g>1&&E.vs<GEAR_V[g-1]*.88)g--;
+  if(g>E.gear&&car)E.dip=.11; // the clutch: a short dip in level as it shifts up
+  E.gear=g;
+  E.rev=sp<.3&&gas>.1?Math.min(1,E.rev+dt/1.1):Math.max(0,E.rev-dt/.5); // throttle held standing still: it revs up
+  E.air+=((air?1:0)-E.air)*Math.min(1,dt*(air?5:9));E.dip=Math.max(0,E.dip-dt);
+  E.on+=((gas>.1?1:0)-E.on)*Math.min(1,dt*8);
+  // firing frequency: first gear slips the clutch from idle; above it, the engine turns with the wheels
+  let f=g===1?F_IDLE+(F_TOP-F_IDLE)*clamp(E.vs/GEAR_V[1],0,1):F_TOP*E.vs/GEAR_V[g];
+  f=Math.max(f,F_IDLE+E.rev*95)+E.air*28*E.on;f=clamp(f,F_IDLE*.97,182);
+  const drop=f<E.f-8;E.f=f; // a shift (or a landing) drops it fast; otherwise it glides
+  const k=clamp((f-62)/(82-62),0,1); // idle loop below about 62 Hz, the pulling loop above about 82
+  let vol=car?lerp(.075,.045+.025*E.on+.00015*(f-80),k)*(1-.4*(1-E.on)*k):0;if(E.dip>0)vol*=.55; // the loops are normalized: these set the mix
+  const tau=drop?.025:.045;
+  E.idle.s.playbackRate.setTargetAtTime(f/ENGINE_LOOPS["car-engine-idle"].hz,t,tau);E.load.s.playbackRate.setTargetAtTime(f/ENGINE_LOOPS["car-engine-load"].hz,t,tau);
+  E.idle.g.gain.setTargetAtTime(vol*Math.sqrt(1-k),t,.05);E.load.g.gain.setTargetAtTime(vol*Math.sqrt(k),t,.05);
+  E.out.frequency.setTargetAtTime(1300+2600*E.on+12*(f-52),t,.08); // lifting off dulls it
+  // tyres: a screech while sliding or braking hard. The pack has four one-shot screeches (about 2 s each): a slide starts
+  // one from the top, and while it lasts a fresh one (joined past its attack) takes over every second or so, so it never
+  // runs into a screech's own fade. When the slide ends the last one fades out.
+  const sk=car&&slide&&sp>1.2?Math.min(.1,.035+Math.abs(lat)*.016+(sp>6?.015:0)):0,sr=.95+Math.min(sp,11)*.01;
+  if(sk>0){
+    E.scrT-=dt;
+    if(!E.scr||E.scrT<=0){const b=SND[pick("car-screech-",4)];if(b){const first=!E.scr,s=AC.createBufferSource(),g=AC.createGain();
+      s.buffer=b;s.playbackRate.value=sr;g.gain.value=0;s.connect(g);g.connect(bus);g.gain.setTargetAtTime(sk,t,first?.015:.06);s.start(t,first?0:.3+Math.random()*.15);
+      if(E.scr)fadeStop(E.scr,t,.09);E.scr={s,g};E.scrT=first?1.15:.9}}
+    else{E.scr.g.gain.setTargetAtTime(sk,t,.06);E.scr.s.playbackRate.setTargetAtTime(sr,t,.1)}
+  }else if(E.scr){fadeStop(E.scr,t,.07);E.scr=null;E.scrT=0}
+  // a metal grind while scraping along a wall
+  const gr=car&&rub&&sp>.7?Math.min(.17,.05+sp*.017):0;
+  E.grind.g.gain.setTargetAtTime(gr,t,gr?.03:.08);if(gr)E.grind.s.playbackRate.setTargetAtTime(.85+Math.min(sp,10)*.03,t,.1);
+}
 // play a recording; false when it isn't loaded (the caller falls back to the synth)
 function playSnd(k,vol,rate,at){if(!live()||!SND[k])return false;const s=AC.createBufferSource();s.buffer=SND[k];if(rate)s.playbackRate.value=rate;const g=AC.createGain();g.gain.value=vol;s.connect(g);g.connect(bus);s.start(AC.currentTime+(at||0));return true}
 const pick=(base,n)=>base+(1+Math.floor(Math.random()*n));
@@ -318,6 +376,8 @@ const SFX={
   horn:v=>{v=v==null?1:v;if(playSnd("car-horn",.2*v))return;[0,.17].forEach(at=>{note({type:"sawtooth",f:640,to:610,dur:.14,vol:.07*v,lp:1500,at,atk:.012});note({f:320,dur:.14,vol:.05*v,at,atk:.012})})},
   bump:s=>{const v=Math.min(1,s/6);note({f:130,to:55,dur:.14,vol:.17*v});hiss({f:320,dur:.05,vol:.07*v,brown:true})},
   land:s=>{const v=Math.min(1,s/5);note({f:95,to:48,dur:.18,vol:.18*v});hiss({f:260,dur:.07,vol:.06*v,brown:true})},
+  // the car slamming into something at s m/s (3 and up): a recorded crash, never more than one every .35 s
+  crash:s=>{if(!AC||AC.currentTime<crashAt)return;crashAt=AC.currentTime+.35;playSnd(pick("car-crash-",4),clamp((s-2.4)/5,.25,1)*.3,.94+Math.random()*.12)},
   chime:()=>{bell(880,0,.06);bell(1318.5,.07,.05);bell(1760,.14,.04,.9)},
   beep:hi=>hi?(note({f:988,dur:.4,vol:.07,atk:.006}),note({f:1480,dur:.32,vol:.035,atk:.006})):note({f:660,dur:.14,vol:.06,atk:.006}),
   // drift turbo: a whoosh up through a band-pass and a rising tone; the big (tier 2) one sweeps higher and longer

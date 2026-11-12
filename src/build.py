@@ -1,9 +1,13 @@
-"""Build the single-file artifact page from v4/shell.html + v4/js/*.js.
+"""Build the game page from src/shell.html + src/js/*.js.
 
-usage: python -I build.py [out.html] [--test]
-  --test  adds a viewport meta (the artifact platform adds one on publish) and exposes window.__rc for browser checks
+usage: python -I build.py [out.html] [--test] [--standalone] [--inline-bakes]
+  --test          adds a viewport meta (the artifact platform adds one on publish) and exposes window.__rc for browser checks
+  --standalone    the public page (GitHub Pages): a full document with its own title
+  --inline-bakes  puts the baked-light images in the page as data URLs (about 1.3 MB more). Without it the page loads each
+                  world's two images from src/assets/bake/ beside it when the world is entered, so publish that folder
+                  with the page (GitHub Pages serves it from the repo; the artifact needs it in its files).
 """
-import sys, os, re
+import sys, os, re, json, base64
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODULES = ["layout.js", "campus.js", "nav.js", "importers.js", "editor.js", "people.js", "props.js", "avatar-meshes.js", "kit-meshes.js", "sound-data.js",
@@ -32,8 +36,8 @@ TEST_HOOK = """
 window.__rc={get me(){return me},get bot(){return bot},get WKEY(){return WKEY},get WM(){return WM},get DATA(){return DATA},get mode(){return mode},get route(){return route},get race(){return race},get run(){return run},
   enterWorld,goWorld,goFloor,goCampus,routeTo,startRace,runStart,applyStyle,setCam,buildIndex,modelFor,floorKeys,ride,flyTo,spawnNear,openEditor,openSetup,
   readImportText:(name,text)=>readImport(new File([text],name,{type:"text/csv"})),
-  snap:()=>{fly=null;document.body.dataset.fly="0";poseFor(mode,camPos,camLook);camera.position.copy(camPos);camera.lookAt(camLook);camera.updateProjectionMatrix();renderer.render(scene,camera)},
-  snapFx:()=>{fly=null;document.body.dataset.fly="0";poseFor(mode,camPos,camLook);camera.position.copy(camPos);camera.lookAt(camLook);camera.updateProjectionMatrix();HD.render(1/60)},HD,makeAvatar,dropVis,syncCar,skillFx,woofAt,get chairsList(){return chairs},get root(){return root},
+  snap:()=>{fly=null;document.body.dataset.fly="0";poseFor(mode,camPos,camLook);camera.position.copy(camPos);camera.lookAt(camLook);camera.updateProjectionMatrix();renderer.shadowMap.needsUpdate=true;renderer.render(scene,camera)},
+  snapFx:()=>{fly=null;document.body.dataset.fly="0";poseFor(mode,camPos,camLook);camera.position.copy(camPos);camera.lookAt(camLook);camera.updateProjectionMatrix();renderer.shadowMap.needsUpdate=true;HD.render(1/60)},HD,makeAvatar,dropVis,syncCar,skillFx,woofAt,get chairsList(){return chairs},get root(){return root},
   renderMs:n=>{n=n||5;const gl=renderer.getContext();renderer.render(scene,camera);gl.finish();const t=performance.now();for(let i=0;i<n;i++)renderer.render(scene,camera);gl.finish();return (performance.now()-t)/n},
   measureSfx:async(name,arg)=>{audio();const sv={AC,bus,noiseBuf,brownBuf,muted},sr=44100,off=new OfflineAudioContext(1,sr*2,sr);
     try{AC=off;bus=off.createGain();bus.connect(off.destination);const cp=b0=>{const b=off.createBuffer(1,Math.min(b0.length,sr*2),sr);b.copyToChannel(b0.getChannelData(0).slice(0,b.length),0);return b};noiseBuf=cp(sv.noiseBuf);brownBuf=cp(sv.brownBuf);muted=false;SFX[name](arg)}
@@ -43,7 +47,7 @@ window.__rc={get me(){return me},get bot(){return bot},get WKEY(){return WKEY},g
   get renderer(){return renderer},get scene(){return scene},get camera(){return camera},ST,get elevAt(){return elevAt},get remotes(){return remotes},syncPeers,walker,get chairs(){return chairs},carStep,groundY,roomFor,onPlat,setAvatar,LAYOUT,CAMPUS,NAV,IMPORT,EDITOR,PEOPLE,
   get FIG(){return FIG},get FIGP(){return FIGP},get figG(){return figG},get LOOKS(){return LOOKS},get lookStatus(){return lookStatus},get lookDocs(){return lookDocs},get myDesk(){return myDesk},get myId(){return myId},
   recomputeLooks,rebuildFigures,figFrame,openMe,closeMe,deskClaimState,showPick,tidyChairs,chairsStep,PHYS,PROPS,spotFree,get cells(){return cells},get RAMPS(){return RAMPS},
-  get SND(){return SND},get motor(){return motor},get AC(){return AC},BAKE,
+  get SND(){return SND},get motor(){return motor},get eng(){return eng},get master(){return master},get AC(){return AC},BAKE,
   get brawl(){return brawl},brawlStart,brawlLeave,brawlUse,brawlFrame,BRAWL,get myPeer(){return myPeer},set myPeer(v){myPeer=v}};
 """
 
@@ -57,6 +61,8 @@ def main():
     for f in MODULES + GAME:
         p = os.path.join(HERE, "js", f)
         src = open(p, encoding="utf-8").read()
+        if f == "bake-data.js":
+            src = bake_data(src, "--inline-bakes" in sys.argv)
         if "</script" in src.lower():
             raise SystemExit(f"{f} contains </script, which would end the inline script")
         parts.append(f"/* ---- {f} ---- */\n{src.rstrip()}\n")
@@ -78,6 +84,27 @@ def main():
     check_syntax(IMPORTS + "\n(function(){\n\"use strict\";\n" + body + "\n})();\n")
     open(out, "w", encoding="utf-8").write(html)
     print(f"wrote {out} ({len(html)//1024} KB)")
+
+
+def bake_data(src, inline):
+    """check every baked-light image the page names exists; with inline, swap the file names for data URLs"""
+    m = re.search(r"const BAKES=(\{.*\});\s*$", src, re.S)
+    if not m:
+        raise SystemExit("bake-data.js: no BAKES table")
+    bakes, d = json.loads(m.group(1)), os.path.join(HERE, "assets", "bake")
+    for key, r in bakes.items():
+        for f in ("f", "a"):
+            if f not in r or r[f].startswith("data:"):
+                continue
+            p = os.path.join(d, r[f])
+            if not os.path.exists(p):
+                raise SystemExit(f"bake-data.js names {r[f]} for {key}, but src/assets/bake/ has no such file")
+            if inline:
+                mime = "image/webp" if p.endswith(".webp") else "image/avif"
+                r[f] = "data:%s;base64,%s" % (mime, base64.b64encode(open(p, "rb").read()).decode())
+    if not inline:
+        return src
+    return src[:m.start()] + "const BAKES=" + json.dumps(bakes, separators=(",", ":")) + ";\n"
 
 
 def check_syntax(js):

@@ -162,19 +162,80 @@ function vcMat(name,p){
 function placeKit(name, list, o = {}) {
   const k = KIT[name]; if (!k || !list.length) return;
   const b = k.box, cx = (b.min.x + b.max.x) / 2, cz = (b.min.z + b.max.z) / 2, sz = k.size;
+  const mx = list.map(q => {
+    const u = q.s || 1;
+    _s.set(q.w ? q.w / sz.x : u, q.h ? q.h / sz.y : u, q.d ? q.d / sz.z : u);
+    _q.setFromAxisAngle(YAX, (q.a || 0) + (o.yaw || 0));
+    return new THREE.Matrix4().compose(_v.set(q.x, q.y || 0, q.z), _q, _s).multiply(_t.makeTranslation(-cx, -b.min.y, -cz));
+  });
+  for (const d of kitDraws(name, k, o)) {
+    const im = new THREE.InstancedMesh(d.geo, d.mat, list.length); im.castShadow = o.cast !== false && !d.mat.transparent; im.receiveShadow = true;
+    list.forEach((q, i) => { im.setMatrixAt(i, mx[i]); if (d.tint) im.setColorAt(i, _c.set(q.tint || '#5A6470')) });
+    root.add(im);
+  }
+}
+// Fewer draws: one draw per model part adds up (a Blender lab prop has up to 13 parts, so a floor of oscilloscopes, racks and
+// supplies cost 66 draws). A model's plain opaque parts (standard material, no textures, no glow) become one mesh whose vertices
+// carry their part's color (times the baked AO where the part used it), roughness and metalness, so it looks the same in one
+// draw. Its lights (LEDs) merge the same way. Screens, glass and per-instance tints stay parts of their own.
+function kitDraws(name, k, o) {
+  const key = Object.keys(o.mats || {}).sort().map(n => n + ':' + o.mats[n].uuid).join(',') + '|' + (o.tint || []).join(',');
+  const cache = k.draws || (k.draws = {}); if (cache[key]) return cache[key];
+  const stdL = new Map(), basicL = [], out = [];
   for (const p of k.parts) {
     const tint = !!(o.tint && o.tint.includes(p.mat));
     const mat = (o.mats && o.mats[p.mat]) || (k.bl ? blMat(name, p) : p.vc ? vcMat(name, p) : tint ? tintMat(p.mat) : (KMAT[p.mat] || KMAT._defaultMat)());
-    const im = new THREE.InstancedMesh(p.geo, mat, list.length); im.castShadow = o.cast !== false && !mat.transparent; im.receiveShadow = true;
-    list.forEach((q, i) => {
-      const u = q.s || 1;
-      _s.set(q.w ? q.w / sz.x : u, q.h ? q.h / sz.y : u, q.d ? q.d / sz.z : u);
-      _q.setFromAxisAngle(YAX, (q.a || 0) + (o.yaw || 0));
-      _m.compose(_v.set(q.x, q.y || 0, q.z), _q, _s).multiply(_t.makeTranslation(-cx, -b.min.y, -cz));
-      im.setMatrixAt(i, _m); if (tint) im.setColorAt(i, _c.set(q.tint || '#5A6470'));
-    });
-    root.add(im);
+    if (!tint && plainStd(mat)) { const e = mat.envMapIntensity; if (!stdL.has(e)) stdL.set(e, []); stdL.get(e).push({ geo: p.geo, mat }) }
+    else if (!tint && plainBasic(mat)) basicL.push({ geo: p.geo, mat });
+    else out.push({ geo: p.geo, mat, tint });
   }
+  for (const [e, l] of stdL) {
+    if (l.length < 2) { out.push(l[0]); continue }
+    const { g, avg } = mergeParts(l, true);
+    const m = new THREE.MeshStandardMaterial({ color: '#FFFFFF', vertexColors: true, roughness: 1, metalness: 1, envMapIntensity: e });
+    m.onBeforeCompile = sh => {
+      sh.vertexShader = 'attribute vec2 rm;\nvarying vec2 vRM;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvRM = rm;');
+      sh.fragmentShader = 'varying vec2 vRM;\n' + sh.fragmentShader.replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vRM.x;').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vRM.y;');
+    };
+    m.customProgramCacheKey = () => 'kit-rm';
+    m.userData.avg = avg; // the light bake bounces this color off the model (game-2e-bake.js capture)
+    out.push({ geo: g, mat: keep(m) });
+  }
+  if (basicL.length > 1) out.push({ geo: mergeParts(basicL, false).g, mat: keep(new THREE.MeshBasicMaterial({ color: '#FFFFFF', vertexColors: true })) });
+  else if (basicL.length) out.push(basicL[0]);
+  return cache[key] = out;
+}
+const plainStd = m => m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial && !m.transparent && m.side === THREE.FrontSide && !m.flatShading
+  && !(m.map || m.normalMap || m.roughnessMap || m.metalnessMap || m.emissiveMap || m.aoMap || m.alphaMap || m.lightMap || m.bumpMap || m.displacementMap || m.envMap)
+  && (m.emissiveIntensity === 0 || m.emissive.getHex() === 0);
+const plainBasic = m => m.isMeshBasicMaterial && !m.transparent && m.side === THREE.FrontSide && !(m.map || m.alphaMap || m.envMap || m.lightMap || m.aoMap);
+// parts -> one geometry: position, normal, color (the part's color times its vertex colors when the part used them) and, for
+// standard parts, rm = (roughness, metalness)
+function mergeParts(list, withRM) {
+  let nv = 0, ni = 0; for (const { geo } of list) { const n = geo.attributes.position.count; nv += n; ni += geo.index ? geo.index.count : n }
+  const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3), rm = withRM ? new Float32Array(nv * 2) : null, idx = new Uint32Array(ni);
+  const avg = new THREE.Color(0, 0, 0), parts = []; let v = 0, k = 0;
+  for (const { geo, mat } of list) {
+    if (!geo.boundingBox) geo.computeBoundingBox(); const bs = geo.boundingBox.getSize(_v);
+    // for the light bake's capture: each part's triangles, color and size, as when parts were meshes of their own
+    parts.push({ k0: k, k1: k + (geo.index ? geo.index.count : geo.attributes.position.count), c: mat.color.clone(), vc: !!mat.vertexColors, s: Math.max(bs.x, bs.y, bs.z) });
+    const P = geo.attributes.position, N = geo.attributes.normal, C = mat.vertexColors ? geo.attributes.color : null, n = P.count, c = mat.color;
+    for (let i = 0; i < n; i++) {
+      const o3 = (v + i) * 3;
+      pos[o3] = P.getX(i); pos[o3 + 1] = P.getY(i); pos[o3 + 2] = P.getZ(i);
+      if (N) { nor[o3] = N.getX(i); nor[o3 + 1] = N.getY(i); nor[o3 + 2] = N.getZ(i) } else nor[o3 + 1] = 1;
+      col[o3] = c.r * (C ? C.getX(i) : 1); col[o3 + 1] = c.g * (C ? C.getY(i) : 1); col[o3 + 2] = c.b * (C ? C.getZ(i) : 1);
+      avg.r += col[o3]; avg.g += col[o3 + 1]; avg.b += col[o3 + 2];
+      if (rm) { rm[(v + i) * 2] = mat.roughness; rm[(v + i) * 2 + 1] = mat.metalness }
+    }
+    if (geo.index) for (let i = 0; i < geo.index.count; i++) idx[k++] = geo.index.getX(i) + v; else for (let i = 0; i < n; i++) idx[k++] = v + i;
+    v += n;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  if (rm) g.setAttribute('rm', new THREE.BufferAttribute(rm, 2));
+  g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeBoundingBox(); g.computeBoundingSphere(); g.userData.keep = true; g.userData.parts = parts;
+  return { g, avg: avg.multiplyScalar(1 / Math.max(1, nv)) };
 }
 // height of a model's seat: the highest upward-facing "carpet" surface in its lower 70%
 function seatHeight(name) {
@@ -423,7 +484,7 @@ function roleMat(role,co,glassy){
 /* ---------- light: image-based light from a soft room, a warm sun with soft shadows, a cool fill ---------- */
 let env=null;
 function environment(){if(env)return env;const pm=new THREE.PMREMGenerator(renderer);env=pm.fromScene(new RoomEnvironment(renderer),.04).texture;pm.dispose();return env}
-cv.addEventListener('webglcontextrestored',()=>{if(!env)return;env=null;if(S&&S.hd)scene.environment=environment()});
+cv.addEventListener('webglcontextrestored',()=>{shDirty=2;if(!env)return;env=null;if(S&&S.hd)scene.environment=environment()}); // the shadow map lost its contents too
 
 /* ---------- post: AO, bloom, output; quality levels ---------- */
 let composer=null,gtao=null,bloom=null,fxOn=false,aoScale=.75;
@@ -445,21 +506,46 @@ function post(){
   composer.addPass(new OutputPass());
   return composer;
 }
+// px: the most pixels a level renders (the pixel ratio comes down to fit, so a very large screen never draws more than about 4K).
+// MSAA only on canvases up to about 2560x1440: 4x MSAA on the composer's half-float buffers needs about 630 MB of GPU memory on a
+// 5120x1440 screen at 150%. With the GPU to itself that is fine (4.7 ms a frame instead of 3.3), but with another game running
+// (90% GPU) it collapsed to 206 ms a frame (5.7 ms without MSAA), backed up the GPU and lagged, then froze, the whole browser.
 const LEVELS=[
-  {n:'High',msaa:4,ao:.75,post:true,cap:2},
-  {n:'Balanced',msaa:0,ao:.5,post:true,cap:1.5},
-  {n:'Low',msaa:0,ao:.5,post:false,cap:1.25},
-  {n:'Lowest',msaa:0,ao:.5,post:false,cap:.8},   // Auto only: fewer pixels than the screen has
+  {n:'High',msaa:4,ao:.75,post:true,cap:2,px:8.3e6},
+  {n:'Balanced',msaa:0,ao:.5,post:true,cap:1.5,px:8.3e6},
+  {n:'Low',msaa:0,ao:.5,post:false,cap:1.25,px:5.2e6},
+  {n:'Lowest',msaa:0,ao:.5,post:false,cap:.8,px:3e6},   // Auto only: fewer pixels than the screen has
 ];
-let qMode='auto',qLevel=TOUCH?2:0,qChanged=0,bootGrace=0;
+const MSAA_PX=3.7e6; // MSAA up to 2560x1440 drawn pixels
+let qMode='auto',qLevel=TOUCH?2:0,qChanged=0,bootGrace=0,msaaOff=false;
 {const q=store.get('rc-quality');if(q&&q!=='auto'&&LEVELS[+q]&&+q<3){qMode='fixed';qLevel=+q}}
-function pixelRatio(){return S&&S.hd?Math.min(devicePixelRatio||1,LEVELS[qLevel].cap):DPR}
+function pixelRatio(){
+  if(!(S&&S.hd))return DPR;const L=LEVELS[qLevel],css=Math.max(1,innerWidth*innerHeight);
+  return Math.max(.5,Math.min(devicePixelRatio||1,L.cap,Math.sqrt(L.px/css)));
+}
+// the composer's MSAA for the current level and canvas size: none at very high density (it buys little there), on a big canvas,
+// or once the GPU guard has turned it off
+function msaaSamples(){
+  const L=LEVELS[qLevel],dpr=pixelRatio();
+  return !L.msaa||msaaOff||dpr>=1.75||innerWidth*innerHeight*dpr*dpr>MSAA_PX?0:L.msaa;
+}
+function setSamples(){
+  if(!composer)return;const n=msaaSamples();
+  for(const t of [composer.renderTarget1,composer.renderTarget2])if(t.samples!==n){t.samples=n;t.dispose()}
+}
+// the sun's shadow map: half the size at Low and Lowest (a quarter of the pixels to draw), but never below 1024 at Low or 512 at
+// Lowest, so on touch devices (SM 1024) only Lowest shrinks
+function shadowSize(){return !(S&&S.hd)?SM:qLevel>=3?Math.max(512,SM/2):qLevel>=2?Math.max(1024,SM/2):SM}
+function fitShadow(){
+  if(!sun||!sun.castShadow)return;const n=shadowSize();if(sun.shadow.mapSize.x===n)return;
+  sun.shadow.mapSize.set(n,n);sun.shadow.normalBias=.018*SM/n;if(sun.shadow.map){sun.shadow.map.dispose();sun.shadow.map=null}shDirty=2;
+}
 function applyQuality(i,user){
   qLevel=Math.max(0,Math.min(LEVELS.length-1,i));const L=LEVELS[qLevel];
   if(S&&S.hd){
-    const c=post(),dpr=pixelRatio(),pr=L.msaa&&dpr>=1.75?0:L.msaa; // at very high density MSAA buys little
-    for(const t of [c.renderTarget1,c.renderTarget2])if(t.samples!==pr){t.samples=pr;t.dispose()}
+    post();setSamples();const dpr=pixelRatio();
     aoScale=dpr>=1.5?L.ao*.67:L.ao;fxOn=L.post;bloom.enabled=L.post;gtao.enabled=L.post&&!BAKE.on; // baked light already holds the AO
+    fitShadow();
   }else fxOn=false;
   if(aoBlobs)aoBlobs.visible=!fxOn&&!BAKE.on; // the soft blobs under furniture stand in for AO when it is off
   qChanged=performance.now();if(user)bootGrace=0;resize();qUI();
@@ -475,7 +561,16 @@ function gpuPoll(){
 }
 // about once a second: below roughly 45 fps step down; with lots of GPU headroom for a while, step back up.
 // A hidden tab, the editor or the first seconds after a build (shaders compile, shadows draw) don't count.
+// Every level, fixed ones too: when MSAA is on and the GPU stays far behind (over 30 ms a frame for 3 s: a bigger window than
+// expected, or another program using the GPU), MSAA goes off for the rest of the visit. A backed-up GPU lags the whole browser.
+let heavyFor=0;
+function gpuGuard(dt){
+  if(!composer||msaaOff||!composer.renderTarget1.samples||gpuMs<0||performance.now()-qChanged<2500||performance.now()<bootGrace||document.hidden){heavyFor=0;return}
+  heavyFor=gpuMs>30?heavyFor+dt:0;
+  if(heavyFor>3){heavyFor=0;msaaOff=true;setSamples();qChanged=performance.now();gpuMs=-1}
+}
 function autoQuality(dt){
+  if(S&&S.hd)gpuGuard(dt);
   if(!S||!S.hd||qMode!=='auto'||performance.now()-qChanged<2500||performance.now()<bootGrace||document.hidden){slowFor=fastFor=0;return}
   const slow=gpuMs>=0?gpuMs>11:dtMs>22,fast=gpuMs>=0&&gpuMs<4.5;
   slowFor=slow?slowFor+dt:0;fastFor=fast?fastFor+dt:0;
@@ -485,16 +580,63 @@ function autoQuality(dt){
 function qUI(){
   const box=$('quality');if(!box)return;$('qualityRow').hidden=!(S&&S.hd);
   box.querySelectorAll('.chip').forEach(b=>b.setAttribute('aria-checked',String(b.dataset.q===(qMode==='auto'?'auto':String(qLevel)))));
-  $('qnote').textContent=qMode==='auto'?`Auto is using ${LEVELS[qLevel].n}${LEVELS[qLevel].n==='Lowest'?' (reduced resolution)':''}${gpuMs>=0?` · ${fps} fps, GPU ${gpuMs.toFixed(1)} ms`:fps?` · ${fps} fps`:''}`:`${LEVELS[qLevel].n}, fixed${gpuMs>=0?` · ${fps} fps, GPU ${gpuMs.toFixed(1)} ms`:fps?` · ${fps} fps`:''}`;
+  const off=msaaOff&&LEVELS[qLevel].msaa?' (anti-aliasing off so the GPU keeps up)':'';
+  $('qnote').textContent=qMode==='auto'?`Auto is using ${LEVELS[qLevel].n}${LEVELS[qLevel].n==='Lowest'?' (reduced resolution)':''}${off}${gpuMs>=0?` · ${fps} fps, GPU ${gpuMs.toFixed(1)} ms`:fps?` · ${fps} fps`:''}`:`${LEVELS[qLevel].n}, fixed${off}${gpuMs>=0?` · ${fps} fps, GPU ${gpuMs.toFixed(1)} ms`:fps?` · ${fps} fps`:''}`;
 }
+/* ---------- the sun's shadow map: at most once a frame, and only when something that casts a shadow moved ---------- */
+// three redraws the shadow map on every render call, and the AO pass renders the scene a second time, so a realtime High frame
+// drew it twice. Now a frame draws it at most once, and a still scene (nothing moved, the sun's view unchanged) keeps the last
+// one, in every style. Only casters inside the sun's shadow box count (the Mailbot driving its round elsewhere doesn't), and
+// one entering or leaving the box redraws it once. The creatures' idle motion is in their shader, so their shadows hold still
+// between changes.
+let shSig=NaN,shDirty=2;
+function shadowSig(){
+  sun.shadow.updateMatrices(sun);const fr=sun.shadow.getFrustum(); // three only does this when it draws the map
+  let h=0,n=0;
+  scene.traverseVisible(o=>{
+    if(!o.castShadow)return;
+    if((o.isMesh||o.isLine||o.isPoints)&&o.frustumCulled&&!fr.intersectsObject(o))return; // three wouldn't draw it into the map either
+    const e=o.matrixWorld.elements;n++;
+    const x=(e[0]*1.31+e[2]*1.73+e[5]*2.17+e[8]*2.71+e[10]*3.13+e[12]*3.37+e[13]*3.79+e[14]*4.19)*(1+n*1e-4);
+    if(x===x)h+=x; // one broken (NaN) matrix must not make every frame look changed
+    if(o.isInstancedMesh)h+=o.instanceMatrix.version*5.3+o.count*7.1;
+  });
+  return h+n*1e5+sun.shadow.camera.right*11.3+sun.shadow.mapSize.x;
+}
+function shadowsBefore(){
+  const sm=renderer.shadowMap;if(!sm.enabled||!sun||!sun.castShadow){sm.autoUpdate=true;return}
+  sm.autoUpdate=false;if(shDirty>0){sm.needsUpdate=true;shDirty--}
+}
+function shadowsAfter(){if(renderer.shadowMap.autoUpdate||!sun)return;const s=shadowSig();if(s!==shSig){shSig=s;shDirty=2}} // matrices are current after a render
 function render(dt){BAKE.frame();
   FX.frame(dt);
   let tq=null;if(TQ&&qPend.length<6){tq=gl.createQuery();gl.beginQuery(TQ.TIME_ELAPSED_EXT,tq)}
+  shadowsBefore();
   if(S.hd&&fxOn)composer.render(dt);else renderer.render(scene,camera);
+  shadowsAfter();
   if(tq){gl.endQuery(TQ.TIME_ELAPSED_EXT);qPend.push(tq)}if(TQ)gpuPoll();dtMs=dtMs*.95+dt*1000*.05;
   acc+=dt;frames++;if(acc>1){fps=Math.round(frames/acc);autoQuality(acc);if(S.hd&&!$('stylePop').hidden)qUI();acc=0;frames=0}
 }
-function resizeFx(w,h){if(!composer||!S||!S.hd)return;composer.setPixelRatio(renderer.getPixelRatio());composer.setSize(w,h)}
+function resizeFx(w,h){if(!composer||!S||!S.hd)return;setSamples();composer.setPixelRatio(renderer.getPixelRatio());composer.setSize(w,h)} // a bigger window may be past MSAA's limit
+
+// Compile every shader a freshly built world can need before it is seen, including things that stay hidden until the drive:
+// the smoke and spark pools (first shown by the first jump or landing) and the physics-moment pieces (the first desk knocked
+// over). A shader compiled mid-drive stalls the browser's GPU process on Windows for a moment, and every tab with it.
+// Studio draws through the composer's half-float buffer, which needs other shader variants than the canvas: compile for that.
+// It runs just after the current task, so a style switch has also rebuilt the cars and tags, restyled the smoke and sparks
+// (fxRestyle) and set up the composer before anything is compiled.
+let warmT=0;
+function warm(){
+  warmT=0;
+  // a world whose baked light is still loading: its realtime variants would be thrown away when the bake applies (and deleting
+  // programs the GPU is still linking makes the driver complain), so BAKE warms up once it has applied (or failed)
+  if(BAKE.loading)return;
+  try{FX.prime()}catch(_){}
+  const rt=renderer.getRenderTarget();
+  try{renderer.setRenderTarget(S&&S.hd&&fxOn&&composer?composer.readBuffer:null);renderer.compile(scene,camera)}catch(e){console.warn('shader warm-up skipped',e)}
+  finally{renderer.setRenderTarget(rt)}
+}
+function warmSoon(){if(!warmT)warmT=setTimeout(warm,0)}
 
 /* ---------- the floor, in HD ---------- */
 const TYPES=new Set(['panel','table','rtable','bench','shelf','rack','scope','chamber','probe','cabinet','locker','reception','printer','whiteboard','elevdoor','booth','plant','counter','coffee','fridge','screen','sofa']);
@@ -506,9 +648,11 @@ function floor(m){
   return (m.items||[]).filter(it=>!TYPES.has(it.t)); // anything else is drawn by the game's own builder
 }
 // a new world: light it, and give Auto a few seconds before it judges the frame rate
-function enter(){FX.clear();BAKE.enter();scene.environment=S.hd?environment():null;bootGrace=performance.now()+5000;gpuMs=-1}
+function enter(){FX.clear();BAKE.enter();scene.environment=S.hd?environment():null;bootGrace=performance.now()+5000;gpuMs=-1;shDirty=2}
 
 loadKit();
-return{floor,campusItems,enter,restyle:()=>applyQuality(qLevel),draw:()=>{if(S.hd&&fxOn)composer.render(1/60);else renderer.render(scene,camera)},buildChairs,chairMatrix,chairPaint,mat:roleMat,applyQuality,setQuality,pixelRatio,render,resizeFx,qUI,KIT,LEVELS,
-  get quality(){return{mode:qMode,level:LEVELS[qLevel].n,gpuMs,fps,timer:!!TQ,fx:fxOn}},get passes(){return{composer,gtao,bloom}}};
+return{floor,campusItems,enter,warm:warmSoon,restyle:()=>applyQuality(qLevel),shadowSize,
+  draw:()=>{shadowsBefore();renderer.shadowMap.needsUpdate=true;if(S.hd&&fxOn)composer.render(1/60);else renderer.render(scene,camera)}, // benchmarks: a moving frame (one shadow pass)
+  buildChairs,chairMatrix,chairPaint,mat:roleMat,applyQuality,setQuality,pixelRatio,render,resizeFx,qUI,KIT,LEVELS,
+  get quality(){return{mode:qMode,level:LEVELS[qLevel].n,gpuMs,fps,timer:!!TQ,fx:fxOn,msaa:composer&&S&&S.hd?composer.renderTarget1.samples:0,msaaOff}},get passes(){return{composer,gtao,bloom}}};
 })();

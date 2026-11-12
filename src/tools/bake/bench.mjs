@@ -13,7 +13,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const [outArg, what = 'shots', size = '1280x800', ...keyArgs] = process.argv.slice(2);
 const OUT = resolve(outArg), [W, H] = size.split('x').map(Number), SHOTS = join(OUT, 'shots');
 mkdirSync(SHOTS, { recursive: true });
-const b = spawnSync('python', ['-I', join(ROOT, 'src', 'build.py'), join(OUT, 'rc.html'), '--test'], { encoding: 'utf8' });
+const b = spawnSync('python', ['-I', join(ROOT, 'src', 'build.py'), join(OUT, 'rc.html'), '--test', '--inline-bakes'], { encoding: 'utf8' });
 if (b.status) { console.error(b.stdout, b.stderr); process.exit(1) }
 console.log(b.stdout.trim());
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', PORT = 9381, HTTP = 9382, PROF = join(tmpdir(), 'rc-bench-edge');

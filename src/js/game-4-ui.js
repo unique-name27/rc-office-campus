@@ -655,7 +655,7 @@ function sendPresence(){
   if(!room)return;
   const m=mode==="drive"?"d":mode==="walk"?"w":"o",r2=v=>Math.round(v*100)/100;
   const o={v:2,m,w:WKEY,c:paint,x:r2(me.x),z:r2(me.z),y:r2(me.y),h:Math.round(me.h*1000)/1000,p:r2(me.pitch),r:r2(me.roll),s:Math.round(me.vF*10)/10,st:r2(me.steer),b:me.boosting||me.turboT>0?1:0,d:me.drift?1:0,hk:hornCount};
-  if(me.drift&&me.driftTier)o.dc=me.driftT>1.1?2:me.driftTier;if(me.sx){o.sx=me.sx;o.sl=me.sl;o.sk=me.sk}
+  if(me.drift&&me.driftTier)o.dc=me.driftT>1.1?2:me.driftTier;if(me.sx){o.sx=me.sx;o.sl=me.sl;o.sk=me.skEv}
   if(myId)o.u=myId;
   if(mode==="walk"){o.wx=r2(walker.x);o.wz=r2(walker.z);o.wy=r2(walker.yaw)}else{o.wx=null;o.wz=null;o.wy=null}
   o.rc=race?{k:race.key,t0:race.t0,n:race.dest.name.slice(0,60)}:null;
@@ -1203,14 +1203,16 @@ function audioFrame(){
   const f=115+sp*36+(me.boosting?80:0)+(me.air?55:0);
   M.o1.frequency.setTargetAtTime(f,t,.06);M.o2.frequency.setTargetAtTime(f*.5,t,.06);M.o3.frequency.setTargetAtTime(f*3,t,.06);M.wF.frequency.setTargetAtTime(f*3,t,.06);
   M.mF.frequency.setTargetAtTime(600+sp*240,t,.08);
-  const syn=M.real?0:1; // the recorded motor replaces the synth tone and whine once it has loaded
+  const syn=eng?0:1; // the recorded engine replaces the synth tone, whine and slide hiss once it has loaded
   M.mG.gain.setTargetAtTime(car?(.03+Math.abs(me.thr)*.025+Math.min(sp,12)*.003)*syn:0,t,.1);
   M.wG.gain.setTargetAtTime(car?(Math.min(.025,sp*.0022)+(me.boosting?.012:0))*syn:0,t,.1);
-  if(M.real){M.real.playbackRate.setTargetAtTime(clamp(.72+sp*.085+(me.boosting||me.turboT>0?.2:0)+(me.air?.12:0),.6,2.3),t,.08);
-    M.realG.gain.setTargetAtTime(car?.018+Math.abs(me.thr)*.022+Math.min(sp,12)*.0035+(me.boosting?.01:0):0,t,.1)}
-  M.rG.gain.setTargetAtTime(car&&!me.air?Math.min(.09,sp*.011):0,t,.08);M.rF.frequency.setTargetAtTime(160+sp*35,t,.1);
-  const slide=car&&!me.air&&(me.drift||Math.abs(me.lat)>1.6);
-  M.sG.gain.setTargetAtTime(slide?Math.min(.03,.01+Math.abs(me.lat)*.008):0,t,.05);
+  M.rG.gain.setTargetAtTime(car&&!me.air?Math.min(.06,sp*.008):0,t,.08);M.rF.frequency.setTargetAtTime(160+sp*35,t,.1);
+  const slide=car&&!me.air&&(me.drift||Math.abs(me.lat)>1.6||(me.thr<0&&me.vF>3));
+  M.sG.gain.setTargetAtTime(slide?Math.min(.03,.01+Math.abs(me.lat)*.008)*syn:0,t,.05);
+  if(eng){const now=performance.now()/1000,dt=Math.min(.1,Math.max(0,now-(audioFrame.t||now)));audioFrame.t=now;
+    // during a countdown the car is held, but the throttle you hold revs the engine
+    const count=drv&&((run&&run.phase==="count")||(race&&race.phase==="count")),thr=count?Math.max(0,readDrive().thr):me.thr;
+    engineFrame(dt,t,car,sp,thr,me.air,me.boosting||me.turboT>0,slide,me.lat,(me.rubT||0)>0)}
   if(drv&&me.kind!=="car"&&!me.air&&Math.hypot(me.vx,me.vz)>.6){const st=Math.floor((me.phase||0)/Math.PI);if(st!==stepPh){stepPh=st;SFX.step(me.kind)}}
 }
 

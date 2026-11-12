@@ -14,7 +14,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const OUT = resolve(process.argv[2] || join(tmpdir(), 'rc-bake'));
 const KEYS = process.argv.slice(3);
 mkdirSync(OUT, { recursive: true });
-const b = spawnSync('python', ['-I', join(ROOT, 'src', 'build.py'), join(OUT, 'rc.html'), '--test'], { encoding: 'utf8' });
+const b = spawnSync('python', ['-I', join(ROOT, 'src', 'build.py'), join(OUT, 'rc.html'), '--test', '--inline-bakes'], { encoding: 'utf8' });
 if (b.status) { console.error(b.stdout, b.stderr); process.exit(1) }
 console.log(b.stdout.trim());
 

@@ -142,7 +142,7 @@ function lights(){
   // HD: a cool fill from the opposite side keeps shadowed faces readable (the image-based light does the rest)
   if(S.hd){const fill=new THREE.DirectionalLight(0xd6e4ff,.3);fill.position.set(-4,6,5);root.add(fill)}
   if(S.light==="cel")sunDir.set(2.5,6.5,1).normalize();else if(S.hd)sunDir.set(.62,.72,-.34).normalize();else sunDir.set(3.5,6.5,3).normalize();
-  if(S.shadows){sun.castShadow=true;sun.shadow.mapSize.set(SM,SM);sun.shadow.bias=S.hd?-.0003:-.0006;sun.shadow.normalBias=S.hd?.018:.02;shadowHS=0}
+  if(S.shadows){const n=HD.shadowSize();sun.castShadow=true;sun.shadow.mapSize.set(n,n);sun.shadow.bias=S.hd?-.0003:-.0006;sun.shadow.normalBias=S.hd?.018*SM/n:.02;shadowHS=0} // smaller at Studio's Low levels
 }
 function groundPlane(w,d,col){
   const fm=part(new THREE.PlaneGeometry(w,d),"floor",0,0,0,null,{still:1,color:col});fm.rotation.x=-Math.PI/2;
@@ -382,4 +382,5 @@ function buildWorld(){
   if(WKIND==="campus")buildCampusWorld(WM);else buildFloorWorld(WM);
   if(S.hd)BAKE.world(WKEY,WM,WKIND); // baked light when this world has a matching bake (game-2e-bake.js); before the props, which are not in the bake
   PHYS.build(); // loose props (and their physics world once the engine has loaded)
+  HD.warm(); // compile every shader now, hidden ones too, so the first jump or crash doesn't stall the GPU
 }

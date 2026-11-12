@@ -175,5 +175,20 @@ test('a hard landing tells FX (desk scatter) only for the player, with the landi
   for (let i = 0; i < Math.round(1.2 / DT); i++) W2.carStep(b, ctl(), DT, false);
   assert(!W2.calls.some(x => x[0] === 'FX.land' || x[0] === 'SFX.land'), 'a bot or remote car landing hard does not');
 });
+// c.sk is the skid-mark pair that syncCar writes into every frame (c.sk[k]=...); the skill code lives in c.skEv. When the skills
+// wrote "t1"/"j"/"w" into c.sk, every frame after the first turbo, double jump or woof threw in strict mode and the game froze.
+test('skills name themselves in skEv and leave the skid-mark pair alone', () => {
+  const pair = (c, what) => { assert(Array.isArray(c.sk) && c.sk.length === 2, what + ': c.sk is still the skid pair, got ' + JSON.stringify(c.sk)); c.sk[0] = null; c.sk[1] = [0, 0, 0] };
+  const W = world(), car = rolling(W, 6);
+  run(W, car, 1, ctl({ thr: 1, steer: .8, drift: true })); run(W, car, DT * 2, ctl({ thr: 1, steer: 0, drift: false }));
+  assert.strictEqual(car.skEv, 't1', 'turbo'); assert.strictEqual(car.sx, 1, 'one skill event'); pair(car, 'turbo');
+  const cat = W.newCar(0, 0, 0, '#fff', 'cat');
+  cat.jumpReq = true; run(W, cat, 2, ctl({ jumpHeld: true }));
+  assert.strictEqual(cat.skEv, 'j', 'double jump'); pair(cat, 'double jump');
+  const dog = W.newCar(0, 0, 0, '#fff', 'dog');
+  dog.woofReq = true; run(W, dog, .2, ctl());
+  assert.strictEqual(dog.skEv, 'w', 'woof'); pair(dog, 'woof');
+  W.spawn(dog, 0, 0, 0); pair(dog, 'after spawn');
+});
 console.log(`skills: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

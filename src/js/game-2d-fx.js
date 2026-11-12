@@ -8,7 +8,7 @@
 // current style's own materials, so all five styles show it their way. Lighting is baked, so nothing stays lying around:
 // the pieces shrink away a few seconds after they land.
 const FX=(()=>{
-const D=FX_DATA,NONE={crash(){},land(){},frame(){},clear(){}};
+const D=FX_DATA,NONE={crash(){},land(){},frame(){},clear(){},prime(){}};
 if(!D||!D.scatter||!D.splash)return NONE;
 const i16=s=>{const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new Int16Array(u.buffer)};
 const SC=D.scatter,SP=D.splash,NP=SC.pieces.length,ND=SP.count;
@@ -40,7 +40,7 @@ function ready(){
   cylG=IG(new THREE.CylinderGeometry(1,1,1,S.edges?8:16),basic?"panel":"cup",MAX_SC*cyls,{colored:painted});
   // line-art styles draw only edges: an octahedron has them, a smooth ball would vanish
   dropG=IG(S.edges?new THREE.OctahedronGeometry(1,0):new THREE.IcosahedronGeometry(1,1),basic?"screen":"cup",MAX_SP*ND,{colored:painted,noHull:1,noCast:1});
-  for(const g of[boxG,cylG,dropG]){for(let i=0;i<g.count;i++)g.set(i,zero);g.commit()}
+  for(const g of[boxG,cylG,dropG]){for(let i=0;i<g.count;i++)g.set(i,zero);g.commit();for(const o of[g.mesh,g.hull,g.lines])if(o)o.userData.dyn=true} // they move: never part of a baked-light layout
   if(painted)for(let k=0;k<MAX_SC;k++)SC.pieces.forEach((p,j)=>(p.s==="b"?boxG:cylG).paint(k*(p.s==="b"?boxes:cyls)+pIdx[j],col.set(p.c==="mug"?S.acc:PAINT[p.c]||"#FFFFFF")));
   return true;
 }
@@ -125,5 +125,7 @@ function frame(dt){
 function land(s,c){
   try{if(s>2.4&&c&&c.y>.5){const sp=Math.hypot(c.vx,c.vz)||1;crash(c.x,c.z,SC_HIT+s,{x:c.x-c.vx/sp*.5,z:c.z-c.vz/sp*.5})}}catch(_){}
 }
-return{crash,land,frame,clear};
+// a floor was just built: make the groups now, so HD.warm compiles their shaders before the first crash needs them
+function prime(){if(!REDUCED&&WKIND==="floor"&&WM)ready()}
+return{crash,land,frame,clear,prime};
 })();
