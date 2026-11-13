@@ -5,7 +5,9 @@ The page is ONE html file (a claude.ai artifact; the baked-light images in `src/
 add-ons) from jsDelivr through an import map; only the game/renderer uses `THREE`. Generated data modules: `js/avatar-meshes.js`
 (`AVMESH`, from `src/blender/avatars.py`), `js/kit-meshes.js` (`KITMESH`, from `src/tools/pack_kit.py`) and `js/sound-data.js`
 (`SOUND_DATA`, the recordings in `src/assets/sounds`, from `src/tools/pack_sounds.py`). Studio is the HD style
-(`js/game-2c-hd.js`: color-managed, image-based light, GTAO, bloom, quality levels); the other styles keep the classic unmanaged colors.
+(`js/game-2c-hd.js`: color-managed, image-based light) and the only look players get, always at the Low quality level (no
+post-processing; Auto may drop a slow device to Lowest and back, never higher). The other styles in `ST` and the High and Balanced
+levels stay in the code unused.
 Today it is a single-floor RC-car game ("Floor 4 Walkthrough"). v4 turns it into a **San Jose campus: 2 buildings x 4 floors**
 with real coworkers loaded from facilities data, per-team desk arrangements, floor-plan import, routes and races.
 
@@ -151,7 +153,7 @@ are the same physical doorway: campus x = building.x + floorExit.x, campus z = b
 ## 6. NAV  (`NAV`)
 ```js
 NAV.grid(model, { cell: 0.4, clear: 0.32 }) -> Grid   // blocks/posts with (m & 5) rasterized + inflated by `clear`; outside plate = blocked
-NAV.findPath(grid, ax, az, bx, bz) -> { pts: [[x,z],...], len } | null   // A* 8-conn, no corner cutting, string-pulled; snaps blocked endpoints to nearest free cell within 4 m
+NAV.findPath(grid, ax, az, bx, bz) -> { pts: [[x,z],...], len } | null   // A* 8-conn, no corner cutting, string-pulled; snaps blocked endpoints, and ones in a closed-off island of <= 4 m² (never through a wall, desk or post), to the nearest free cell within 4 m
 NAV.plan(world, from, to) -> Route | null
    world = { campus: CampusModel, floors: { key: FloorModel }, grid(key) -> Grid (memoized by caller or NAV) }
    from/to = { w: "B1-3"|"campus", x, z }
@@ -169,6 +171,7 @@ NAV.sample(pts, spacing = 1.2, offset = 0) -> [{ x, z, a }]              // even
 IMPORT.parseCSV(text) -> { header: [...], rows: [[...]], delimiter }     // BOM, quotes, "" escapes, CRLF, , ; or \t
 IMPORT.mapColumns(header) -> { map: { building, floor, desk, name, first, last, team, title, x, y, rot }, ignored: [colNames] }  // indices or -1
 IMPORT.normalize(parsed, map, campusDoc, buildingAlias?) -> { floors: { key: [{ desk, name, team, title, x?, y?, rot? }] }, problems: [{ row, msg }], buildings: { rawValue: buildingId|null } }
+  // rot in degrees (a column labelled in radians is converted); an email address next to a name is dropped, the name kept
 IMPORT.diff(oldRosters, newRosters) -> { added: [...], removed: [...], moved: [{ name, from, to }], same: n }   // keyed by name (case/space-insensitive)
 IMPORT.parseDXF(text) -> { units, scale, layers: { name: count }, segments: [{ layer, x1, y1, x2, y2 }], texts: [{ layer, x, y, text, h }], inserts: [{ layer, block, x, y, rot }], bounds }
 IMPORT.similarity(p1, p2, q1, q2) -> { s, r, tx, ty, apply([x,y]) -> [x,y] }   // maps p1->q1, p2->q2 (scale+rotation+translation)
@@ -190,20 +193,18 @@ EDITOR.open({
 }) -> { close() }
 ```
 
-## 8b. BRAWL  (`BRAWL`)  — Banana Brawl rules (pure); the game side is `js/game-3b-brawl.js`, item art `js/game-3a-brawl-art.js`
-No host: each player is the authority on themselves. Presence field `bw` (null when not brawling):
-`{ hp, sc (hits), ko (KOs), it (item | null), n (uses), sh (bubble 0/1), out (knocked out 0/1), iv (can't be hit right now 0/1),
-tk (heartbeat: whole seconds; presence only goes out when something changes, and peers drop a brawler after 3 s without a new one),
-pj: [[id, kind, x, y, z, vx, vz]] (≤10 live throws), hb: [[throwerPeer, throwId, 0 hit | 1 KO | 2 blocked by a bubble]] (hits taken,
-last ~4 s, ≤8) }`. A victim decides its own hits from the thrower's `pj`;
-the thrower counts a point when its peer shows up in someone's `hb` (`credits`). Bots exist only while nobody else brawls on the floor.
+## 8b. FUN  (`FUN`)  — coins and power-up boxes in every world (pure); the game side is `js/game-3b-fun.js`, art `js/game-3a-fun-art.js`
+Where they sit is the same for everyone (seeded by the world key); what a player has picked up is that player's own and is never
+sent: a coin comes back after 75 s, a box after 15 s, and leaving a world keeps what you took there. Coins collect by driving or walking
+through them (in the air: within .5 m of your body's middle; on foot, at any height); boxes by driving through. The total lives in
+`localStorage['rc-coins']`. A box starts a power-up at once (`me.pu` = its entry; carStep reads `jumpH`/`grav`; `turbo` keeps
+`turboT` up), never the one already running. Races and coffee runs go on shared boards, so a power-up ends when one
+starts and the boxes are put away until it is over (coins stay).
 ```js
-BRAWL.ITEMS / ITEM / PJ;  BRAWL.rollItem(u, behind) -> 'banana'|'bunch'|'paper'|'plane'|'coffee'|'bubble'
-BRAWL.crateSpots(floorKey, [[x,z]], n, spacing) -> [[x,z]]           // the same on every client
-BRAWL.launch(kind, car, id, back) -> throw;  BRAWL.step(throw, dt, {blocked, ground, target}) -> alive (a banana lands as a peel)
-BRAWL.touches(throw, {x,y,z,r,tall});  BRAWL.armed(throw, own)
-BRAWL.fresh(now) / hit(state, now) -> {state, took, ko, blocked} / respawn(state, now)
-BRAWL.enc(...) -> bw;  BRAWL.validBw(untrusted) -> bw | null;  BRAWL.credits(myPeer, [[peer, bw]], countedSet, mineIds) -> [{victim, id, ko, blocked}];  BRAWL.standings(rows)
+FUN.POWERS = { coffee: {n, d, dur, turbo}, moon: {n, d, dur, jumpH, grav}, magnet: {n, d, dur, magnet (m)}, double: {n, d, dur, coin} }
+FUN.roll(u, current) -> power id                                          // never `current`
+FUN.place(worldKey, w, d, free(x,z) -> bool, { avoid: [[x,z,r]], trails?, boxes? }) -> { coins: [{x, z, y}], boxes: [{x, z}] }
+  // coins in straight trails of 5-7 (.9 m apart, a lane clear on both sides); every third trail arcs up to y ~ .94 (jump for it)
 ```
 
 ## 9. PEOPLE  (`PEOPLE`)  — how coworkers look (pure)
@@ -216,9 +217,10 @@ PEOPLE.KINDS -> ['person', ...species ids];  PEOPLE.KIND_NAMES;  PEOPLE.coatsOf(
 PEOPLE.defaultLook(key, arr) -> { kind:<species>, coat:<one of its coats>, shirt:'team', tone, hat:'none'|'phones'|'beanie'|'cap',
                                   glasses, mug, labCoat, pants, shoes, hatColor, mugColor }   // person fields ready if they pick it; lab desks: no mug
 PEOPLE.validLook(v) -> chosen fields only {kind, shirt:'team'|#hex, tone:#hex, hat, glasses, mug, labCoat, coat:#hex} | null
-PEOPLE.merge(base, chosen);  PEOPLE.chosenOf(look);  PEOPLE.norm(name)
+PEOPLE.merge(base, chosen);  PEOPLE.chosenOf(look);  PEOPLE.norm(name)   // letters of every script count; Latin names normalize as before (accents, case, punctuation dropped)
 PEOPLE.validClaim(v) -> { w, desk, name, look, at } | null
-PEOPLE.locate(claim, peopleOn(w) -> [{desk,name}], floorKeys) -> { key, moved } | null   // same desk+name, else the one person with that name
+PEOPLE.locate(claim, peopleOn(w) -> [{desk,name}], floorKeys, index?) -> { key, moved } | null   // same desk+name, else the one person with that name; index: optional () -> nameIndex(...) shared across claims
+PEOPLE.nameIndex(peopleOn, floorKeys) -> Map norm(name) -> ["<floor key>|<desk>", ...]
 PEOPLE.resolve(claims, locateFn, nameMatch) -> { winners: Map key -> claim, status: Map uid -> { key, state:'ok'|'moved'|'lost'|'taken' } }
 ```
 Walks (creatures only; every viewer computes the same ones from the shared wall clock `T` in seconds and the desk key):
@@ -229,8 +231,9 @@ PEOPLE.walkTrip(key, k) -> null | { k, t0, end, stay, pick, mate }   // starts i
 PEOPLE.walkTimes(trip, L) -> { up, walk, stay, total } | null      // null when a path of L m can't fit before the cycle ends
 PEOPLE.walkAt(trip, times, T) -> { ph: 'wait'|'up'|'out'|'stay'|'back'|'down'|'done', s (m along the path), gait 0|1 }
 ```
-The game (`game-2b-people.js`) walks a NAV path from the chair's home spot to one of the 6 rooms/amenities nearest the desk (nearer
-ones more often) or, with `mate`, a teammate's desk within 18 m. A walker is a standing creature (`walkerGeo`: the seated parts
+The game (`game-2b-people.js`) walks a NAV path (on the floor's grid plus every chair's home spot as a walker-only post, r .2; where those
+posts make NAV move the start, the plain grid; a start NAV had to move there too means no walk) from the chair's home spot to one of the 6 rooms/amenities nearest the desk (nearer
+ones more often) or, with `mate`, a teammate's desk within 18 m, never standing within .5 m of another chair's home. A walker is a standing creature (`walkerGeo`: the seated parts
 moved down `WALK_DY`, legs and arms tagged for the walk shader) in a per-kind group of `WALK_POOL` slots; the seated figure is hidden
 while it is away. Locally only: walkers step aside for cars within 1.5 m (never into a wall), hop when bumped or woofed at, and ease
 the player's car back out of them; while up they are kinematic bodies in `PHYS` (`PHYS.track`). Walker meshes carry `userData.dyn`.
@@ -285,10 +288,12 @@ PHYS.ready, PHYS.state ("idle" | "wait" | "loading" | "ready" | "failed"), PHYS.
   page, named after a hash of their bytes); a world's pair is fetched when the world is entered (a CORS `<img>` is tried when
   `fetch` is refused) and, once a world is lit, the others' bytes in the background. A failed download leaves the world
   realtime until its next visit; an image that can't be decoded keeps it realtime. `BAKE.ready()` resolves once this world's
-  bake is applied (or won't be): `goWorld` waits for it behind the fade, up to 0.9 s. `build.py --inline-bakes` puts the images
+  bake is applied (or won't be): `goWorld` waits for it behind the fade, up to 0.9 s, the page's loading cover (on from the
+  first paint) up to 2.5 s, and a switch to Studio whose images aren't in memory yet is covered the same way (0.9 s). `BAKE.reveal()` is called as a cover lifts: a bake that arrives after that is kept for the world's next
+  visit instead of switching the light (and every shader) in front of the player. `build.py --inline-bakes` puts the images
   in the page as data URLs (the bake tools build that way).
   Anything that moves must not enter that hash: mark its meshes `userData.dyn = true`
-  (the physics props and debris and the brawl items do; the figures and chairs are skipped by the capture itself). Full details and re-baking: `src/tools/bake/README.md`.
+  (the physics props and debris, the coins and the power-up boxes do; the figures and chairs are skipped by the capture itself). Full details and re-baking: `src/tools/bake/README.md`.
 * On a baked world the sun, fill light and shadow map are off and GTAO is skipped; a hemisphere light measured from the
   bake lights cars, creatures, chairs and the physics props.
 * Elsewhere (realtime Studio and the other styles) `HD.render` draws the sun's shadow map at most once a frame and only when a

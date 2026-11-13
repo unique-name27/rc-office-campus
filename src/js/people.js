@@ -89,19 +89,29 @@ const PEOPLE = (() => {
     return { w: v.w, desk: v.desk, name: v.name, look: validLook(v.look) || {}, at };
   }
 
-  // names compare without case, accents or punctuation ("José O'Neil" = "jose o neil")
-  const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  // names compare without case, accents or punctuation ("José O'Neil" = "jose o neil"). Letters, marks and digits of the
+  // other scripts are kept ("李伟" stays "李伟", not ""); anything the Latin script shares (ø, ß, punctuation) still splits a
+  // word, so a Latin name comes out exactly as it always has. Only ever compared, never stored.
+  const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/(?:(?![a-z0-9])(?:[^\p{L}\p{M}\p{N}]|[\p{scx=Latin}\p{scx=Common}\p{scx=Inherited}]))+/gu, ' ').trim();
+
+  // every person's normalized name -> ["<floor key>|<desk>", ...] over all floors (build it once to locate many claims)
+  function nameIndex(peopleOn, keys) {
+    const idx = new Map();
+    for (const k of keys) for (const p of peopleOn(k) || []) { const n = norm(p.name); if (!n) continue; const l = idx.get(n); if (l) l.push(k + '|' + p.desk); else idx.set(n, [k + '|' + p.desk]) }
+    return idx;
+  }
 
   // which person a claim belongs to now: the same desk with the same name, else the one person anywhere with that name
-  // (they moved). peopleOn(floorKey) -> [{desk, name}] or null; keys = every floor key. -> {key, moved} or null
-  function locate(c, peopleOn, keys) {
+  // (they moved). peopleOn(floorKey) -> [{desk, name}] or null; keys = every floor key; index: optional () -> nameIndex
+  // (peopleOn, keys), to share one across many claims. -> {key, moved} or null
+  function locate(c, peopleOn, keys, index) {
     const n = norm(c.name); if (!n) return null;
     const here = peopleOn(c.w) || [], dl = c.desk.toLowerCase();
     const hit = here.find(p => String(p.desk).toLowerCase() === dl);
     if (hit && norm(hit.name) === n) return { key: c.w + '|' + hit.desk, moved: false };
-    let found = null, count = 0;
-    for (const k of keys) for (const p of peopleOn(k) || []) if (norm(p.name) === n) { count++; found = { key: k + '|' + p.desk, moved: true } }
-    return count === 1 ? found : null;
+    const l = (index ? index() : nameIndex(peopleOn, keys)).get(n);
+    return l && l.length === 1 ? { key: l[0], moved: true } : null;
   }
 
   // claims: [{uid, w, desk, name, look, at}]. locateFn(claim) -> {key, moved} | null. nameMatch(claim) -> true when the
@@ -159,6 +169,6 @@ const PEOPLE = (() => {
     return { ph: 'done', s: 0, gait: 0 };
   }
 
-  return { TONES, DEFAULT_TONE, HATS, KINDS, KIND_NAMES, SPECIES, coatsOf, CHOSEN, hash, defaultLook, validLook, merge, chosenOf, validClaim, norm, locate, resolve,
+  return { TONES, DEFAULT_TONE, HATS, KINDS, KIND_NAMES, SPECIES, coatsOf, CHOSEN, hash, defaultLook, validLook, merge, chosenOf, validClaim, norm, nameIndex, locate, resolve,
     WALK, walkCycle, walkTrip, walkTimes, walkAt };
 })();

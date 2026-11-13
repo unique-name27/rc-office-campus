@@ -121,7 +121,7 @@ function frame(dt){
 }
 // a hard landing on a desk top (off a ramp, a dog or cat leaping up) knocks its things off too; landing on the kitchen
 // counter splashes the same way. carStep calls this from the player's own heavy landing only (SFX.land itself is also
-// just a thud for physics props and brawl knockouts, so it is not a landing signal)
+// just a thud for physics props, so it is not a landing signal)
 function land(s,c){
   try{if(s>2.4&&c&&c.y>.5){const sp=Math.hypot(c.vx,c.vz)||1;crash(c.x,c.z,SC_HIT+s,{x:c.x-c.vx/sp*.5,z:c.z-c.vz/sp*.5})}}catch(_){}
 }

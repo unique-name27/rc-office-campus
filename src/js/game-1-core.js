@@ -1,6 +1,6 @@
 /* ===================== game part 1: core (utils, renderer, styles, materials, instancing, sprites, models, fx, audio) ===================== */
 const $=id=>document.getElementById(id);
-function fatal(msg){const f=$("fatal");f.hidden=false;f.querySelector("p").textContent=msg;["bar","start","side","panel","mapwrap","speedo","help"].forEach(id=>{const e=$(id);if(e)e.style.display="none"})}
+function fatal(msg){const f=$("fatal");f.hidden=false;f.querySelector("p").textContent=msg;["bar","start","side","panel","mapwrap","speedo","help","fade"].forEach(id=>{const e=$(id);if(e)e.style.display="none"})}
 
 /* ---------- utils ---------- */
 const clamp=(v,a,b)=>v<a?a:v>b?b:v,lerp=(a,b,t)=>a+(b-a)*t,angDiff=(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a));
@@ -391,6 +391,10 @@ const SFX={
   whoosh:()=>hiss({type:"bandpass",f:280,to:900,dur:1.1,vol:.08,q:.9,atk:.25}),
   fanfare:()=>{[[523.25,0],[659.25,.11],[783.99,.22],[1046.5,.33]].forEach(([f,at],i)=>{note({type:"triangle",f,at,vol:.06,dur:i===3?.75:.3,lp:2600});note({f:f*2,at,vol:.018,dur:i===3?.6:.25})})},
   ding:()=>{bell(1174.66,0,.06,1.1);bell(880,.2,.06,1.4)},
+  // a coin: the classic quick step up to a bright high note
+  coin:()=>{bell(1318.5,0,.04,.25);bell(1975.5,.06,.045,.5)},
+  // a power-up box: a fast rising arpeggio
+  power:()=>{[[523.25,0],[783.99,.06],[1046.5,.12],[1567.98,.18]].forEach(([f,at])=>note({type:"triangle",f,at,vol:.05,dur:.16,lp:3200}));bell(2093,.24,.03,.6)},
   doors:()=>{hiss({f:420,to:200,dur:.55,vol:.045,brown:true,atk:.08});note({f:70,dur:.12,vol:.08,at:.5})},
   gate:()=>{note({f:988,to:1480,dur:.1,vol:.07,glide:.08});note({f:1480,dur:.2,vol:.05,at:.07})},
   jump:k=>k==="cat"?note({f:620,to:1150,dur:.12,vol:.045,glide:.1}):k==="dog"?note({type:"triangle",f:330,to:640,dur:.13,vol:.05,lp:2000}):note({f:250,to:560,dur:.16,vol:.05}),

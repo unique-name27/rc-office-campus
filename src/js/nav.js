@@ -16,6 +16,7 @@ const NAV = (() => {
   const EPS = 1e-6;
   const FAR = 1e6;         // m: obstacle coordinates/radii are clamped to this (nonsense data must not overflow)
   const SNAP_R = 4;       // m: endpoints in blocked cells snap to a free cell within this radius
+  const POCKET = 4;        // m^2: a closed-off island of passable cells this small is a rasterization sliver (between parked cars, behind a desk)
   const MAX_CELLS = 4e6;   // grid size guard (absurd plates / cell sizes get a coarser cell)
   const NEAR = 3;          // m: track() does a full scan when the near-hint projection is further off than this
   const AHEAD = 3;         // m: track().ahead look-ahead
@@ -299,11 +300,11 @@ const NAV = (() => {
     return out;
   }
 
-  // Cells an endpoint may start from: its own cell when passable (exact point kept), else passable cells
-  // within SNAP_R ordered free-before-tight, then by distance (cell index breaks ties).
-  function endpoints(G, x, z) {
+  // Cells an endpoint may start from: its own cell when passable (exact point kept), else (or with snap) passable
+  // cells within SNAP_R ordered free-before-tight, then by distance (cell index breaks ties).
+  function endpoints(G, x, z, snap) {
     const B = G.block, own = cellAt(G, x, z);
-    if (own >= 0 && B[own] !== 1) return [{ c: own, x, z, k: 0 }];
+    if (!snap && own >= 0 && B[own] !== 1) return [{ c: own, x, z, k: 0, own: true }];
     const { x0, z0, nx, nz, cell } = G, out = [];
     const i0 = Math.max(0, Math.floor((x - SNAP_R - x0) / cell)), i1 = Math.min(nx - 1, Math.floor((x + SNAP_R - x0) / cell));
     const j0 = Math.max(0, Math.floor((z - SNAP_R - z0) / cell)), j1 = Math.min(nz - 1, Math.floor((z + SNAP_R - z0) / cell));
@@ -325,17 +326,56 @@ const NAV = (() => {
     return L;
   }
 
+  // Nearest start candidate whose component also holds a goal candidate: [start, goal] or null.
+  function pairUp(comp, A, Bc) {
+    const goalIn = new Map();
+    for (const b of Bc) if (!goalIn.has(comp[b.c])) goalIn.set(comp[b.c], b);
+    for (const a of A) { const b = goalIn.get(comp[a.c]); if (b) return [a, b]; }
+    return null;
+  }
+  // Does the segment cross any routable obstacle (wall, desk top, parked car, chair post) of the grid's model?
+  // Exact shapes, no margin: a real sliver is closed only by the grid's inflation, so a clear line out exists.
+  function throughWall(G, ax, az, bx, bz) {
+    for (const b of G.model && Array.isArray(G.model.blocks) ? G.model.blocks : []) {
+      if (!isObj(b) || !((fin(b.m) ? b.m : 7) & 5) || !fin(b.x0) || !fin(b.x1) || !fin(b.z0) || !fin(b.z1)) continue;
+      let t0 = 0, t1 = 1;   // slab test
+      for (const [p, d, lo, hi] of [[ax, bx - ax, Math.min(b.x0, b.x1), Math.max(b.x0, b.x1)], [az, bz - az, Math.min(b.z0, b.z1), Math.max(b.z0, b.z1)]]) {
+        if (Math.abs(d) < EPS) { if (p < lo || p > hi) { t0 = 2; break; } continue; }
+        let u = (lo - p) / d, v = (hi - p) / d;
+        if (u > v) { const w = u; u = v; v = w; }
+        if (u > t0) t0 = u;
+        if (v < t1) t1 = v;
+        if (t0 > t1) break;
+      }
+      if (t0 <= t1) return true;
+    }
+    const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz;
+    for (const p of G.model && Array.isArray(G.model.posts) ? G.model.posts : []) {
+      if (!isObj(p) || !((fin(p.m) ? p.m : 7) & 5) || !fin(p.x) || !fin(p.z)) continue;
+      const t = L2 > EPS ? Math.min(1, Math.max(0, ((p.x - ax) * dx + (p.z - az) * dz) / L2)) : 0;
+      if (Math.hypot(ax + dx * t - p.x, az + dz * t - p.z) <= (fin(p.r) && p.r > 0 ? p.r : 0)) return true;
+    }
+    return false;
+  }
+
   function findPath(G, ax, az, bx, bz) {
     if (!isGrid(G) || !fin(ax) || !fin(az) || !fin(bx) || !fin(bz)) return null;
     const A = endpoints(G, ax, az), Bc = endpoints(G, bx, bz);
     if (!A.length || !Bc.length) return null;
     // Pick the nearest start candidate whose component also holds a goal candidate (so a snapped endpoint
     // never lands in a pocket the other end can't reach).
-    const comp = comps(G), goalIn = new Map();
-    for (const b of Bc) if (!goalIn.has(comp[b.c])) goalIn.set(comp[b.c], b);
-    let s = null, t = null;
-    for (const a of A) { const b = goalIn.get(comp[a.c]); if (b) { s = a; t = b; break; } }
-    if (!s) return null;
+    const comp = comps(G);
+    let pair = pairUp(comp, A, Bc);
+    if (!pair) {
+      // an endpoint standing in a tiny closed-off island snaps out like a blocked one, but never through an obstacle
+      // (a sealed room stays unreachable)
+      const area = l => { let n = 0; for (let k = 0; k < comp.length; k++) if (comp[k] === l) n++; return n * G.cell * G.cell; };
+      const out = (E, x, z) => E[0].own && area(comp[E[0].c]) <= POCKET ? endpoints(G, x, z, true).filter(c => !throughWall(G, x, z, c.x, c.z)) : E;
+      const A2 = out(A, ax, az), B2 = out(Bc, bx, bz);
+      if (A2 !== A || B2 !== Bc) pair = pairUp(comp, A2, B2);
+      if (!pair) return null;
+    }
+    const s = pair[0], t = pair[1];
     const cells = s.c === t.c ? [s.c] : astar(G, s.c, t.c);
     if (!cells) return null;
     const raw = pull(G, cells, s.x, s.z, t.x, t.z), pts = [raw[0]];

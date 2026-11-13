@@ -119,6 +119,11 @@ test('csv: bytes in (UTF-16 "Unicode text", Windows-1252, UTF-8)', () => {
   const cp = Uint8Array.from([...Buffer.from('Name,Team\nJos'), 0xE9, ...Buffer.from(',Lab\n')]);
   assert.strictEqual(IMPORT.parseCSV(cp.buffer).rows[0][0], 'Jos\u00E9');
   assert.strictEqual(IMPORT.parseCSV(Buffer.from('Name,Team\nRen\u00E9e,Lab\n', 'utf8')).rows[0][0], 'Ren\u00E9e');
+  // UTF-8 BOM wins over one stray Windows-1252 byte: header intact, only that byte is lost
+  const mixed = Buffer.concat([Buffer.from('\uFEFFBuilding,Name\r\nB1,Zo\u00EB M\u00FCller\r\n', 'utf8'), Buffer.from('B1,Jos\u00E9 Ruiz\r\n', 'latin1')]);
+  const pm = IMPORT.parseCSV(new Uint8Array(mixed));
+  assert.deepStrictEqual(pm.header, ['Building', 'Name']);
+  assert.deepStrictEqual(pm.rows.map(r => r[1]), ['Zo\u00EB M\u00FCller', 'Jos\uFFFD Ruiz']);
   // UTF-16 that was read as 8-bit text (NULs between letters)
   const garbled = '\uFFFD\uFFFD' + 'Name\tTeam\r\nAna\tLab\r\n'.split('').join('\u0000') + '\u0000';
   assert.deepStrictEqual(IMPORT.parseCSV(garbled).rows, [['Ana', 'Lab']]);
@@ -170,6 +175,16 @@ test('map: case, spacing, punctuation, camelCase, underscores', () => {
   const r = named(['FirstName', 'LAST_NAME', 'DeskID', 'Bldg.', ' floor  no ', 'posX', 'POS_Y', 'Dept', 'Desk #']);
   assert.deepStrictEqual(r.named, { building: 'Bldg.', floor: ' floor  no ', desk: 'DeskID', first: 'FirstName', last: 'LAST_NAME', team: 'Dept', x: 'posX', y: 'POS_Y' });
   assert.deepStrictEqual(named(['X Coordinate (ft)', 'Y Coordinate (ft)', 'Angle (deg)']).named, { x: 'X Coordinate (ft)', y: 'Y Coordinate (ft)', rot: 'Angle (deg)' });
+});
+test('normalize: a rotation column in radians is stored in degrees', () => {
+  for (const h of ['Rotation (rad)', 'Angle Radians', 'AngleRad', 'Rotation_Radian']){
+    const res = csvLoad('Building,Floor,Desk,Name,X,Y,' + h + '\nB1,1,1-1,Ada Example,0,0,3.14159265\nB1,1,1-2,Sam Sample,1,0,-1.5707963\n');
+    assert.deepStrictEqual(res.floors['B1-1'].map(e => Math.round(e.rot * 1e4) / 1e4), [180, -90], h);
+  }
+  for (const h of ['Rotation', 'Angle (deg)', 'Rotation (degrees)'])
+    assert.strictEqual(csvLoad('Building,Floor,Desk,Name,X,Y,' + h + '\nB1,1,1-1,Ada Example,0,0,90\n').floors['B1-1'][0].rot, 90, h);
+  const p = IMPORT.parseCSV('Building,Floor,Desk,Name,X,Y,Radial\nB1,1,1-1,Ada Example,0,0,90\n');   // column picked by hand
+  assert.strictEqual(IMPORT.normalize(p, Object.assign(IMPORT.mapColumns(p.header).map, { rot: 6 }), CAMPUS).floors['B1-1'][0].rot, 90);
 });
 test('map: privacy - look-alike columns are never picked up', () => {
   const r = named(['Name', 'Manager Name', 'Job Level', 'Space Type', 'Employee ID', 'Emergency Contact Name', 'Floor Warden', 'Team Lead', 'Job Code']);
@@ -319,10 +334,34 @@ test('normalize: emails become names (never stored), ID numbers are not names', 
   assert.deepStrictEqual(res.floors['B1-1'].map(e => e.name), ['Priya Shah', 'Ken Ito']);
   assert.ok(!JSON.stringify(res.floors).includes('@'), 'no email kept anywhere');
   assert.deepStrictEqual(res.problems.map(p => p.row), [2, 3]);
-  assert.match(res.problems[0].msg, /2 names were email addresses/);
+  assert.match(res.problems[0].msg, /2 names had email addresses in them/);
   assert.match(res.problems[1].msg, /2 names look like an ID number, not a name \(for example "10023"\)/);
   assert.strictEqual(res.stats.skipped, 2);
   assert.strictEqual(res.stats.blank, 1);
+});
+test('normalize: an email next to the name is dropped, the name kept', () => {
+  const res = csvLoad('Building,Floor,Desk,Name,First,Last\n' +
+    'B1,1,1-1,Ada Example <ada.example@corp.example>,,\n' +
+    'B1,1,1-2,"Sample, Sam <sam.sample@corp.example>",,\n' +
+    'B1,1,1-3,Pat (pat@corp.example),,\n' +
+    'B1,1,1-4,"Placeholder, Kim, kim.p@corp.example",,\n' +
+    'B1,1,1-5,"""Bo Demo"" <mailto:bo.demo@corp.example>",,\n' +
+    'B1,1,1-6,<ann.ok@corp.example>,,\n' +
+    'B1,1,1-7,,Lee,Test <lee.test@corp.example>\n' +
+    'B1,1,1-8,"Shah, Priya (priya@corp.example)",,\n' +
+    'B1,1,1-9,Ann @ Lab,,\n' +
+    'B1,1,1-10,Ken Ito (Contractor),,\n' +
+    'B1,1,1-11,Max Sample | max@corp.example,,\n' +
+    'B1,1,1-12,Uma Test - uma@corp.example,,\n' +
+    'B1,1,1-13,dee.demo@corp.example (Dee Demo),,\n' +
+    'B1,1,1-14,<mailto: joe.sample@corp.example>,,\n' +
+    'B1,1,1-15,Ray (works @ HQ),,\n');
+  assert.deepStrictEqual(res.floors['B1-1'].map(e => e.name),
+    ['Ada Example', 'Sam Sample', 'Pat', 'Kim Placeholder', 'Bo Demo', 'Ann Ok', 'Lee Test', 'Priya Shah', 'Ann @ Lab', 'Ken Ito (Contractor)',
+     'Max Sample', 'Uma Test', 'Dee Demo', 'Joe Sample', 'Ray (works @ HQ)']);
+  assert.ok(!JSON.stringify(res.floors).replace('Ann @ Lab', '').replace('Ray (works @ HQ)', '').includes('@'), 'no email kept anywhere');
+  assert.strictEqual(res.problems.length, 1);
+  assert.match(res.problems[0].msg, /^12 names had email addresses in them/);
 });
 test('normalize: open desk and person at the same desk -> person keeps the X/Y', () => {
   const res = csvLoad('Building,Floor,Desk,Name,Team,Title,X,Y\nB1,3,3-200,Vacant,,,5,6\nB1,3,3-200,Ken Ito,Finance,Analyst,,\nB1,3,3-201,Open,,,7,8\nB1,3,3-201,Open,,,7,8\n');
@@ -335,6 +374,16 @@ test('normalize: duplicates across floors match on case, accents and spacing', (
   assert.deepStrictEqual(Object.keys(res.floors), ['B1-1', 'B2-4']);
   assert.strictEqual(res.floors['B2-4'].length, 1);
   assert.deepStrictEqual(res.problems.map(p => p.row), [3]);
+});
+test('nameKey: Latin accents fold, other scripts keep their vowel signs and dakuten', () => {
+  const k = IMPORT.nameKey;
+  for (const [a, b] of [['José García', 'jose garcia'], ['Zoë', 'Zoe'], ['Nguyễn Văn', 'nguyen van'], ['O’Brien, Pat', 'obrien pat'],
+    ['José', 'José'], ['ｶﾞｷ', 'ガキ'], ['Ann ❤️ Lee', 'ann lee']]) assert.strictEqual(k(a), k(b), a + ' = ' + b);
+  for (const [a, b] of [['राजू शर्मा', 'राजा शर्मा'], ['रवि', 'रव'],
+    ['ゆうご', 'ゆうこ'], ['ガキ', 'ガギ'], ['สมชาย', 'สมชาย่']]) assert.notStrictEqual(k(a), k(b), a + ' != ' + b);
+  const res = csvLoad('Building,Floor,Desk,Name\nB1,1,1-1,राजू शर्मा\nB1,1,1-2,राजा शर्मा\n');
+  assert.strictEqual(res.floors['B1-1'].length, 2);
+  assert.deepStrictEqual(res.problems, []);
 });
 test('normalize: numbers with thousands separators and decimal commas', () => {
   const semi = csvLoad('Building;Floor;Desk;Name;X;Y\nB1;3;3-1;A B;1234,5;-0,5\nB1;3;3-2;C D;1.234,5;2\nB1;3;3-3;E F;1,234;3\n');
@@ -661,8 +710,9 @@ testAsync('renderPDF: page 1 -> PNG with long side 4096 px, capped at 16M px (mo
     return c;
   } };
   const fakePdf = (w, h, opts = {}) => ({
-    getDocument({ data }){
+    getDocument({ data, isEvalSupported }){
       assert.ok(data instanceof Uint8Array && data.length === 4);
+      assert.strictEqual(isEvalSupported, false, 'pdf.js eval off (CVE-2024-4367)');
       if (opts.fail) return { promise: Promise.reject(Object.assign(new Error('pw'), { name: 'PasswordException' })) };
       return { promise: Promise.resolve({ destroy(){ opts.destroyed = true; },
         getPage(n){ assert.strictEqual(n, 1); return Promise.resolve({

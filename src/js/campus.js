@@ -655,13 +655,14 @@ const CAMPUS=(()=>{
   function sampleSeat(spec,rows){
     if(!spec||!Array.isArray(spec.desks)||!spec.desks.length||!Array.isArray(rows))return rows||[];
     if(Array.isArray(spec.zones)&&spec.zones.length)return rows;   // zones too: LAYOUT seats people in their team's area
+    const cmp=new Intl.Collator("en").compare;   // a fixed locale, so every viewer seats the sample people the same way
     const desks=spec.desks.filter(d=>d&&d.id&&isFinite(d.x)&&isFinite(d.z)&&d.arr!=="hot").slice()
-      .sort((a,b)=>Math.round(a.x)-Math.round(b.x)||a.z-b.z||String(a.id).localeCompare(String(b.id)));
+      .sort((a,b)=>Math.round(a.x)-Math.round(b.x)||a.z-b.z||cmp(String(a.id),String(b.id)));
     if(!desks.length)return rows;
     const own=new Set(spec.desks.map(d=>d&&String(d.id)));
     if(rows.length&&rows.every(r=>r&&own.has(String(r.desk))))return rows;   // already seated at this floor's desks
     const open=new Set();desks.forEach((d,i)=>{if(i%8===5)open.add(d)});
-    const seats=desks.filter(d=>!open.has(d)),people=rows.slice().sort((a,b)=>String(a.team).localeCompare(String(b.team))||String(a.name).localeCompare(String(b.name)));
+    const seats=desks.filter(d=>!open.has(d)),people=rows.slice().sort((a,b)=>cmp(String(a.team),String(b.team))||cmp(String(a.name),String(b.name)));
     return people.slice(0,seats.length).map((p,i)=>({desk:String(seats[i].id),name:p.name,team:p.team,title:p.title}));
   }
 

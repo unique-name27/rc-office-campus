@@ -250,6 +250,33 @@ test('history: cap of 100 and coalescing keys', () => {
   g.record('e'); g.record('f');
   assert.equal(g.size().past, 4);
 });
+test('reselect: undo/redo keep the selection on the same item, not the same index', () => {
+  const A = [0, 0, 1, 0], B = [0, 5, 1, 5], C = [0, 9, 1, 9], sp = walls => ({ walls, glass: [], rooms: [], zones: [], desks: [] });
+  // delete A, select C (index 1), undo brings A back at 0: C is now index 2, not B
+  assert.deepEqual(T.reselect(sp([B, C]), sp([A, B, C]), { kind: 'wall', i: 1 }), { kind: 'wall', i: 2 });
+  // redo the delete: C slides back to 1
+  assert.deepEqual(T.reselect(sp([A, B, C]), sp([B, C]), { kind: 'wall', i: 2 }), { kind: 'wall', i: 1 });
+  // undoing a nudge of the selected item (same length, item changed) keeps the index
+  assert.deepEqual(T.reselect(sp([A, [0, 5.25, 1, 5.25], C]), sp([A, B, C]), { kind: 'wall', i: 1 }), { kind: 'wall', i: 1 });
+  // the selected item itself is gone (undo of its duplicate / creation) -> nothing selected
+  assert.equal(T.reselect(sp([A, B, C]), sp([A, B]), { kind: 'wall', i: 2 }), null);
+  // an edit to another list leaves the index alone; an append after it too
+  const s1 = sp([A, B]), s2 = Object.assign(sp([A, B]), { desks: [{ id: 'd1', x: 0, z: 0 }] });
+  assert.deepEqual(T.reselect(s1, s2, { kind: 'wall', i: 1 }), { kind: 'wall', i: 1 });
+  assert.deepEqual(T.reselect(sp([A, B]), sp([A, B, C]), { kind: 'wall', i: 0 }), { kind: 'wall', i: 0 });
+  // junk never throws
+  assert.equal(T.reselect(null, null, null), null);
+  assert.equal(T.reselect(sp([A]), sp([A]), { kind: 'nope', i: 0 }), null);
+  assert.equal(T.reselect(sp([A]), {}, { kind: 'wall', i: 0 }), null);
+  // with the real history, as the editor uses it: delete A, pick C, undo, delete the selection -> C goes
+  const h = T.createHistory(), json = s => JSON.stringify(s);
+  let spec = sp([A, B, C]), sel;
+  h.record(json(spec)); spec = sp([B, C]);
+  sel = { kind: 'wall', i: 1 };
+  const old = spec; spec = JSON.parse(h.undo(json(spec))); sel = T.reselect(old, spec, sel);
+  spec.walls.splice(sel.i, 1);
+  assert.deepEqual(spec.walls, [A, B]);
+});
 
 // ---------------------------------------------------------------- validation
 const base = () => ({ v: 1, key: 'B1-3', b: 'B1', f: 3, w: 40, d: 30, door: null, plan: null, walls: [], glass: [],

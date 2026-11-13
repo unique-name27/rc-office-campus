@@ -26,7 +26,7 @@ addEventListener("keydown",e=>{
   audio();
   if(!$("setup").hidden){if(e.key==="Escape"&&!$("dlg")){closeSetup()}return}
   if(e.key==="/"&&!typing()){e.preventDefault();openFind();return}
-  if(e.key==="Escape"){if(typing()){document.activeElement.blur();return}if(!$("mePop").hidden){closeMe();return}if(!$("stylePop").hidden){closeStyle();return}if($("panel").classList.contains("open")){closeFind();return}if(!$("result").hidden){closeResult();return}if(elevAt){elevDismissed=elevAt.id;hideElev();return}if(mode!=="overview"&&!fly&&!trans){setOpts(!optsOpen);return}}
+  if(e.key==="Escape"){if(typing()){document.activeElement.blur();return}if(!$("mePop").hidden){closeMe();return}if($("panel").classList.contains("open")){closeFind();return}if(!$("result").hidden){closeResult();return}if(elevAt){elevDismissed=elevAt.id;hideElev();return}if(mode!=="overview"&&!fly&&!trans){setOpts(!optsOpen);return}}
   if(typing())return;
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   const tag=document.activeElement&&document.activeElement.tagName;
@@ -34,24 +34,20 @@ addEventListener("keydown",e=>{
   keys[e.code]=true;
   if(tour&&/^(Key[WASD]|Arrow)/.test(e.code))tour=null;
   if(e.repeat)return;
-  if(/^Digit[0-9]$/.test(e.code)){const n=+e.code.slice(5);if(elevAt){const b=bldgOfKey(WKEY);if(b&&n>=1&&n<=b.floors)ride(n);return}if(n>=1&&n<=ST.length)applyStyle(n-1);return}
+  if(/^Digit[0-9]$/.test(e.code)){const n=+e.code.slice(5);if(elevAt){const b=bldgOfKey(WKEY);if(b&&n>=1&&n<=b.floors)ride(n)}return}
   switch(e.code){
     case"KeyO":overviewKey();break;
     case"KeyC":if(fly||trans)break;if(mode==="overview")flyTo(WKIND==="floor"?"walk":"drive",2.2);else flyTo(mode==="walk"?"drive":"walk",1.1);break;
     case"KeyV":if(mode==="drive")cycleCam();break;
-    case"KeyN":applyStyle(cur===1?(prevStyle!=null?prevStyle:0):1);break;
     case"KeyM":setMuted(!muted);toast(muted?"Sound off":"Sound on");break;
     case"KeyH":if(mode==="drive")honk();break;
-    case"KeyR":if(brawl){toast("No restarts mid-brawl: press B to leave it.");break}if(mode==="drive"&&!fly&&!trans){if(run)runStart();else if(race)startRace(race.dest);else{const s=WM.spawn||{x:0,z:0,a:0};spawnNear(s.x,s.z,s.a||0);toast("Back at the start")}}break;
+    case"KeyR":if(mode==="drive"&&!fly&&!trans){if(run)runStart();else if(race)startRace(race.dest);else{const s=WM.spawn||{x:0,z:0,a:0};spawnNear(s.x,s.z,s.a||0);toast("Back at the start")}}break;
     case"KeyT":tidyChairs();toast("Chairs tidied");break;
     case"KeyX":if(route||target){clearRoute();toast("Route cleared")}break;
     case"KeyJ":if(mode==="drive"&&!fly&&!trans)me.jumpReq=true;break;
     case"Space":if(mode==="drive"&&!fly&&!trans&&me.kind!=="car")me.jumpReq=true;break;
     case"KeyY":joinRace();break;
     case"KeyP":cycleAvatar();break;
-    case"KeyB":if(!fly&&!trans)brawlToggle();break;
-    case"KeyF":if(brawl)brawlUse(!!(keys.KeyS||keys.ArrowDown));break;
-    case"KeyG":if(brawl)brawlUse(true);break;
     case"KeyL":openMyLook();break;
     case"Enter":if(elevAt&&tag!=="BUTTON"){const f=routeNextFloor();if(f){ride(f);break}}if(mode==="drive"&&!fly&&tag!=="BUTTON"){if(run)runCancel("Coffee run cancelled");else if(race)raceCancel("Race cancelled");else runStart()}break;
   }
@@ -122,45 +118,44 @@ PEDALS.forEach(([id,k])=>{const b=$(id);
   b.addEventListener("pointerdown",on);b.addEventListener("pointerup",off);b.addEventListener("pointercancel",off);b.addEventListener("contextmenu",e=>e.preventDefault())});
 $("pHorn").addEventListener("pointerdown",e=>{e.preventDefault();audio();honk()});
 
-/* ---------- styles: apply + UI ---------- */
-let prevStyle=null;
-function styleUI(i){
+/* ---------- the look ---------- */
+// One look for everyone: Studio (ST[0]), at the Low quality level (HD keeps it there). applyStyle stays for the bake tools.
+function styleUI(){
   const root_=document.documentElement;root_.dataset.theme=S.ui;root_.style.setProperty("--ground",S.bg);root_.style.setProperty("--accent",S.acc);root_.style.setProperty("--on-accent",(()=>{const a=lum(S.acc),d=lum("#14161f");return(a+.05)/(d+.05)>1.05/(a+.05)?"#14161f":"#ffffff"})());
   $("scan").hidden=!S.scan;$("vig").hidden=!S.vignette;
   renderer.toneMapping=S.tone?THREE.NeutralToneMapping:THREE.NoToneMapping;renderer.toneMappingExposure=S.exposure||1;
   cv.style.filter=S.glowCss||"";
-  document.querySelectorAll(".chip[data-i]").forEach(c=>c.setAttribute("aria-pressed",String(+c.dataset.i===i)));
-  $("styleName").textContent=S.n;$("styleDescA").textContent=$("styleDescB").textContent=S.d;store.set("rc-style",String(i));store.set("rc-style-v","3");
 }
 function applyStyle(i){
-  if(i===cur&&root)return;if(i!==1&&cur!==1)prevStyle=null;if(i===1&&cur!==1)prevStyle=cur;
+  if(i===cur&&root)return;
   clearRoot();S=ST[i];cur=i;buildWorld();buildCars();fxRestyle();rebuildTags();restoreCups();
   setTarget(target);routeVisuals(true);updateGates();
-  styleUI(i);
+  styleUI();
   HD.restyle();drawMapBase();labelsClear();
   if(markerTag){disposeSprite(markerTag);markerTag=null;markerFor=-1}
+  Promise.resolve().then(coverStyle); // by now a bake already in memory has applied; one still on its way switches on behind the fade
 }
-// quality levels (Studio only): Auto measures the GPU and steps down or back up; the others fix a level
-[["auto","Auto"],["0","High"],["1","Balanced"],["2","Low"]].forEach(([q,n])=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.q=q;b.textContent=n;b.setAttribute("role","radio");b.onclick=()=>HD.setQuality(q);$("quality").appendChild(b)});
-$("quality").addEventListener("keydown",e=>{if(!/Arrow(Left|Right)/.test(e.key))return;e.preventDefault();e.stopPropagation();const bs=[...$("quality").querySelectorAll(".chip")],i=bs.findIndex(b=>b.getAttribute("aria-checked")==="true"),n=bs[(i+(e.key==="ArrowRight"?1:-1)+bs.length)%bs.length];n.focus();n.click()});
-["chipsA","chipsB"].forEach(id=>{const box=$(id);ST.forEach((s,i)=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.i=i;b.textContent=(i+1)+". "+s.n;b.setAttribute("aria-pressed","false");b.onclick=()=>applyStyle(i);box.appendChild(b)})});
-function openStyle(){closeMe();$("stylePop").hidden=false;HD.qUI();$("bStyle").setAttribute("aria-expanded","true");const p=$("stylePop").querySelector('.chip[aria-pressed="true"]');(p||$("styleClose")).focus()}
-function closeStyle(){$("stylePop").hidden=true;$("bStyle").setAttribute("aria-expanded","false")}
-$("bStyle").onclick=()=>{$("stylePop").hidden?openStyle():closeStyle()};
-$("styleClose").onclick=closeStyle;
+// a switch to Studio whose baked light isn't in memory yet (a visit that started in another style): cover it like a floor change,
+// so the light and every shader switch unseen (frame() doesn't draw meanwhile); after 0.9 s it stays realtime for this visit
+let styleCov=null;
+function coverStyle(){
+  const fd=$("fade");if(!BAKE.loading||trans||(fd.dataset.on==="1"&&!styleCov))return; // nothing on the way, or the boot cover / a floor change has it
+  const tok=styleCov={};$("fadeT").textContent=S.n;fd.dataset.on="1";
+  Promise.race([BAKE.ready(),sleep(900)]).then(()=>{if(styleCov===tok)BAKE.reveal()}).then(()=>sleep(160))
+    .then(()=>{if(styleCov!==tok)return;styleCov=null;if(!trans)fd.dataset.on="0"});
+}
 const swatches=()=>me.kind==="car"?PAINTS:COATS[me.kind];
-function setPaint(p){paint=p;me.paint=p;store.set(me.kind==="car"?"rc-paint":"rc-coat-"+me.kind,p);if(root){dropVis(me.vis);me.vis=makeAvatar(me.kind,p)}if(meTag){disposeSprite(meTag);meTag=tagSprite(myName||"You",p);tags.add(meTag)}document.querySelectorAll("#paints .sw").forEach(s=>s.setAttribute("aria-checked",String(s.dataset.p===p)));$("paintName").textContent=(swatches().find(x=>x[0]===p)||[0,""])[1];presDirty=true}
-function renderSwatches(){const box=$("paints");box.innerHTML="";box.setAttribute("aria-label",me.kind==="car"?"Car paint":"Coat color");$("paintLbl").textContent=me.kind==="car"?"Paint":"Coat";
-  swatches().forEach(([p,n])=>{const b=document.createElement("button");b.type="button";b.className="sw";b.style.background=p;b.dataset.p=p;b.setAttribute("role","radio");b.setAttribute("aria-label",n);b.onclick=()=>setPaint(p);box.appendChild(b)})}
-$("paints").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const L=swatches(),i=L.findIndex(x=>x[0]===paint),n=(i+(/Right|Down/.test(e.key)?1:-1)+L.length)%L.length;setPaint(L[n][0]);$("paints").children[n].focus()});
+function setPaint(p){paint=p;me.paint=p;store.set(me.kind==="car"?"rc-paint":"rc-coat-"+me.kind,p);if(root){dropVis(me.vis);me.vis=makeAvatar(me.kind,p)}if(meTag){disposeSprite(meTag);meTag=tagSprite(myName||"You",p);tags.add(meTag)}
+  const b=$("paintB"),n=(swatches().find(x=>x[0]===p)||[0,""])[1];b.firstChild.style.background=p;b.title=`${me.kind==="car"?"Paint":"Coat"}: ${n}. Press for the next color`;b.setAttribute("aria-label",b.title);presDirty=true}
+// one swatch beside the car, dog and cat: each press is the next color
+$("paintB").onclick=()=>{const L=swatches(),i=L.findIndex(x=>x[0]===paint);setPaint(L[(i+1)%L.length][0])};
 // play as an RC car, a dog or a cat
 function setAvatar(av){
   if(!AV_KINDS.has(av))av="car";me.kind=av;store.set("rc-av",av);makeRoomFor(av);document.body.classList.toggle("animal",av!=="car");
-  document.querySelectorAll("#avChips .chip").forEach(c=>c.setAttribute("aria-checked",String(c.dataset.av===av)));
-  $("avName").textContent=(AVATARS.find(x=>x[0]===av)||[0,""])[1];
+  document.querySelectorAll("#avChips .chip[data-av]").forEach(c=>c.setAttribute("aria-checked",String(c.dataset.av===av)));
   $("pBoost").textContent=av==="car"?"Boost":"Sprint";$("pHorn").textContent=av==="dog"?"Woof":av==="cat"?"Meow":"Horn";$("pJump").textContent=av==="cat"?"Jump ×2":"Jump";
   $("tSkillTag").textContent=SKILL_TAG[av];me.drift=false;me.driftTier=0;me.driftT=0;me.turboPend=0;me.turboT=0;me.flipT=0;me.woofT=0;me.woofReq=false;me.airJumps=me.air?1:0;
-  renderSwatches();const L=swatches(),saved=store.get(av==="car"?"rc-paint":"rc-coat-"+av);setPaint(L.some(x=>x[0]===saved)?saved:L.some(x=>x[0]===paint)?paint:L[0][0]);
+  const L=swatches(),saved=store.get(av==="car"?"rc-paint":"rc-coat-"+av);setPaint(L.some(x=>x[0]===saved)?saved:L.some(x=>x[0]===paint)?paint:L[0][0]);
   $("bCam").innerHTML=camName(camMode)+' <kbd>V</kbd>';setHelp();
   renderBoard();
   const nx=AV_WHO[AV_NEXT[av]],b=$("bAv");b.innerHTML=AV_LBL[av]+' <kbd>P</kbd>';b.title=`Switch to the ${nx} (P)`;b.setAttribute("aria-label",`Playing as the ${AV_WHO[av]}. Switch to the ${nx}`);
@@ -179,16 +174,15 @@ function pickAvatar(next){
   if(mode==="drive")for(let k=0;k<6;k++)puff(me.x+(Math.random()-.5)*.3,me.y+.05,me.z+(Math.random()-.5)*.3,"#ffffff");
 }
 $("bAv").onclick=()=>cycleAvatar();
-AVATARS.forEach(([k,n])=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.av=k;b.textContent=n;b.setAttribute("role","radio");b.setAttribute("aria-checked","false");b.onclick=()=>{if(mode==="overview")setAvatar(k);else pickAvatar(k)};$("avChips").appendChild(b)});
-$("avChips").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key))return;e.preventDefault();e.stopPropagation();const i=AVATARS.findIndex(x=>x[0]===me.kind),n=(i+(/Right|Down/.test(e.key)?1:-1)+AVATARS.length)%AVATARS.length;if(mode==="overview")setAvatar(AVATARS[n][0]);else pickAvatar(AVATARS[n][0]);$("avChips").children[AVATARS.findIndex(x=>x[0]===me.kind)].focus()});
+const AV_ICON={car:"🏎️",dog:"🐶",cat:"🐱"};
+AVATARS.forEach(([k,n])=>{const b=document.createElement("button");b.type="button";b.className="chip";b.dataset.av=k;const ic=document.createElement("span");ic.className="ai";ic.setAttribute("aria-hidden","true");ic.textContent=AV_ICON[k]||"";b.append(ic,n);b.setAttribute("role","radio");b.setAttribute("aria-checked","false");b.onclick=()=>{if(mode==="overview")setAvatar(k);else pickAvatar(k)};$("avChips").appendChild(b)});
+$("avChips").addEventListener("keydown",e=>{if(!/Arrow(Left|Right|Up|Down)/.test(e.key)||!e.target.closest(".chip[data-av]"))return;e.preventDefault();e.stopPropagation();const i=AVATARS.findIndex(x=>x[0]===me.kind),n=(i+(/Right|Down/.test(e.key)?1:-1)+AVATARS.length)%AVATARS.length;if(mode==="overview")setAvatar(AVATARS[n][0]);else pickAvatar(AVATARS[n][0]);$("avChips").querySelector(`.chip[data-av="${me.kind}"]`).focus()});
 {const pj=$("pJump"),off=()=>{tc.jump=false;pj.dataset.on="0"};
   pj.addEventListener("pointerdown",e=>{e.preventDefault();audio();if(mode!=="drive")return;me.jumpReq=true;tc.jump=true;pj.dataset.on="1";try{pj.setPointerCapture(e.pointerId)}catch(_){}});
   pj.addEventListener("pointerup",off);pj.addEventListener("pointercancel",off);pj.addEventListener("lostpointercapture",off);pj.addEventListener("contextmenu",e=>e.preventDefault())}
-$("go").onclick=()=>{if(camMode==="top")setCam("chase");flyTo("drive",2.4)};
-$("goTop").onclick=()=>{camMode="top";$("bCam").innerHTML=camName("top")+' <kbd>V</kbd>';$("joyHint").textContent="Drive";flyTo("drive",2.2)};
-$("goWalk").onclick=()=>flyTo("walk",2.4);
+$("go").onclick=()=>{if(mode==="overview"){if(!fly&&!trans){if(camMode==="top")setCam("chase");flyTo("drive",2.4)}}else setOpts(false)};
 $("bOver").onclick=()=>{if(!fly&&!trans)flyTo("overview")};
-$("bUp").onclick=$("bUp2").onclick=()=>{if(!fly&&!trans)goCampus()};
+$("bUp").onclick=()=>{if(!fly&&!trans)goCampus()};
 $("bSwap").onclick=()=>{if(!fly&&!trans)flyTo(mode==="walk"?"drive":"walk",1.1)};
 $("bCam").onclick=cycleCam;
 $("bar").addEventListener("click",e=>{const b=e.target.closest("button");if(b&&e.detail>0&&document.activeElement===b)b.blur()});
@@ -198,13 +192,13 @@ $("bRun").onclick=()=>{if(run)runCancel("Coffee run cancelled");else runStart()}
 let optsOpen=true;
 function setOpts(on){optsOpen=!!on;document.body.dataset.opts=optsOpen?"1":"0";$("bOpts").setAttribute("aria-expanded",String(optsOpen));if(!optsOpen&&$("start").contains(document.activeElement))document.activeElement.blur()}
 $("bOpts").onclick=()=>{if($("panel").classList.contains("open")){closeFind();setOpts(true)}else setOpts(!optsOpen)};
-$("optsHide").onclick=$("optsGo").onclick=()=>setOpts(false);
+$("optsHide").onclick=()=>setOpts(false);
 $("start").addEventListener("click",e=>{const b=e.target.closest("button");if(b&&e.detail>0&&mode!=="overview"&&document.activeElement===b)b.blur()});
 // from the options card: straight to a floor's lobby or outside, staying in the driver's seat (or on foot)
-function jumpTo(k){
+function jumpTo(k,m){
   if(trans||k===WKEY)return;
   const camp=k==="campus",p=camp?null:CAMPUS.parseKey(k),b=p&&bldg(p.b);
-  goWorld(k,{mode,title:camp?"Outside":(b?b.name:floorName(k)),sub:camp?(DATA.campus.name||"Campus"):"Floor "+p.f}).then(ok=>{
+  goWorld(k,{mode:m||mode,title:camp?"Outside":(b?b.name:floorName(k)),sub:camp?(DATA.campus.name||"Campus"):"Floor "+p.f}).then(ok=>{
     if(ok&&!camp){const m=modelFor(k),n=m&&m.stats&&m.stats.occupied;toast(floorName(k)+(n?" · "+plural(n,"person","people"):""))}});
 }
 // the game opens in the driver's seat: a short swoop down onto your car, with the options card open beside it
@@ -219,8 +213,6 @@ $("bTimes").onclick=()=>{const o=$("side").classList.toggle("open");$("bTimes").
 document.addEventListener("pointerdown",()=>audio(),{once:true});
 
 /* ---------- start card, brand, building + floor pickers ---------- */
-// counts from the seating lists (cheap: no floor models needed for the campus card)
-function campusStats(){let people=0;for(const k of floorKeys())people+=(DATA.rosters[k]||[]).length;return{people}}
 function updateBrand(){
   $("brandT").textContent=WKIND==="campus"?(DATA.campus.name||"Campus"):floorName(WKEY);
   $("brandS").textContent=WKIND==="campus"?"RC office":(WM.stats?plural(WM.stats.occupied||0,"person","people"):"RC office");
@@ -228,59 +220,71 @@ function updateBrand(){
 }
 function renderStart(){
   if(!DATA)return;
-  const camp=WKIND==="campus",c=DATA.campus,live=mode!=="overview";
-  $("goWalk").textContent=camp?"Walk around":"Walk the floor";$("optsGo").textContent=mode==="walk"?"Walk":"Drive";
-  $("bldgs").hidden=!live&&!camp;
+  const camp=WKIND==="campus";
   $("myDesk").hidden=$("myLook").hidden=!myDesk;
   $("bSetup").hidden=$("bSetup2").hidden=!canSetup;
   const ban=$("banner");ban.hidden=!DATA.demo;ban.textContent=canSetup?"These are sample people. Load your real seating in Set up.":"These are sample people until the page owner loads real seating.";
-  if(camp){
-    const st=campusStats(),nf=floorKeys().length;
-    $("stKick").textContent=`${c.name||"Campus"} · ${plural(c.buildings.length,"building")} · ${plural(nf,"floor")} · ${nf_(st.people)} people`;
-    $("startH").textContent="Drive the campus";
-    $("stP").textContent="Pick a floor to look around, or take the wheel outside and drive in through a front door. Everyone who opens this page drives here too.";
-    const box=$("bldgs");box.innerHTML="";
-    for(const b of c.buildings){
-      const el=document.createElement("div");el.className="bl";
-      const n=document.createElement("div");n.className="bn";n.textContent=b.name;
-      const fl=document.createElement("div");fl.className="fls";fl.setAttribute("role","group");fl.setAttribute("aria-label",b.name+" floors");
-      let ppl=0;const teams=new Set();
-      for(let f=1;f<=b.floors;f++){const k=CAMPUS.key(b.id,f),ro=DATA.rosters[k]||[];ppl+=ro.length;ro.forEach(p=>p.team&&teams.add(p.team));
-        const btn=document.createElement("button");btn.type="button";btn.className="fl";btn.textContent=f+"F";btn.title=`${b.name} · Floor ${f}`;btn.setAttribute("aria-label",`${b.name}, floor ${f}`+(myDesk&&myDesk.w===k?" (your desk)":""));if(myDesk&&myDesk.w===k){const y=document.createElement("span");y.className="you";y.textContent="you";btn.appendChild(y)}btn.onclick=()=>goFloor(k);fl.appendChild(btn)}
-      const s=document.createElement("div");s.className="bs";const tl=[...teams];s.textContent=`${nf_(ppl)} people · ${tl.slice(0,3).join(", ")}${tl.length>3?` +${tl.length-3} more`:""}`;
-      el.append(n,fl,s);box.appendChild(el);
-    }
-    $("ovKeys").textContent="Drag to spin · scroll to zoom · click a building to open a floor";
-    if(live)renderGoTo();
-  }else{
-    if(live)renderGoTo();
-    const p=CAMPUS.parseKey(WKEY),b=bldg(p.b),st=WM.stats||{};
-    $("stKick").textContent=`${b.name} · Floor ${p.f} · ${nf_(st.occupied||0)} people · ${nf_(st.desks||0)} desks`;
-    $("startH").textContent=`${b.short||b.name} · Floor ${p.f}`;
-    const tl=(WM.teams||[]).filter(t=>t.team).sort((x,y)=>y.count-x.count).map(t=>t.team);
-    $("stP").textContent=tl.length?(tl.length===1?tl[0]+" sits here.":tl.slice(0,-1).join(", ")+" and "+tl[tl.length-1]+" sit here.")+" Take the elevator to other floors, or drive out the front door on floor 1.":"Nobody sits on this floor yet.";
-    const fc=$("flChips");fc.innerHTML="";for(let f=1;f<=b.floors;f++){const k=CAMPUS.key(b.id,f),btn=document.createElement("button");btn.type="button";btn.className="fl";btn.textContent=f+"F";btn.setAttribute("aria-label","Floor "+f);if(f===p.f)btn.setAttribute("aria-current","true");btn.onclick=()=>{if(k!==WKEY)goFloor(k)};fc.appendChild(btn)}
-    $("ovKeys").textContent="Drag to spin · scroll to zoom · click a desk to see who sits there";
-    const sp=DATA.floors[WKEY];$("planT").hidden=!(sp&&sp.plan&&sp.plan.asset);$("planT").textContent=planOn?"Hide floor plan":"Show floor plan";
-  }
+  if(camp)$("planT").hidden=true;
+  else{const sp=DATA.floors[WKEY];$("planT").hidden=!(sp&&sp.plan&&sp.plan.asset);$("planT").textContent=planOn?"Hide floor plan":"Show floor plan"}
+  $("go").textContent=mode==="overview"?"Let's go":mode==="walk"?"Keep walking":"Keep driving";
   renderLegend();
 }
-const nf_=nf;
-// the options card's "Go to": every building's floors and the outside; a press takes you straight there
-function renderGoTo(){
-  const box=$("bldgs");box.innerHTML="";
-  const chip=(k,label,aria,cls)=>{const b=document.createElement("button");b.type="button";b.className=cls||"fl";b.textContent=label;
-    const here=k===WKEY,mine=!!myDesk&&myDesk.w===k;b.setAttribute("aria-label",aria+(here?" (you're here)":"")+(mine?" (your desk)":""));b.title=aria;
-    if(here)b.setAttribute("aria-current","true");if(mine){const y=document.createElement("span");y.className="you";y.textContent="you";b.appendChild(y)}
-    b.onclick=()=>jumpTo(k);return b};
-  for(const b of DATA.campus.buildings){
-    const el=document.createElement("div");el.className="bl";const n=document.createElement("div");n.className="bn";n.textContent=b.name;
-    const fl=document.createElement("div");fl.className="fls";fl.setAttribute("role","group");fl.setAttribute("aria-label",b.name+" floors");
-    for(let f=1;f<=b.floors;f++)fl.appendChild(chip(CAMPUS.key(b.id,f),f+"F",`${b.name}, floor ${f}`));
-    el.append(n,fl);box.appendChild(el);
-  }
-  const row=document.createElement("div");row.className="fls";row.appendChild(chip("campus","Outside","Outside, around the buildings","fl out"));box.appendChild(row);
+
+/* ---------- where to: type a person, team, room or floor and get taken there; or a surprise ---------- */
+// every floor and the outside, alongside the people, rooms and amenities Find knows
+function wherePlaces(){
+  const out=[],ks=new Set(floorKeys());
+  for(const b of DATA.campus.buildings)for(let f=1;f<=b.floors;f++){const k=CAMPUS.key(b.id,f);if(!ks.has(k))continue;const n=(DATA.rosters[k]||[]).length;
+    out.push({w:k,kind:"floor",id:"floor:"+k,name:`${b.name} · Floor ${f}`,sub:n?plural(n,"person","people"):"Floor "+f,s:`${b.name} ${b.short||""} floor ${f} ${f}f level`.toLowerCase()})}
+  out.push({w:"campus",kind:"outside",id:"outside",name:"Outside",sub:"Around the buildings",s:"outside outdoors campus parking lot"});
+  return out;
 }
+// "floor 2", "2f", "fl 2" pick a floor number and "building 1", "b1", "bldg 1" a building, so "floor 2" doesn't also find
+// Building 2 · Floor 1; any other words must match the floor's name
+function whereSearch(v){
+  v=v.trim().toLowerCase();if(!v)return[];
+  let q=v;const bm=q.match(/\b(?:building|bldg|b)\s*(\d+)\b/);if(bm)q=q.replace(bm[0]," "); // the building first: "building 2 floor 3"
+  const fm=q.match(/\b(?:floor|fl|f)\s*(\d+)\b|\b(\d+)\s*(?:st|nd|rd|th)?\s*(?:f|fl|floor)\b/);if(fm)q=q.replace(fm[0]," ");
+  const rest=q.split(/\s+/).filter(Boolean);
+  const on=it=>{if(it.w==="campus")return false;const p=CAMPUS.parseKey(it.w),b=p&&bldg(p.b),bn=b&&(String(b.name).match(/\d+/)||[])[0];
+    return(!fm||p.f===+(fm[1]||fm[2]))&&(!bm||bn===bm[1]||String(p.b)===bm[1])};
+  if(!fm&&!bm)return wherePlaces().filter(it=>v.split(/\s+/).every(t=>it.s.includes(t))).slice(0,4).concat(search(v)).slice(0,7);
+  const fl=wherePlaces().filter(it=>it.kind==="floor"&&on(it)&&rest.every(t=>it.s.includes(t)));
+  return fl.slice(0,4).concat(rest.length?search(rest.join(" "),on):[]).slice(0,7);
+}
+const wq=$("wq"),wres=$("wres");let wList=[],wSel=-1;
+function renderWhere(list,msg){
+  wres.innerHTML="";wList=list;wSel=-1;wq.removeAttribute("aria-activedescendant");
+  list.forEach((it,i)=>{const li=document.createElement("li"),b=document.createElement("button");b.type="button";b.setAttribute("role","option");b.id="wr"+i;b.setAttribute("aria-selected","false");b.tabIndex=-1;
+    const n=document.createElement("span");n.className="rn";n.textContent=it.name;const kl=it.kind==="floor"?"Floor":it.kind==="outside"?"":KIND_LABEL(it);if(kl){const k=document.createElement("span");k.className="kd";k.textContent=kl;n.appendChild(k)}
+    const m=document.createElement("span");m.className="rm";m.textContent=it.sub;b.append(n,m);b.onclick=()=>whereGo(it);li.appendChild(b);wres.appendChild(li)});
+  if(msg){const li=document.createElement("li");li.style.cssText="font-size:13px;color:var(--muted);padding:6px 8px";li.textContent=msg;wres.appendChild(li)}
+  wq.setAttribute("aria-expanded",String(!!list.length));
+}
+wq.addEventListener("input",()=>{const v=wq.value.trim();if(!v){renderWhere([]);return}const h=whereSearch(v);renderWhere(h,h.length?"":`Nothing matches “${v}”. Try a first name, a team, “kitchen” or “floor 2”.`)});
+wq.addEventListener("keydown",e=>{
+  if(e.key==="ArrowDown"||e.key==="ArrowUp"){if(!wList.length)return;e.preventDefault();wSel=(wSel+(e.key==="ArrowDown"?1:-1)+wList.length)%wList.length;wres.querySelectorAll("button[role=option]").forEach((b,i)=>b.setAttribute("aria-selected",String(i===wSel)));wq.setAttribute("aria-activedescendant","wr"+wSel);const b=$("wr"+wSel);b&&b.scrollIntoView({block:"nearest"})}
+  else if(e.key==="Enter"){e.preventDefault();e.stopPropagation();const it=wList[wSel>=0?wSel:0];if(it)whereGo(it)}
+});
+// go there: a floor or the outside through the fade; a person, room or amenity by a route you drive (or walk)
+function whereGo(it,msg){
+  if(!it||trans)return;
+  wq.value="";renderWhere([]);wq.blur();setOpts(false);
+  const m=mode==="walk"?"walk":"drive";
+  if(it.kind==="floor"||it.kind==="outside"){if(it.w===WKEY){if(mode==="overview")flyTo("drive",1.6);toast("You're already here")}else jumpTo(it.w,m);return}
+  if(mode==="overview"){if(camMode==="top")setCam("chase");flyTo("drive",1.8)}
+  const ok=routeTo(it,!!msg);if(msg)toast(ok?msg:`Couldn't find a way to ${it.name} from here. Try Surprise me again.`);
+}
+// somewhere you haven't asked for: mostly a coworker's desk, sometimes a room or amenity; never right where you are
+function surprise(){
+  const idx=buildIndex().filter(x=>x.w!=="campus");if(!idx.length){toast("Nothing to pick yet: no people or rooms on any floor.");return}
+  const pos=curPos(),far=x=>x.w!==pos.w||Math.hypot(x.x-pos.x,x.z-pos.z)>8;
+  const ppl=idx.filter(x=>x.kind==="desk"&&far(x)),rooms=idx.filter(x=>x.kind!=="desk"&&far(x));
+  const pool=(Math.random()<.7&&ppl.length?ppl:rooms.length?rooms:ppl.length?ppl:idx),it=pool[Math.floor(Math.random()*pool.length)];
+  const where=it.w===WKEY?"":" · "+floorName(it.w);
+  whereGo(it,it.kind==="desk"?`Surprise! Go say hi to ${it.name}${it.team?" ("+it.team+")":""}${where}`:`Surprise! Head to ${it.name}${where}`);
+}
+$("surprise").onclick=surprise;
 function rebuildScene(){clearRoot();buildWorld();buildCars();rebuildTags();restoreCups();setTarget(target);routeVisuals(true);updateGates();drawMapBase();labelsClear()}
 $("planT").onclick=()=>{planOn=!planOn;store.set("rc-plan",planOn?"1":"0");rebuildScene();renderStart()};
 function renderLegend(){
@@ -307,9 +311,9 @@ const results=$("results");let resList=[],resSel=-1,picked=null;
 function openFind(keepPick){$("panel").classList.add("open");document.body.dataset.find="1";$("bOpts").setAttribute("aria-expanded","false");$("bFind").setAttribute("aria-expanded","true");if(document.pointerLockElement)document.exitPointerLock();const idx=buildIndex();$("findK").textContent=`${DATA.campus.name||"Campus"} · ${nf(idx.filter(x=>x.kind==="desk").length)} people · ${nf(idx.filter(x=>x.kind!=="desk").length)} rooms`;if(!keepPick){$("pick").hidden=true;picked=null}if(!keepPick||innerWidth>760)q.focus()}
 function closeFind(){$("panel").classList.remove("open");document.body.dataset.find="0";$("bOpts").setAttribute("aria-expanded",String(optsOpen));$("bFind").setAttribute("aria-expanded","false");q.blur()}
 $("bFind").onclick=()=>$("panel").classList.contains("open")?closeFind():openFind();
-function search(v){
+function search(v,keep){
   v=v.trim().toLowerCase();if(!v)return[];const toks=v.split(/\s+/);const out=[];
-  for(const it of buildIndex()){if(!toks.every(t=>it.s.includes(t)))continue;const nm=it.name.toLowerCase();let sc=nm.startsWith(v)?0:nm.split(/\s+/).some(w=>w.startsWith(toks[0]))?1:nm.includes(v)?2:3;if(it.w===WKEY)sc-=.5;if(it.kind!=="desk")sc+=.2;out.push([sc,it])}
+  for(const it of buildIndex()){if(keep&&!keep(it)||!toks.every(t=>it.s.includes(t)))continue;const nm=it.name.toLowerCase();let sc=nm.startsWith(v)?0:nm.split(/\s+/).some(w=>w.startsWith(toks[0]))?1:nm.includes(v)?2:3;if(it.w===WKEY)sc-=.5;if(it.kind!=="desk")sc+=.2;out.push([sc,it])}
   out.sort((a,b)=>a[0]-b[0]||a[1].name.localeCompare(b[1].name));return out.slice(0,8).map(a=>a[1]);
 }
 const KIND_LABEL=it=>it.kind==="desk"?"":it.id==="kitchen"?"Kitchen":/^room:/.test(it.id)?"Room":"Place";
@@ -338,22 +342,26 @@ function pMeUI(it){const cs=deskClaimState(it);$("pMe").hidden=!cs||cs==="taken"
 $("pMe").onclick=()=>{const it=picked;if(!it)return;const claim=deskClaimState(it)!=="mine";if(innerWidth<=760)closeFind();openMe(it,claim)};
 $("pRoute").onclick=()=>{const it=picked;if(!it)return;
   if(mode==="walk"&&it.w===WKEY){setTarget(it);tour={t:0,dur:Math.min(3.2,1+Math.hypot(it.x-walker.x,it.z-walker.z)/18),from:{x:walker.x,z:walker.z,yaw:walker.yaw,pitch:walker.pitch},to:{x:it.x,z:it.z,yaw:walker.yaw+angDiff(walker.yaw,it.a||0),pitch:-.32}};if(innerWidth<=760)closeFind();return}
-  if(routeTo(it)){if(mode==="overview"){toast("Route ready. Take the wheel to drive it.")}if(innerWidth<=760||mode!=="overview")closeFind()}};
+  if(routeTo(it)){if(mode==="overview"){toast("Route ready. Press Let's go to drive it.")}if(innerWidth<=760||mode!=="overview")closeFind()}};
 $("pRace").onclick=()=>{const it=picked;if(!it)return;closeFind();startRace(it)};
 $("pView").onclick=()=>{const it=picked;if(!it)return;closeFind();if(it.w!==WKEY)goFloor(it.w,it).then(()=>{if(mode!=="overview")flyTo("overview")});else{if(mode!=="overview")flyTo("overview");setTarget(it);routeVisuals(true);ov.tx=it.x*.5;ov.tz=it.z*.5}};
 $("rand").onclick=()=>{const ppl=buildIndex().filter(x=>x.kind==="desk");if(!ppl.length)return;const local=ppl.filter(x=>x.w===WKEY),pool_=local.length&&Math.random()<.6?local:ppl;showPick(pool_[Math.floor(Math.random()*pool_.length)])};
 $("clear").onclick=()=>{clearRoute();$("pick").hidden=true};
 let myDesk=null;
 const normName=s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
-// match the signed-in name to the seating (only the floor that has them gets built)
+// match the signed-in name to the seating (only the floor that has them gets built): every script first (PEOPLE.norm, as claims
+// compare names), then the old Latin-only key, so a profile name written in two scripts still finds its Latin seating row
 function findMyDesk(){
-  myDesk=DATA?myClaimItem():null;const n=myDesk?"":normName(myName);
-  if(n&&DATA)for(const k of floorKeys()){
-    if(!(DATA.rosters[k]||[]).some(p=>normName(p.name)===n))continue;
-    const m=modelFor(k);if(!m)break;const pi=(m.people||[]).findIndex(p=>normName(p.name)===n),p=m.people[pi],d=p&&m.desks[p.desk];
-    const dest=d&&(m.dests||[]).find(x=>x.id==="desk:"+d.id);
-    if(dest)myDesk={w:k,kind:"desk",id:dest.id,di:p.desk,name:p.name,team:p.team,sub:`${p.title?p.title+" · ":""}${p.team||"No team"} · ${floorShort(k)} · Desk ${d.id}`,x:dest.x,z:dest.z,a:dest.a||0,s:""};
-    break;
+  myDesk=DATA?myClaimItem():null;
+  if(!myDesk&&DATA)for(const nf of [PEOPLE.norm,normName]){const n=nf(myName);if(!n)continue;
+    for(const k of floorKeys()){
+      if(!(DATA.rosters[k]||[]).some(p=>nf(p.name)===n))continue;
+      const m=modelFor(k);if(!m)break;const pi=(m.people||[]).findIndex(p=>nf(p.name)===n),p=m.people[pi],d=p&&m.desks[p.desk];
+      const dest=d&&(m.dests||[]).find(x=>x.id==="desk:"+d.id);
+      if(dest)myDesk={w:k,kind:"desk",id:dest.id,di:p.desk,name:p.name,team:p.team,sub:`${p.title?p.title+" · ":""}${p.team||"No team"} · ${floorShort(k)} · Desk ${d.id}`,x:dest.x,z:dest.z,a:dest.a||0,s:""};
+      break;
+    }
+    if(myDesk)break;
   }
   $("myDeskB").hidden=!myDesk;$("myDesk").hidden=!myDesk;$("myLook").hidden=!myDesk;
 }
@@ -382,7 +390,6 @@ let meTag=null,botTag=null;
 function rebuildTags(){
   disposeSprite(meTag);disposeSprite(botTag);meTag=tagSprite(myName||"You",paint);botTag=tagSprite("Mailbot",bot.paint);tags.add(meTag);tags.add(botTag);
   for(const r of remotes.values()){disposeSprite(r.tag);r.tag=null}
-  if(brawl)for(const b of brawl.bots){disposeSprite(b.tag);b.tag=null}
 }
 function placeTag(s,x,y,z){if(!s)return;s.position.set(x,y,z);const d=camera.position.distanceTo(s.position),k=clamp(d/4.2,1,15)*s.userData.h;s.scale.set(k*s.userData.ar,k,1)}
 const pops=[];
@@ -493,7 +500,6 @@ function hudFrame(){
 }
 function setHelp(){
   const h=$("help");
-  if(mode==="drive"&&brawl){h.innerHTML="<kbd>W A S D</kbd> drive · drive through crates for items · <kbd>F</kbd> use it · <kbd>G</kbd> drop a banana behind you · <kbd>Shift</kbd> boost · <kbd>V</kbd> camera · <kbd>B</kbd> leave the brawl";return}
   if(mode==="drive")h.innerHTML=me.kind==="car"?"<kbd>W A S D</kbd> drive · <kbd>Space</kbd> drift (hold through a turn: turbo) · <kbd>J</kbd> jump · <kbd>Shift</kbd> boost · <kbd>H</kbd> horn · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look"
     :me.kind==="dog"?"<kbd>W A S D</kbd> run · <kbd>Space</kbd> jump · <kbd>Shift</kbd> sprint · <kbd>H</kbd> big woof (pushes chairs) · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look"
     :"<kbd>W A S D</kbd> run · <kbd>Space</kbd> jump, again or hold to double jump · <kbd>Shift</kbd> sprint · <kbd>H</kbd> meow · <kbd>V</kbd> camera · <kbd>/</kbd> find · <kbd>R</kbd> restart · <kbd>X</kbd> clear route · <kbd>L</kbd> my look";
@@ -568,7 +574,7 @@ function startBoard(){
 /* ---------- multiplayer: presence (who's where), names, race invites ---------- */
 const capUse=n=>{try{return(window.claude&&typeof window.claude.use==="function")?Promise.resolve(window.claude.use(n)).catch(()=>null):Promise.resolve(null)}catch(_){return Promise.resolve(null)}};
 let roomSettled=false,user=null,db=null,room=null,assets=null,downloads=null,myId=null,myName="",canWrite=null,canSetup=false,presDirty=true,presT=0,lastPres="";
-const remotes=new Map();let joinable=null;
+const remotes=new Map();let joinable=null,myPeer=null; // myPeer: this tab's own id in the room
 function num(v,a,b){return typeof v==="number"&&isFinite(v)?clamp(v,a,b):null}
 const WKEY_RE=/^(campus|[A-Za-z0-9]{1,8}-\d{1,2})$/;
 function syncPeers(peers){
@@ -591,18 +597,18 @@ function syncPeers(peers){
       r.car.air=pr.a===1;r.car.vF=num(pr.s,-20,20)||0;r.car.steer=num(pr.st,-1,1)||0;r.car.boosting=pr.b===1;r.car.drift=pr.d===1;r.car.driftDir=Math.sign(r.car.steer)||1;r.car.driftTier=r.car.drift?num(pr.dc,0,2)||0:0;r.car.driftT=r.car.driftTier===2?1.2:r.car.driftTier?.8:0;
     }
     if(r.m!=="d"){r.vx=r.vz=0}
-    {const bw=BRAWL.validBw(pr.bw);if(bw){brawlVet(r,bw);r.bwAt=now}if((bw?bw.hp:-1)!==(r.bw?r.bw.hp:-1)){disposeSprite(r.tag);r.tag=null}r.bw=bw}
     r.wx=num(pr.wx,-400,400);r.wz=num(pr.wz,-400,400);r.wy=num(pr.wy,-1e5,1e5)||0;
     const rc=pr.rc&&typeof pr.rc==="object"&&typeof pr.rc.k==="string"&&pr.rc.k.length<140&&num(pr.rc.t0,0,1e15)!=null?{k:pr.rc.k,t0:pr.rc.t0,n:typeof pr.rc.n==="string"?pr.rc.n.slice(0,60):"a race"}:null;
     if(rc&&(!r.rc||r.rc.t0!==rc.t0)&&r.w===WKEY&&mode==="drive"&&!race&&!run&&Date.now()-rc.t0<2600&&rc.t0<Date.now()+1500){joinable={r,rc,until:performance.now()+3000};toast(`${r.name||"A coworker"} is racing to ${rc.n} · ${document.body.classList.contains("touch")?"tap Join race":"press Y to join"}`)}
     r.rc=rc;
-    const hk=typeof pr.hk==="number"?pr.hk:0;if(r.hk!==undefined&&hk>r.hk&&r.has&&r.w===WKEY){const d=camera.position.distanceTo(_P.set(r.car.x,r.car.y,r.car.z));const h=HONK[r.car.kind]||HONK.car;SFX[h[0]](clamp(1-d/30,.12,1));pop(r.car.x,r.car.y+.5,r.car.z,h[1],r.paint)}r.hk=hk;
+    // presence is untrusted: at most one remote horn per 200 ms, and none queued up while hidden or in the editor
+    const hk=typeof pr.hk==="number"?pr.hk:0;if(r.hk!==undefined&&hk>r.hk&&r.has&&r.w===WKEY&&!edOpen&&!document.hidden&&now-(r.hkAt||0)>200){r.hkAt=now;const d=camera.position.distanceTo(_P.set(r.car.x,r.car.y,r.car.z));const h=HONK[r.car.kind]||HONK.car;SFX[h[0]](clamp(1-d/30,.12,1));pop(r.car.x,r.car.y+.5,r.car.z,h[1],r.paint)}r.hk=hk;
     // their skills: a turbo, a woof (which also scatters the chairs here), a double jump
     const sx=typeof pr.sx==="number"?pr.sx:0,ev=pr.sk;
     if(r.sx!==undefined&&sx>r.sx&&r.has&&r.w===WKEY&&r.m==="d"&&!edOpen&&!document.hidden&&r.car.vis){const d=camera.position.distanceTo(_P.set(r.car.x,r.car.y,r.car.z)),vol=clamp(1-d/30,0,1),kd=r.car.kind;
       if(vol>.04){
-        if((ev==="t1"||ev==="t2")&&kd==="car")skillFx(r.car,"turbo",vol,ev==="t2"?2:1);
-        else if(ev==="j"&&kd==="cat")skillFx(r.car,"jump2",vol);
+        if((ev==="t1"||ev==="t2")&&kd==="car"&&now-(r.fxAt||0)>300){r.fxAt=now;skillFx(r.car,"turbo",vol,ev==="t2"?2:1)}
+        else if(ev==="j"&&kd==="cat"&&now-(r.fxAt||0)>300){r.fxAt=now;skillFx(r.car,"jump2",vol)}
         else if(ev==="w"&&kd==="dog"&&now-(r.woofAt||0)>1200){r.woofAt=now;skillFx(r.car,"woof",vol);if(!(run&&run.phase!=="done")&&!race)woofAt(r.car.x,r.car.z,r.car)}
       }}
     r.sx=sx;
@@ -638,7 +644,7 @@ function remoteFrame(dt,now){
     if(Math.hypot(px-c.x,pz-c.z)>4){c.x=px;c.z=pz}
     const k=1-Math.exp(-dt*10);c.x+=(px-c.x)*k;c.z+=(pz-c.z)*k;c.y+=(r.ty-c.y)*(1-Math.exp(-dt*16));c.h+=angDiff(c.h,r.th)*k;c.pitch+=(r.tp-c.pitch)*k;c.roll+=(r.tr-c.roll)*k;c.vx=r.vx;c.vz=r.vz;c.lat=0;
     syncCar(c,dt,true);
-    if(!r.tag){r.tag=tagSprite((r.name||"Coworker")+(r.bw?" "+"♥".repeat(r.bw.hp):""),r.paint);tags.add(r.tag)}r.tag.visible=true;
+    if(!r.tag){r.tag=tagSprite(r.name||"Coworker",r.paint);tags.add(r.tag)}r.tag.visible=true;
     if(r.m==="w"&&r.wx!=null){if(!r.wvis&&root)r.wvis=makeWalker(r.paint);if(r.wvis){r.wvis.visible=true;r.wvis.position.set(r.wx,0,r.wz);r.wvis.rotation.y=r.wy}placeTag(r.tag,r.wx,1.75,r.wz)}
     else{if(r.wvis)r.wvis.visible=false;placeTag(r.tag,c.x,c.y+tagH(c.kind),c.z)}
   }
@@ -655,12 +661,12 @@ function sendPresence(){
   if(!room)return;
   const m=mode==="drive"?"d":mode==="walk"?"w":"o",r2=v=>Math.round(v*100)/100;
   const o={v:2,m,w:WKEY,c:paint,x:r2(me.x),z:r2(me.z),y:r2(me.y),h:Math.round(me.h*1000)/1000,p:r2(me.pitch),r:r2(me.roll),s:Math.round(me.vF*10)/10,st:r2(me.steer),b:me.boosting||me.turboT>0?1:0,d:me.drift?1:0,hk:hornCount};
-  if(me.drift&&me.driftTier)o.dc=me.driftT>1.1?2:me.driftTier;if(me.sx){o.sx=me.sx;o.sl=me.sl;o.sk=me.skEv}
+  // presence merges per field: send null (never omit) so a cleared value doesn't stick for everyone else
+  o.dc=me.drift&&me.driftTier?(me.driftT>1.1?2:me.driftTier):null;if(me.sx){o.sx=me.sx;o.sl=me.sl;o.sk=me.skEv}
   if(myId)o.u=myId;
   if(mode==="walk"){o.wx=r2(walker.x);o.wz=r2(walker.z);o.wy=r2(walker.yaw)}else{o.wx=null;o.wz=null;o.wy=null}
   o.rc=race?{k:race.key,t0:race.t0,n:race.dest.name.slice(0,60)}:null;
-  if(me.kind!=="car")o.av=me.kind;if(me.air)o.a=1;
-  o.bw=brawlPres();
+  o.av=me.kind!=="car"?me.kind:null;o.a=me.air?1:null;
   const key=JSON.stringify(o);if(key===lastPres)return;lastPres=key;
   room.presence(o).catch(()=>{});
 }
@@ -731,7 +737,7 @@ const fresh={c:false,f:false,r:false};
 const dataReady=()=>!db||(fresh.c&&fresh.f&&fresh.r);
 function watchData(){
   if(!db){dataSettled=true;findMyDesk();return}
-  const done=()=>{if(seen.c&&seen.f&&seen.r&&!dataSettled){dataSettled=true;const ch=mergeData();if(ch)refreshWorld(true);else{findMyDesk();renderStart();if(mode==="drive")introDrive()}hideLoading()}};
+  const done=()=>{if(seen.c&&seen.f&&seen.r&&!dataSettled){dataSettled=true;const ch=mergeData();if(ch)refreshWorld(true);else{findMyDesk();renderStart()}hideLoading(introAtLift)}};
   const onErr=()=>{seen.c=seen.f=seen.r=true;bootLate=false;done();if(!$("setup").hidden)renderSetup()};
   const mark=(k,s)=>{seen[k]=true;if(s&&s.metadata&&!s.metadata.fromCache){const was=dataReady();fresh[k]=true;if(!was&&dataReady()&&!$("setup").hidden)renderSetup()}};
   try{
@@ -740,11 +746,15 @@ function watchData(){
     db.collection("roster").limit(200).onSnapshot(s=>{const o={};s.docs.forEach(d=>{const v=validRoster(d.data());if(v)o[d.id]=v});dbRosters=o;mark("r",s);dataSettled?scheduleMerge():done()},onErr);
     db.collection("deskxy").limit(200).onSnapshot(s=>{const o={};s.docs.forEach(d=>{const v=d.data();if(v&&Array.isArray(v.rows))o[d.id]=v.rows.slice(0,5000)});dbXY=o},()=>{});
   }catch(_){onErr()}
-  setTimeout(()=>{if(!dataSettled){dataSettled=true;if(!seen.c)bootLate=true;const ch=mergeData();if(ch)refreshWorld(true);else if(mode==="drive")introDrive();hideLoading()}},4000);
+  setTimeout(()=>{if(!dataSettled){dataSettled=true;if(!seen.c)bootLate=true;const ch=mergeData();if(ch)refreshWorld(true);hideLoading(introAtLift)}},4000);
 }
 let dataSettled=false,bootLate=false; // bootLate: the 4 s fallback ran before the campus doc, so its arrival restores the saved floor
-function showLoading(){const fd=$("fade"),ft=$("fadeT");ft.textContent="Loading the campus…";fd.dataset.on="1"}
-function hideLoading(){$("fade").dataset.on="0"}
+// The loading cover (shell.html starts with it on, so the first world opens behind it like goWorld's fade): it lifts once the
+// world's baked light is on and compiled out of sight, or after 2.5 s without it (that world then stays realtime this visit).
+let coverTok=0;
+function showLoading(){coverTok++;const fd=$("fade"),ft=$("fadeT");ft.textContent="Loading the campus…";fd.dataset.on="1"}
+const introAtLift=()=>{if(mode==="drive")introDrive()}; // the swoop onto your car, seen (it may have run behind the cover already)
+function hideLoading(then){const tok=++coverTok;Promise.race([BAKE.ready(),sleep(2500)]).then(()=>sleep(160)).then(()=>{if(tok!==coverTok||trans||$("fade").dataset.on!=="1")return;BAKE.reveal();$("fade").dataset.on="0";if(then)then()})} // (a floor change mid-wait lifts its own fade: nothing left to lift or swoop)
 
 /* ---------- auto floor plans for imported people (keeps the floor's rooms, re-divides team areas by headcount) ---------- */
 function autoFloor(base,roster,teams){
@@ -782,7 +792,7 @@ const FIELDS=[["name","Full name"],["first","First name"],["last","Last name"],[
 function el(tag,props,kids){const e=document.createElement(tag);if(props)for(const k in props){if(props[k]==null||props[k]===false)continue;if(k==="text")e.textContent=props[k];else if(k==="cls")e.className=props[k];else if(k.startsWith("on"))e[k]=props[k];else e.setAttribute(k,props[k])}(kids||[]).forEach(c=>c&&e.appendChild(typeof c==="string"?document.createTextNode(c):c));return e}
 // unsaved edits in the Teams and Names sections survive re-renders (snapshots, imports, other saves)
 const setupDraft={teams:{},names:{},campus:null};let setupOpener=null;
-const INERT_IDS=["stage","bar","start","side","panel","stylePop","mePop","mapwrap","status","speedo","look","help","elev","touch","result"];
+const INERT_IDS=["stage","bar","start","side","panel","mePop","mapwrap","status","speedo","look","help","elev","touch","result","funHud"];
 function setInert(on){INERT_IDS.forEach(id=>{const e=$(id);if(e){if(on)e.setAttribute("inert","");else e.removeAttribute("inert")}})}
 function openSetup(){setupOpener=document.activeElement;$("setup").hidden=false;setInert(true);renderSetup();const h=$("setupBox")&&$("setupBox").querySelector("h2");h&&h.focus()}
 function closeSetup(){$("setup").hidden=true;imp=null;setupDraft.teams={};setupDraft.names={};setupDraft.campus=null;setInert(false);if(setupOpener&&setupOpener.focus&&document.contains(setupOpener))setupOpener.focus();setupOpener=null}
@@ -806,7 +816,7 @@ function renderSetupBody(box){
   const s1=el("div",{cls:"sec"});box.appendChild(s1);
   s1.appendChild(el("h3",{text:"1. People and desks"}));
   s1.appendChild(el("p",{cls:"note",text:DATA.demo?"Right now the campus shows sample people. Export your seating list from your facilities or HR system as a CSV (one row per person: name, team, building, floor, desk) and drop it here. Only name, team, title and desk are kept. Every other column is ignored.":`Showing your seating${DATA.campus.src?" from "+DATA.campus.src:""}. Drop a newer export to update it; you'll see what changed before anything is saved.`}));
-  const drop=el("div",{cls:"drop"});const fin=el("input",{type:"file",accept:".csv,text/csv,.txt,.tsv",class:"vh",id:"impFile"});
+  const drop=el("div",{cls:"drop"});const fin=el("input",{type:"file",accept:".csv,text/csv,.txt,.tsv,.xlsx,.xls",class:"vh",id:"impFile"});
   drop.append(el("div",{text:"Drop a CSV here, or"}),el("div",{cls:"row"},[el("button",{cls:"tb",type:"button",text:"Choose file",onclick:()=>fin.click()}),el("button",{cls:"tb",type:"button",text:"Download template",onclick:()=>saveFile("seating-template.csv",IMPORT.template())}),el("button",{cls:"tb",type:"button",text:"Export current seating",onclick:exportSeating})]),fin);
   fin.onchange=()=>{if(fin.files[0])readImport(fin.files[0])};
   drop.addEventListener("dragover",e=>{e.preventDefault();drop.dataset.over="1"});drop.addEventListener("dragleave",()=>drop.dataset.over="0");drop.addEventListener("drop",e=>{e.preventDefault();drop.dataset.over="0";const f=e.dataTransfer.files&&e.dataTransfer.files[0];if(f)readImport(f)});
@@ -867,6 +877,9 @@ async function readImport(file){
   if(file.size>15e6){toast("That file is too big. Export just the seating columns.");return}
   // pass bytes, not text: the importer detects UTF-16 ("Unicode text") and Windows-1252 Excel exports
   const buf=await file.arrayBuffer().catch(()=>null);if(buf==null){toast("Couldn't read that file.");return}
+  // a workbook (zip: .xlsx/.ods; OLE2: old .xls) would parse as binary noise: say what to do instead
+  const mb=new Uint8Array(buf,0,Math.min(4,buf.byteLength));
+  if((mb[0]===0x50&&mb[1]===0x4B&&mb[2]===0x03&&mb[3]===0x04)||(mb[0]===0xD0&&mb[1]===0xCF&&mb[2]===0x11&&mb[3]===0xE0)){imp={file:file.name,error:"That's a spreadsheet workbook (like Excel's .xlsx), not a CSV. Save it as CSV first (in Excel: File > Save As > CSV UTF-8), then load the .csv here."};renderSetup();return}
   let parsed;try{parsed=IMPORT.parseCSV(buf)}catch(e){parsed=null}
   if(!parsed||!parsed.header||!parsed.rows||!parsed.rows.length){imp={file:file.name,error:"That file doesn't look like a CSV with a header row and people in it."};renderSetup();return}
   const mc=IMPORT.mapColumns(parsed.header);imp={file:file.name,parsed,map:Object.assign({},mc.map),ignored:mc.ignored||[],alias:{}};runNormalize();renderSetup();
@@ -898,16 +911,17 @@ function importView(){
   if(withXY)v.appendChild(el("p",{cls:"note",text:`${nf(withXY)} rows have desk coordinates. After applying, open a floor and use “Place desks from your facilities file” to put desks exactly where they are.`}));
   if(n.problems&&n.problems.length){v.appendChild(el("div",{cls:"lbl",text:`${n.problems.length} rows need a look`}));const ul=el("ul",{cls:"prob"});n.problems.slice(0,25).forEach(p=>ul.appendChild(el("li",{text:`Row ${p.row}: ${p.msg}`})));if(n.problems.length>25)ul.appendChild(el("li",{text:`…and ${n.problems.length-25} more`}));v.appendChild(ul)}
   const ok=people>0;
-  v.appendChild(el("div",{cls:"row"},[el("button",{cls:"primary",type:"button",text:applying?"Saving…":ok?`Apply to the campus`:"Nothing to apply",disabled:ok&&!applying?null:"true",onclick:()=>applyImport()}),el("button",{cls:"tb",type:"button",text:"Cancel",onclick:()=>{imp=null;renderSetup()}})]));
+  v.appendChild(el("div",{cls:"row"},[el("button",{cls:"primary",type:"button",text:applying?"Saving…":ok?`Apply to the campus`:"Nothing to apply",disabled:ok&&!applying?null:"true",onclick:()=>applyImport()}),el("button",{cls:"tb",type:"button",text:"Cancel",disabled:applying?"true":null,onclick:()=>{imp=null;renderSetup()}})]));
   return v;
 }
 async function applyImport(){
-  const n=imp&&imp.norm;if(!n||applying)return;
+  // take the file name now: closing the dialog mid-save clears imp, and the save must still finish
+  const n=imp&&imp.norm,file=imp&&imp.file;if(!n||applying)return;
   if(!dataReady()){toast("The saved campus data hasn't loaded yet. Try again in a moment.");return}
   applying=true;renderSetup();
-  try{await applyImportNow(n)}finally{applying=false;if(!$("setup").hidden)renderSetup();scheduleMerge()}
+  try{await applyImportNow(n,file)}finally{applying=false;if(!$("setup").hidden)renderSetup();scheduleMerge()}
 }
-async function applyImportNow(n){
+async function applyImportNow(n,file){
   const rosters={},xy={},names=new Set();
   for(const k of floorKeys()){const rows=n.floors[k]||[];rosters[k]=rows.filter(r=>!r.vacant&&r.name).map(r=>({desk:r.desk||"",name:r.name,team:r.team||"",title:r.title||""}));
     const pts=rows.filter(r=>r.desk&&isFinite(r.x)&&isFinite(r.y)).map(r=>[String(r.desk).slice(0,24),+r.x,+r.y,isFinite(r.rot)?+r.rot:0]);if(pts.length)xy[k]=pts;
@@ -924,7 +938,7 @@ async function applyImportNow(n){
   else drawn=new Set(Object.keys(dbFloors).filter(k=>!dbFloors[k].auto));
   const floors={};
   for(const k of floorKeys()){if(drawn.has(k))continue;const base=(DEMO.floors[k]&&DEMO.floors[k].b===CAMPUS.parseKey(k).b)?DEMO.floors[k]:DATA.floors[k];floors[k]=autoFloor(base,rosters[k],teams)}
-  const src=imp.file.slice(0,80)+" · "+new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+  const src=String(file||"").slice(0,80)+" · "+new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
   try{
     if(db){
       await saveCampus({teams,demo:false,src,at:Date.now()},true);
@@ -934,7 +948,7 @@ async function applyImportNow(n){
     }else{
       DATA.campus=Object.assign({},DATA.campus,{teams,demo:false,src});dbCampus=Object.assign({},DATA.campus);for(const k in rosters)dbRosters[k]=rosters[k];for(const k in floors)dbFloors[k]=floors[k];Object.assign(dbXY,xy);mergeData();refreshWorld();
     }
-    imp=null;toast(`Seating loaded: ${nf(Object.values(rosters).reduce((a,r)=>a+r.length,0))} people`);
+    if(imp&&imp.norm===n)imp=null;toast(`Seating loaded: ${nf(Object.values(rosters).reduce((a,r)=>a+r.length,0))} people`);
   }catch(e){toast(e&&e.code==="invalid_argument"?"Only editors of this page can change the seating.":e&&e.code==="quota_exceeded"?"The page's storage is full.":"Couldn't save the seating. Try again.")}
 }
 async function saveCampus(patch,quiet){
@@ -955,7 +969,6 @@ let pdfjs=null;
 function loadPdfJs(){if(pdfjs)return pdfjs;pdfjs=new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";s.onload=()=>{const L=window.pdfjsLib;if(!L){rej(new Error("PDF reader didn't load"));return}try{L.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"}catch(_){}res(L)};s.onerror=()=>{pdfjs=null;rej(new Error("The PDF reader couldn't load. Export the plan as PNG instead."))};document.head.appendChild(s)});return pdfjs}
 function openEditor(key){
   const spec=DATA.floors[key];if(!spec)return;
-  if(brawl)brawlLeave("You left the brawl.");
   const xyRows=dbXY[key]||[],xyBy=new Map(xyRows.map(r=>[String(r[0]).toLowerCase(),r]));
   const roster=(DATA.rosters[key]||[]).map(p=>{const r=xyBy.get(String(p.desk||"").toLowerCase());return r?Object.assign({},p,{x:r[1],y:r[2],rot:r[3]}):Object.assign({},p)});
   // desks with coordinates but nobody assigned (open desks) still get placed
@@ -989,7 +1002,7 @@ function meDefault(){const d=meDesk();return PEOPLE.defaultLook(meKey(),d?d.arr:
 function openMyLook(){if(myDesk){openMe(myDesk);return}toast("Find your desk first, then choose This is me.");openFind()}
 function openMe(it,claim){
   if(!it||it.kind!=="desk")return;
-  closeStyle();if(document.pointerLockElement)document.exitPointerLock();
+  if(document.pointerLockElement)document.exitPointerLock();
   if($("mePop").hidden)meOpener=document.activeElement;
   if(meItem&&meSaveT)saveMe();
   meItem=it;meLook=null;meShown="";meSay("");
@@ -1170,12 +1183,12 @@ function frame(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;if(!(dt>0)||!WM)return;
   if(edOpen){if(presT>1){presT=0;sendPresence()}presT+=dt;return} // the editor covers the screen: skip simulation and rendering
   T+=dt;
-  const ctl=brawlCtl(mode==="drive"&&!fly&&!trans&&!((run&&run.phase==="count")||(race&&race.phase==="count"))&&$("result").hidden?readDrive():IDLE);
+  const ctl=mode==="drive"&&!fly&&!trans&&!((run&&run.phase==="count")||(race&&race.phase==="count"))&&$("result").hidden?readDrive():IDLE;
   const bctl=BOTPATH.length?botCtl(bot,dt):IDLE,n=Math.max(1,Math.ceil(dt/(1/120)));
   for(let k=0;k<n;k++){carStep(me,ctl,dt/n,true);if(BOTPATH.length)carStep(bot,bctl,dt/n,false)}
   chairsStep(dt);figFrame(dt);figCommit();
   syncCar(me,dt,false);syncCar(bot,dt,false);if(bot.vis)bot.vis.g.visible=BOTPATH.length>0;
-  remoteFrame(dt,now);brawlFrame(dt);
+  remoteFrame(dt,now);funFrame(dt);
   PHYS.frame(dt);
   if(mode==="walk"&&!fly&&!trans)walkFrame(dt);
   runFrame(dt);raceFrame(dt);routeFrame(dt,now);elevFrame();doorFrame();
@@ -1194,6 +1207,9 @@ function frame(now){
   hudFrame();audioFrame();
   presT+=dt;if(presT>1/15){presT=0;sendPresence()}
   rosterAcc+=dt;if(rosterAcc>1){rosterAcc=0;if(mode==="overview")renderRoster()}
+  // under the cover, while this world's baked light is on its way: don't draw. A frame here would compile every realtime shader
+  // only to throw them away when the bake switches on, and on a slow GPU that compile holds the bake past the cover's wait.
+  if(BAKE.loading&&$("fade").dataset.on==="1")return;
   HD.render(dt);
 }
 // continuous sounds follow the car (motor pitch rises with speed; tyre roll; a soft hiss when sliding); dogs and cats patter
@@ -1219,7 +1235,7 @@ function audioFrame(){
 /* ---------- boot ---------- */
 try{DEMO=CAMPUS.demo(LAYOUT)}catch(e){console.error(e);fatal("The campus couldn't be built. Reload the page to try again.");return}
 DATA=null;mergeData(true);
-{const V1=[0,1,2,3,0,0,0,0,0,4],V2=[0,1,2,3,0,0,4],ver=store.get("rc-style-v");let saved=parseInt(store.get("rc-style"),10);if(Number.isInteger(saved)&&ver!=="3")saved=(ver==="2"?V2:V1)[saved];const i=Number.isInteger(saved)&&saved>=0&&saved<ST.length?saved:0;S=ST[i];cur=i;fxRestyle();styleUI(i)} // Studio first for everyone (dark mode no longer means Neon night)
+S=ST[0];cur=0;fxRestyle();styleUI(); // one look: Studio
 HD.restyle(); // sizes the canvas for the quality level (and sets up Studio's post-processing)
 const bootKey=store.get("rc-world");
 {const ks=floorKeys();enterWorld(bootKey&&(bootKey==="campus"||ks.includes(bootKey))?bootKey:(ks[0]||"campus"))}
@@ -1229,12 +1245,16 @@ introDrive();
 const saveWorld=()=>{if(dataSettled&&!bootLate)store.set("rc-world",WKEY)};
 addEventListener("pagehide",saveWorld);
 setInterval(saveWorld,5000);
-if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{signs.forEach(sg=>{const c=textCanvas(sg.lines,{stripe:sg.stripe});sg.s.material.map.dispose();sg.s.material.map=new THREE.CanvasTexture(c);sg.s.material.map.minFilter=THREE.LinearFilter;sg.s.material.needsUpdate=true;sg.s.scale.set(sg.h*c.width/c.height,sg.h,1)});labelsClear();rebuildTags();resolveNames()});
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{signs.forEach(sg=>{const c=textCanvas(sg.lines,{stripe:sg.stripe});sg.s.material.map.dispose();sg.s.material.map=texCS(new THREE.CanvasTexture(c));sg.s.material.map.minFilter=THREE.LinearFilter;sg.s.material.needsUpdate=true;sg.s.scale.set(sg.h*c.width/c.height,sg.h,1)});labelsClear();rebuildTags();resolveNames()});
 requestAnimationFrame(frame);
+// the first world opened behind the loading cover: a page without the db lifts it as soon as the light is on; with the db,
+// watchData does once the page's campus has arrived. (A page that hears nothing from window.claude lifts it after 3 s.)
+let capsIn=false;
+setTimeout(()=>{if(!capsIn)hideLoading(introAtLift)},3000);
 (async()=>{
   const [u,d,rm,as]=await Promise.all([capUse("user"),capUse("db"),capUse("room"),capUse("assets")]);
-  user=u;db=d;room=rm;assets=as;
-  if(db)showLoading();
+  user=u;db=d;room=rm;assets=as;capsIn=true;
+  if(db)showLoading();else if($("fade").dataset.on==="1")hideLoading(introAtLift);
   if(user){try{myId=await user.id()}catch(_){}try{canWrite=await user.can("data.write")}catch(_){}try{canSetup=!!(await user.canEdit())||!!(await user.isOwner())}catch(_){}}
   if(!db&&!window.claude)canSetup=true; // local preview: let the setup tools run in memory
   watchData();startBoard();watchLooks();recomputeLooks();renderStart();

@@ -234,6 +234,29 @@ test('snapped goal prefers a cell the start can actually reach', () => {
   assert.ok(r.pts[r.pts.length - 1][0] < 0, 'snapped to the reachable (west) side');
 });
 
+test('a tiny closed-off island (a sliver between low obstacles) snaps out through the real gap, never through an obstacle', () => {
+  // 1.4 m ring of low boxes (tall 0) around the origin leaves a 2x2-cell island; the east side has a 0.3 m gap
+  // (closed on the grid, open in reality); the near west side is a thin low box or a row of chair posts
+  const east = gap => gap ? [box(0.7, 0.15, 2, 2, 7, 0), box(0.7, -2, 2, -0.15, 7, 0)] : [box(0.7, -2, 2, 2, 7, 0)];
+  const ring = (gap, posts) => room('t', 20, 12, [box(-0.8, 0.7, 2, 2, 7, 0), box(-0.8, -2, 2, -0.7, 7, 0), ...east(gap), ...(posts ? [] : [box(-0.8, -2, -0.7, 2, 7, 0)])],
+    posts ? [-2, -1.6, -1.2, -0.8, -0.4, 0, 0.4, 0.8, 1.2, 1.6, 2].map(z => ({ x: -0.75, z, r: 0.2, m: 4 })) : []);
+  for (const posts of [false, true]) {
+    const G = NAV.grid(ring(true, posts)), r = NAV.findPath(G, 0, 0, -6, 0), back = NAV.findPath(G, -6, 0, 0, 0);
+    assert.ok(r && back, 'routes both ways');
+    const s = r.pts[0], e = back.pts[back.pts.length - 1];
+    assert.ok(s[0] > 2 && Math.abs(s[1]) * 2 / s[0] < 0.15 && e[0] > 2, `out east through the gap, not west through the ${posts ? 'posts' : 'low box'} (${s})`);
+    assert.ok(Math.hypot(s[0], s[1]) <= 4, 'within the snap radius');
+    const sealed = NAV.grid(ring(false, posts));
+    assert.equal(NAV.findPath(sealed, 0, 0, -6, 0), null, 'no gap: sealed');
+    assert.equal(NAV.findPath(sealed, -6, 0, 0, 0), null);
+  }
+  // the same island boxed in by tall walls is a sealed closet: still unreachable
+  const closet = NAV.grid(room('t', 20, 12, [wall(-0.75, -0.75, -0.75, 0.75), wall(0.75, -0.75, 0.75, 0.75), wall(-0.75, -0.75, 0.75, -0.75), wall(-0.75, 0.75, 0.75, 0.75)]));
+  assert.equal(NAV.findPath(closet, 0, 0, -6, 0), null);
+  assert.equal(NAV.findPath(closet, -6, 0, 0, 0), null);
+  assert.ok(NAV.findPath(closet, 0.1, 0.1, -0.1, -0.1), 'inside to inside is fine');
+});
+
 /* ---------- desk floor (also the performance fixture) ---------- */
 function deskFloor() {
   const w = 72, d = 44, blocks = [], posts = [];

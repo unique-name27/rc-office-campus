@@ -465,5 +465,20 @@ test('sampleSeat: sample people take the assigned desks of a hand-drawn floor, a
   assert.equal(CAMPUS.sampleSeat({ desks, zones: [{ id: 'z1', team: 'Alpha' }] }, rows), rows, 'with team areas too, LAYOUT seats people itself');
 });
 
+test('sampleSeat: the same seating whatever the viewer\'s locale', () => {
+  const desks = [];
+  for (let i = 0; i < 12; i++) desks.push({ id: (i % 2 ? 'aa' : 'Z') + i, x: (i % 4) * 2, z: 0, arr: 'bench' });   // id ties on x/z
+  for (const d of desks.slice(0, 4)) desks.push({ id: 'Y' + d.id, x: d.x, z: d.z, arr: 'bench' });
+  // da sorts "Aa" after "Z", lt sorts "Y" right after "I", et sorts "Z" between "S" and "T"
+  const rows = ['Aada Sample', 'Zed Sample', 'Yan Sample', 'Ivo Sample', 'Sia Sample', 'Tom Sample', 'Abe Sample'].map((name, i) =>
+    ({ desk: '9-X' + i, name, team: i % 2 ? 'Zeta' : 'Aalto', title: 't' }));
+  const ref = CAMPUS.sampleSeat({ desks }, rows), orig = String.prototype.localeCompare;
+  assert.deepEqual(ref.map(p => p.name), ['Aada Sample', 'Abe Sample', 'Sia Sample', 'Yan Sample', 'Ivo Sample', 'Tom Sample', 'Zed Sample'], 'en order');
+  for (const loc of ['da', 'lt', 'et']) {
+    String.prototype.localeCompare = function (b) { return orig.call(this, b, loc); };   // what a viewer with that browser locale gets
+    try { assert.deepEqual(CAMPUS.sampleSeat({ desks }, rows), ref, loc); } finally { String.prototype.localeCompare = orig; }
+  }
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exitCode = failed ? 1 : 0;

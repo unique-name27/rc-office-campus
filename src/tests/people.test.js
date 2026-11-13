@@ -103,6 +103,34 @@ test('locate: same desk and name, or a unique name somewhere else, or nothing', 
   assert.equal(PEOPLE.locate({ w: 'B9-1', desk: '1-A01', name: '' }, on, keys), null);
 });
 
+test('norm keeps names in every script, and a Latin name comes out exactly as before', () => {
+  const old = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  for (let cp = 0x20; cp < 0x250; cp++) for (const s of [String.fromCodePoint(cp), 'Kim' + String.fromCodePoint(cp) + 'Lee']) assert.equal(PEOPLE.norm(s), old(s), 'U+' + cp.toString(16));
+  for (const s of ["José O'Neil", 'Nguyễn Văn Ánh', 'Søren-Ann', 'Straße', 'Zoë  LEE', 'İlkay', '?!']) assert.equal(PEOPLE.norm(s), old(s), s);
+  assert.equal(PEOPLE.norm('李伟'), '李伟');
+  assert.equal(PEOPLE.norm(' Иван  ПЕТРОВ!'), 'иван петров');
+  assert.equal(PEOPLE.norm('Ёлка'), PEOPLE.norm('Елка'), 'accents fold in any script');
+  assert.equal(PEOPLE.norm('李伟 (Li Wei)'), '李伟 li wei');
+  for (const [a, b] of [['李伟', '王芳'], ['किरण', 'करण'], ['ゆうこ', 'ゆうご']]) { assert.ok(PEOPLE.norm(a)); assert.notEqual(PEOPLE.norm(a), PEOPLE.norm(b), a + ' / ' + b) }
+});
+
+test('locate finds people whose names are in any script', () => {
+  const F = { 'B1-1': [{ desk: '1-A01', name: '李伟' }, { desk: '1-A02', name: 'Иван Петров' }], 'B1-2': [{ desk: '2-A01', name: '王芳' }] };
+  const on2 = k => F[k] || null, k2 = Object.keys(F);
+  assert.deepEqual(PEOPLE.locate({ w: 'B1-1', desk: '1-A01', name: '李伟' }, on2, k2), { key: 'B1-1|1-A01', moved: false });
+  assert.deepEqual(PEOPLE.locate({ w: 'B1-1', desk: '1-A02', name: 'иван петров' }, on2, k2), { key: 'B1-1|1-A02', moved: false });
+  assert.deepEqual(PEOPLE.locate({ w: 'B1-1', desk: '1-A01', name: '王芳' }, on2, k2), { key: 'B1-2|2-A01', moved: true }, 'another name at the desk is not a match');
+});
+
+test('a shared name index gives the same answers, and is only built when a claim is not at its desk', () => {
+  assert.deepEqual(PEOPLE.nameIndex(on, keys).get('alex chen'), ['B1-1|1-A03', 'B1-2|2-A02']);
+  let builds = 0; const idx = () => { builds++; return PEOPLE.nameIndex(on, keys) };
+  const cs = [{ w: 'B1-1', desk: '1-A01', name: 'Kim Lee' }, { w: 'B1-1', desk: '1-A09', name: 'Jordan Smith' }, { w: 'B1-1', desk: '1-A09', name: 'Alex Chen' },
+    { w: 'B9-1', desk: '1-A01', name: 'Nobody' }, { w: 'B1-1', desk: '1-A01', name: '?!' }, { w: 'B1-1', desk: '1-A01', name: 'Sam Ortiz' }];
+  for (const c of cs) assert.deepEqual(PEOPLE.locate(c, on, keys, idx), PEOPLE.locate(c, on, keys), c.name);
+  builds = 0; PEOPLE.locate(cs[0], on, keys, idx); assert.equal(builds, 0, 'at its own desk: no index');
+});
+
 test('resolve: one winner per person; the matching profile name, then the earliest claim', () => {
   const L = c => PEOPLE.locate(c, on, keys);
   const claims = [

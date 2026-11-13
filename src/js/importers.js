@@ -25,9 +25,11 @@ const IMPORT=(()=>{
     return a.length <= n ? s : a.slice(0, n).join('').trim();
   }
   const stripAccents = s => s.normalize('NFKD').replace(/[\u0300-\u036F]/g, '');
-  // Person-matching key: case, accents, punctuation and extra spaces don't matter.
+  // Person-matching key: case, accents, punctuation and extra spaces don't matter. Other combining marks
+  // (Indic/Thai vowel signs, kana dakuten) are part of the letter and stay; a mark left without a letter is dropped.
   function nameKey(s){
-    return stripAccents(clean(s)).toLowerCase().replace(/['\u2019`.]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    return stripAccents(clean(s)).toLowerCase().replace(/['\u2019`.]/g, '').replace(/(^|[^\p{L}\p{M}\p{N}])\p{M}+/gu, '$1')
+      .replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ').trim();
   }
   const compact = s => stripAccents(clean(s)).toLowerCase().replace(/[^a-z0-9]/g, '');
   const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
@@ -258,6 +260,8 @@ const IMPORT=(()=>{
     };
     if (u8.length >= 2 && u8[0] === 0xFF && u8[1] === 0xFE) return dec('utf-16le', u8.subarray(2));
     if (u8.length >= 2 && u8[0] === 0xFE && u8[1] === 0xFF) return dec('utf-16be', u8.subarray(2));
+    // a UTF-8 BOM is trusted: a stray non-UTF-8 byte becomes U+FFFD instead of turning the whole file into Windows-1252
+    if (u8.length >= 3 && u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF) return dec('utf-8', u8.subarray(3));
     if (typeof TextDecoder === 'function'){
       try { return new TextDecoder('utf-8', { fatal: true }).decode(u8); } catch (e) { /* not UTF-8 */ }
     }
@@ -436,7 +440,15 @@ const IMPORT=(()=>{
     return clean((first || '') + ' ' + (last || ''));
   }
   // Some exports put the email in the name column. Emails are never stored: "priya.shah+x@corp.com" -> "Priya Shah".
-  const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // "Priya Shah <priya.shah@corp.com>", "Sam (sam@corp.com)", "Lee, Kim kim@corp.com", "Ada | ada@corp.com",
+  // "ada@corp.com (Ada)": the address is dropped, the name kept. "Pat (works @ HQ)" is a note, not an address.
+  const EMAIL_IN = /<[^<>]*@[^<>]*>|\([^()]*[^\s()@]@[^\s()@][^()]*\)|[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+/g;
+  function dropEmails(s){
+    let addr = '';
+    const name = clean(s.replace(EMAIL_IN, m => { if (!addr) addr = m.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').replace(/^mailto:\s*/i, ''); return ' '; })
+      .replace(/^[\s,;:|\/"'\-\u2013\u2014]+|[\s,;:|\/"'\-\u2013\u2014]+$/g, '').replace(/^\(([^()]*)\)$/, '$1'));
+    return { name, addr };
+  }
   function nameFromEmail(s){
     const local = s.split('@')[0].replace(/\+.*$/, '');
     return clean(local.split(/[._\-]+/).filter(p => /^\p{L}+$/u.test(p))
@@ -470,6 +482,8 @@ const IMPORT=(()=>{
     const commaDec = P.delimiter === ';';
     const headerLine = Number.isFinite(P.headerLine) && P.headerLine > 0 ? P.headerLine : 1;
     const lineOf = i => (Array.isArray(P.lines) && Number.isFinite(P.lines[i])) ? P.lines[i] : headerLine + 1 + i;
+    // "Rotation (rad)": stored in degrees like every other rotation
+    const rotRad = ci.rot >= 0 && Array.isArray(P.header) && /(^| )rad(ian)?s?( |$)/.test(normCol(P.header[ci.rot]));
 
     const floors = new Map();            // key -> entries
     const problems = [];
@@ -496,8 +510,13 @@ const IMPORT=(()=>{
       const get = f => (ci[f] >= 0 && ci[f] < r.length ? cell(r[ci[f]]) : '');
 
       // ---- name / vacant
-      let rawName = personName(get('name'), get('first'), get('last'));
-      if (EMAIL.test(rawName)){ rawName = nameFromEmail(rawName); emailCount++; if (!emailRow) emailRow = row; }
+      let nm = get('name'), fn = get('first'), ln = get('last'), addr = '';
+      if ((nm + fn + ln).indexOf('@') >= 0){              // drop addresses before "Shah, Priya" is flipped
+        const de = s => { const d = dropEmails(s); if (!d.addr) return s; addr = addr || d.addr; return d.name; };
+        nm = de(nm); fn = de(fn); ln = de(ln);
+        if (addr){ emailCount++; if (!emailRow) emailRow = row; }
+      }
+      const rawName = personName(nm, fn, ln) || (addr ? nameFromEmail(addr) : '');
       if (rawName && ID_LIKE.test(rawName)){
         idCount++; stats.skipped++;
         if (!idRow){ idRow = row; idExample = rawName; }
@@ -585,14 +604,14 @@ const IMPORT=(()=>{
       if (rs && !Number.isFinite(rot)) report(row, who + ': the rotation ' + q(rs) + ' isn\u2019t a number, so it was ignored.');
 
       const e = { desk, name, team, title: vacant ? '' : title };
-      if (hasXY){ e.x = x; e.y = y; if (Number.isFinite(rot)) e.rot = rot; }
+      if (hasXY){ e.x = x; e.y = y; if (Number.isFinite(rot)) e.rot = rotRad ? rot * 180 / Math.PI : rot; }
       if (vacant) e.vacant = true;
       if (!floors.has(key)) floors.set(key, []);
       floors.get(key).push(e);
     }
     if (noFloorCount) report(noFloorRow, 'There\u2019s no floor column, and ' + fmtInt(noFloorCount) + (noFloorCount === 1 ? ' row\u2019s desk id doesn\u2019t' : ' rows\u2019 desk ids don\u2019t') + ' start with a floor number (like 3-114), so ' + (noFloorCount === 1 ? 'it was' : 'they were') + ' skipped.');
     if (idCount) report(idRow, fmtInt(idCount) + (idCount === 1 ? ' name looks' : ' names look') + ' like an ID number, not a name (for example ' + q(idExample) + '), so ' + (idCount === 1 ? 'that row was' : 'those rows were') + ' skipped. Check that the name column holds people\u2019s names.');
-    if (emailCount) report(emailRow, fmtInt(emailCount) + (emailCount === 1 ? ' name was an email address' : ' names were email addresses') + '; the part before the @ was used as the name (priya.shah@\u2026 \u2192 Priya Shah). Email addresses are not kept.');
+    if (emailCount) report(emailRow, fmtInt(emailCount) + (emailCount === 1 ? ' name had an email address in it' : ' names had email addresses in them') + '. Email addresses are not kept: the name next to the address was used, or the part before the @ if there was no name (priya.shah@\u2026 \u2192 Priya Shah).');
     if (deskFloorCount) report(deskFloorRow, 'Floor was missing on ' + fmtInt(deskFloorCount) + (deskFloorCount === 1 ? ' row' : ' rows') + ', so it was taken from the start of the desk id (3-114 \u2192 Floor 3).');
 
     // Open desks that a person also sits at: the person wins, but keeps the open row's X/Y if they had none.
@@ -965,7 +984,8 @@ const IMPORT=(()=>{
       return Promise.reject(new Error('Couldn\u2019t read the file.'));
     };
     let doc = null;
-    return readBytes().then(buf => pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise).then(d => {
+    // isEvalSupported:false: pdf.js must never build font paths with new Function (CVE-2024-4367, pdf.js <= 4.1)
+    return readBytes().then(buf => pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise).then(d => {
       doc = d;
       return doc.getPage(1);
     }).then(page => {

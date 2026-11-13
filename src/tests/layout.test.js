@@ -335,6 +335,23 @@ test('auto ramps: 3-6, open aisles only, never on dests, pads, spawn, exit, or n
   assert.deepStrictEqual(LAYOUT.build(spec, [], FX.teams).ramps, [{ k: 'kick', x: 1, z: 2, ax: 'z', dir: -1, len: 1.4, w: 1.3, h: 0.32 }]);
 });
 
+test('auto ramps on a huge open plate: still 6, and the build stays quick', () => {
+  const spec = { key: 'T-1', w: 300, d: 300, rooms: [{ id: 'e1', type: 'elevator', name: 'Elevator', x: 0, z: -147, w: 2.6, d: 2.4, door: 's' }], ramps: null };
+  const t = [];
+  for (let i = 0; i < 3; i++) { const t0 = performance.now(); LAYOUT.build(spec, [], {}); t.push(performance.now() - t0); }
+  const m = LAYOUT.build(spec, [], {});
+  assert.strictEqual(m.ramps.length, 6);
+  for (const r of m.ramps) assert.ok(Math.abs(r.x) <= 148 && Math.abs(r.z) <= 148, 'kept 2 m off the plate edge');
+  assert.ok(Math.min(...t) < 150, 'min ' + Math.min(...t).toFixed(1) + ' ms (a 1 m candidate grid took ~400 ms)');
+});
+
+test('window offices: a zone flush with the east/west wall keeps its row on a non-integer plate', () => {
+  const n = (x, w) => LAYOUT.build({ key: 'T-1', w: 72.2, d: 30.23, zones: [{ team: 'Legal', arr: 'offices', x, z: 0, w, d: 12 }] }, [], {}, { lite: true }).desks.length;
+  assert.ok(n(32.875, 5.75) > 0, 'pulled in from the edge');
+  assert.strictEqual(n(33, 6), n(32.875, 5.75), 'flush east');
+  assert.strictEqual(n(-33, 6), n(-32.875, 5.75), 'flush west');
+});
+
 test('coffee: 5 distinct occupied desks spread apart; teams, signs', () => {
   const m = builds['B1-1'];
   assert.strictEqual(m.coffee.length, 5); assert.strictEqual(new Set(m.coffee).size, 5);

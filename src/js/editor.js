@@ -347,6 +347,14 @@ function createHistory(cap){
     size:()=>({past:past.length,future:future.length}),
   };
 }
+// Selection after undo/redo swaps spec prev for next: same index if that list kept its length (in-place edits)
+// or the item is still there, else the same item found by content, else null (it's gone).
+function reselect(prev,next,sel){
+  const key=sel&&KINDS[sel.kind],a=arr(prev&&prev[key]),b=arr(next&&next[key]);if(!key||a[sel.i]==null)return null;
+  const js=JSON.stringify(a[sel.i]);
+  if(sel.i<b.length&&(b.length===a.length||JSON.stringify(b[sel.i])===js))return{kind:sel.kind,i:sel.i};
+  const i=b.findIndex(o=>JSON.stringify(o)===js);return i>=0?{kind:sel.kind,i}:null;
+}
 
 /* ================================================================ teams, desk ids, labels */
 function guessArr(team){const t=str(team);for(const[re,a]of ARR_RULES)if(re.test(t))return a;return"bench"}
@@ -635,7 +643,7 @@ function shortName(name,full){const p=str(name).split(/\s+/);if(full||p.length<2
 const T={GRID,END_SNAP,MIN_SIZE,UNDO_CAP,BUILD_MS,MIN_SEG,MAX_IMPORT,DESK_W,DESK_D,ROOM_TYPES,ROOM_NAME,ARR_NAMES,PRESETS,UNITS,
   snap,snapYaw,yawIndex,facingName,normalize,normSpec,finalize,nextId,distSeg,segLen,rectOf,inRect,inDesk,toLocal,collectEnds,snapPoint,
   hitTest,cornerAt,wallEndAt,moveRect,moveSeg,movePt,resizeRect,rectFromDrag,presetRect,roomOutline,plateOutline,translateSpec,
-  chainStep,createHistory,guessArr,teamArr,teamColor,rosterRows,teamNames,headcounts,zoneCounts,suggestDeskId,describe,validate,
+  chainStep,createHistory,reselect,guessArr,teamArr,teamColor,rosterRows,teamNames,headcounts,zoneCounts,suggestDeskId,describe,validate,
   facilityRows,farthestPair,simFallback,facilityPlace,unitPlace,mergeDesks,countOutside,unitFromScale,
   unitKey,dxfUnit,dxfLayers,dxfToWalls,planFit,planRescale,matchFloorToPlan,throttle,isDark,shortName,fmtM};
 
@@ -794,6 +802,7 @@ function makeEditor(opts){
   const prevFocus=doc.activeElement;
   const teams=opts.teams&&typeof opts.teams==="object"?opts.teams:{};
   const roster=rosterRows(opts.roster);
+  const nPeople=roster.filter(r=>r.name).length;   // the host adds name-less rows for open desks (facilities placement)
   const facil=facilityRows(opts.roster);
   const N=normalize(opts.spec,{key:opts.key});
   const title=str(opts.title)||("Floor "+(N.spec.key||""));
@@ -921,14 +930,16 @@ function makeEditor(opts){
     if(S.drag)cancelDrag();endChain(true);
     if(S.mode&&S.mode.t==="cadmove")S.mode=null;   // its wall indexes may no longer hold
     const prev=hist.undo(json());if(prev==null){announce("Nothing to undo");return}
-    S.spec=JSON.parse(prev);committed(prev);announce("Undone");
+    swapSpec(prev);announce("Undone");
   }
   function redo(){
     if(S.drag)cancelDrag();endChain(true);
     if(S.mode&&S.mode.t==="cadmove")S.mode=null;
     const next=hist.redo(json());if(next==null){announce("Nothing to redo");return}
-    S.spec=JSON.parse(next);committed(next);announce("Redone");
+    swapSpec(next);announce("Redone");
   }
+  // selection and hover are list indexes: keep the selection on the same item, not the same slot
+  function swapSpec(js){const old=S.spec;S.spec=JSON.parse(js);S.sel=reselect(old,S.spec,S.sel);S.hover=null;committed(js)}
   function updateTop(){
     bUndo.disabled=!hist.canUndo()||S.saving;bRedo.disabled=!hist.canRedo()||S.saving;
     bSave.disabled=S.saving;bCancel.disabled=S.saving;bSave.textContent=S.saving?"Saving…":"Save";
@@ -939,7 +950,7 @@ function makeEditor(opts){
   function setSel(sel,quiet){
     const same=sameSel(sel,S.sel);
     S.sel=sel||null;hist.breakCoalesce();
-    if(!same){renderPanel();if(!quiet)announce(S.sel?describe(S.spec,S.sel):"Nothing selected")}
+    if(!same){S.newTeam=false;renderPanel();if(!quiet)announce(S.sel?describe(S.spec,S.sel):"Nothing selected")}
     syncRail();invalidate();updateStatus();
   }
   function syncRail(){
@@ -1268,6 +1279,8 @@ function makeEditor(opts){
     if(k==="Tab"){trapTab(e,root);return}
     if(k==="Escape"){e.preventDefault();if(typing){t.blur();cv.focus({preventScroll:true});return}escape();return}
     if(mod&&kl==="s"){e.preventDefault();if(typing)t.blur();save();return}
+    // input listeners never see keydown (stopPropagation above, in capture), so Enter in Real length is handled here
+    if(k==="Enter"&&!mod&&!e.altKey&&inRoot&&t.dataset&&t.dataset.k==="scale-real"){e.preventDefault();applyScale();return}
     if(typing)return;
     if(mod&&kl==="z"){e.preventDefault();if(e.shiftKey)redo();else undo();return}
     if(mod&&kl==="y"){e.preventDefault();redo();return}
@@ -1338,7 +1351,7 @@ function makeEditor(opts){
     if(S.saving||!S.alive||modal)return;
     if(S.drag)cancelDrag();
     endChain(true);
-    const spec=finalize(S.spec,{key:S.spec.key});
+    const savedJs=json(),spec=finalize(S.spec,{key:S.spec.key});   // the state this save writes
     const v=validate(spec,{floors:opts.floors,model:S.model});
     if(v.errors.length){
       const r=await issuesDialog("Fix these before saving",`${plural(v.errors.length,"problem")} would break this floor for everyone:`,v.errors,false);
@@ -1363,7 +1376,10 @@ function makeEditor(opts){
       return;
     }
     if(!S.alive)return;
-    S.saving=false;S.base=json();S.dirty=false;teardown();
+    S.saving=false;S.base=savedJs;
+    // edits made while the save was in flight aren't in it: stay open with them unsaved
+    if(json()!==savedJs){S.dirty=true;updateTop();flash("Saved. Save again to keep the changes you made while saving.");return}
+    S.dirty=false;teardown();
   }
   async function cancel(){
     if(S.saving||modal)return;
@@ -1406,6 +1422,7 @@ function makeEditor(opts){
     root.append(inp);inp.click();
   }
   async function loadPlanFile(file){
+    if(!S.alive)return;
     if(typeof opts.upload!=="function"){setBusy("","Only editors of this page can add plan images.");return}
     const isPdf=/pdf$/i.test(file.type)||/\.pdf$/i.test(file.name);
     const isImg=/^image\/(png|jpe?g|webp)$/i.test(file.type)||/\.(png|jpe?g|webp)$/i.test(file.name);
@@ -1416,11 +1433,14 @@ function makeEditor(opts){
       if(isPdf){
         if(typeof opts.renderPDF!=="function")throw new Error("PDF plans can't be read here. Save the plan as a PNG or JPG and load that instead.");
         setBusy("Reading the PDF…","");blob=await opts.renderPDF(file);
+        if(!S.alive)return;   // closed while reading: don't upload
         if(!blob||!blob.size)throw new Error("The PDF didn't turn into an image.");
       }
       setBusy("Measuring the image…","");
       const local=URL.createObjectURL(blob);urls.push(local);
-      const img=await loadImg(local);
+      // teardown already revoked urls: one made for a load that outlived the editor is revoked here
+      const img=await loadImg(local).finally(()=>{if(!S.alive)try{URL.revokeObjectURL(local)}catch(_){}});
+      if(!S.alive)return;
       setBusy("Uploading the plan…","");
       const res=await opts.upload(blob);
       if(!S.alive)return;
@@ -1621,6 +1641,7 @@ function makeEditor(opts){
   }
   function renderPanel(force){
     if(!S.alive)return;
+    if(!S.sel||S.sel.kind!=="zone")S.newTeam=false;   // "New team…" belongs to the selected team area only
     const sig=panelSig();
     if(!force&&sig===S.psig){refreshPanel();return}
     S.psig=sig;
@@ -1629,7 +1650,7 @@ function makeEditor(opts){
     let kids=[];
     try{kids=buildPanel()}catch(err){kids=[note("This panel couldn't be shown: "+msgOf(err),"ed-warn")]}
     body.replaceChildren(...kids.filter(Boolean));
-    if(fk){const el=body.querySelector(`[data-k="${fk}"]`);if(el)el.focus({preventScroll:true})}
+    if(fk){const el=[...body.querySelectorAll("[data-k]")].find(x=>x.dataset.k===fk);if(el)el.focus({preventScroll:true})}   // no selector: keys can hold team names
     refreshPanel();syncRail();
   }
   function refreshPanel(){
@@ -1825,9 +1846,9 @@ function makeEditor(opts){
     kids.push(sec("Checks",checks));
     kids.push(sec("People on this floor",bindText(h("p",{class:"ed-stat"}),()=>{
       if(S.modelErr)return"Preview unavailable: "+S.modelErr;
-      const st=S.model&&S.model.stats;if(!st)return`${plural(roster.length,"person","people")}`;
+      const st=S.model&&S.model.stats;if(!st)return`${plural(nPeople,"person","people")}`;
       const un=arr(S.model.unplaced);
-      return`${plural(roster.length,"person","people")} · ${plural(num(st.desks,0),"desk")} · ${num(st.open,0)} open${un.length?` · ${un.length} without a desk: ${un.slice(0,4).map(u=>u&&u.name).filter(Boolean).join(", ")}${un.length>4?"…":""}`:""}`;
+      return`${plural(nPeople,"person","people")} · ${plural(num(st.desks,0),"desk")} · ${num(st.open,0)} open${un.length?` · ${un.length} without a desk: ${un.slice(0,4).map(u=>u&&u.name).filter(Boolean).join(", ")}${un.length>4?"…":""}`:""}`;
     })));
     kids.push(h("p",{class:"ed-keys",text:"V select · W wall · G glass · R room · T team area · D desk · X erase · F floor · Ctrl+Z undo · Space+drag or middle-drag pans · 0 fits"}));
     if(N.dropped)kids.push(note(`${plural(N.dropped,"item")} in the saved floor couldn't be read and ${N.dropped===1?"was":"were"} left out.`,"ed-warn"));
@@ -1836,8 +1857,7 @@ function makeEditor(opts){
   function panelScale(){
     const m=S.mode;
     const real=h("input",{class:"ed-in ed-num",type:"number",inputmode:"decimal",min:"0",step:"any",value:m.real,"data-k":"scale-real",placeholder:"e.g. 30"});
-    real.addEventListener("input",()=>{m.real=real.value});
-    real.addEventListener("keydown",e=>{if(e.key==="Enter")applyScale()});
+    real.addEventListener("input",()=>{m.real=real.value});   // Enter is handled in onKey
     return[head("Plan",()=>"Set the plan's scale"),
       note(tapWord("Click both ends of something on the plan whose real length you know: a long wall, a dimension line or the column grid.")),
       h("p",{class:"ed-step",text:tapWord(!m.p1?"1. Click the first end":!m.p2?"2. Click the other end":"3. Type the real length")}),

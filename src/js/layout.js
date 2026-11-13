@@ -458,7 +458,7 @@ const LAYOUT=(()=>{
     // a group footprint (local rect in frame G) is accepted when it stays inside the plate edge aisle and clear of every obstacle
     function fits(c,G,u,v,hu,hv){
       const b=G.box(u,v,hu,hv);
-      if(b.x0<-HW+EDGE||b.x1>HW-EDGE||b.z0<-HD+EDGE||b.z1>HD-EDGE)return false;
+      if(b.x0<-HW+EDGE-1e-6||b.x1>HW-EDGE+1e-6||b.z0<-HD+EDGE-1e-6||b.z1>HD-EDGE+1e-6)return false;   // slack like hit(): a flush row can land an ulp past the edge
       for(const o of obst)if(hit(o,b))return false;
       c.groups.push(b);return true;
     }
@@ -751,7 +751,8 @@ const LAYOUT=(()=>{
       const span=(x,z,ax,dir,a,b,hw)=>{const p=dir>0?[a,b]:[-b,-a];
         return ax==="x"?{x0:x+p[0],x1:x+p[1],z0:z-hw,z1:z+hw}:{x0:x-hw,x1:x+hw,z0:z+p[0],z1:z+p[1]}};
       const cands={hump:[],kick:[]};
-      for(let z=-HD+2;z<=HD-2;z+=1)for(let x=-HW+2;x<=HW-2;x+=1)for(const k of["hump","kick"])for(const ax of["x","z"])for(const dir of[1,-1]){
+      const st=Math.max(1,Math.round(Math.sqrt(W*D/3600)));   // 1 m candidate grid up to ~90x90 m, coarser on huge plates (cost stays ~flat)
+      for(let z=-HD+2;z<=HD-2;z+=st)for(let x=-HW+2;x<=HW-2;x+=st)for(const k of["hump","kick"])for(const ax of["x","z"])for(const dir of[1,-1]){
         const sp=SHAPE[k],foot=span(x,z,ax,dir,-sp.len/2,sp.len/2+sp.back,sp.w/2),lane=span(x,z,ax,dir,-sp.len/2-RUN,sp.len/2+sp.back+RUN,sp.w/2+0.1);
         if(sum(SN,lane.x0,lane.x1,lane.z0,lane.z1)||sum(SF,foot.x0-0.3,foot.x1+0.3,foot.z0-0.3,foot.z1+0.3))continue;
         cands[k].push({k,x,z,ax,dir,foot,lane,j:(hash(S.key+k+ax+dir+x+","+z)%1000)/1000*1.5});

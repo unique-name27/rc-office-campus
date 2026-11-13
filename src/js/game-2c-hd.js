@@ -517,8 +517,10 @@ const LEVELS=[
   {n:'Lowest',msaa:0,ao:.5,post:false,cap:.8,px:3e6},   // Auto only: fewer pixels than the screen has
 ];
 const MSAA_PX=3.7e6; // MSAA up to 2560x1440 drawn pixels
-let qMode='auto',qLevel=TOUCH?2:0,qChanged=0,bootGrace=0,msaaOff=false;
-{const q=store.get('rc-quality');if(q&&q!=='auto'&&LEVELS[+q]&&+q<3){qMode='fixed';qLevel=+q}}
+// One graphics setting for everyone: Low (no post-processing; with the baked light it looks the same and runs much faster).
+// Auto only steps down to Lowest when a device can't keep up, and back up to Low, never above it.
+const QMIN=2;
+let qMode='auto',qLevel=QMIN,qChanged=0,bootGrace=0,msaaOff=false;
 function pixelRatio(){
   if(!(S&&S.hd))return DPR;const L=LEVELS[qLevel],css=Math.max(1,innerWidth*innerHeight);
   return Math.max(.5,Math.min(devicePixelRatio||1,L.cap,Math.sqrt(L.px/css)));
@@ -532,6 +534,13 @@ function msaaSamples(){
 function setSamples(){
   if(!composer)return;const n=msaaSamples();
   for(const t of [composer.renderTarget1,composer.renderTarget2])if(t.samples!==n){t.samples=n;t.dispose()}
+}
+// while nothing draws through the composer (another style, or Low and Lowest), give back its GPU buffers: the MSAA half-float
+// targets, GTAO's and bloom's mips. dispose() on a free target does nothing, and three allocates one again on its next use.
+function freeFx(){
+  if(!composer)return;
+  for(const t of [composer.renderTarget1,composer.renderTarget2,gtao.normalRenderTarget,gtao.gtaoRenderTarget,gtao.pdRenderTarget,
+    bloom.renderTargetBright,...bloom.renderTargetsHorizontal,...bloom.renderTargetsVertical])if(t)t.dispose();
 }
 // the sun's shadow map: half the size at Low and Lowest (a quarter of the pixels to draw), but never below 1024 at Low or 512 at
 // Lowest, so on touch devices (SM 1024) only Lowest shrinks
@@ -547,13 +556,18 @@ function applyQuality(i,user){
     aoScale=dpr>=1.5?L.ao*.67:L.ao;fxOn=L.post;bloom.enabled=L.post;gtao.enabled=L.post&&!BAKE.on; // baked light already holds the AO
     fitShadow();
   }else fxOn=false;
+  if(!fxOn)freeFx();
   if(aoBlobs)aoBlobs.visible=!fxOn&&!BAKE.on; // the soft blobs under furniture stand in for AO when it is off
   qChanged=performance.now();if(user)bootGrace=0;resize();qUI();
 }
 function setQuality(q){qMode=q==='auto'?'auto':'fixed';store.set('rc-quality',q);applyQuality(q==='auto'?qLevel:+q,true)}
 // GPU time per frame, from the browser's GPU timer when it offers one (Chrome and Edge on most PCs and Macs do)
-const gl=renderer.getContext(),TQ=gl.getExtension('EXT_disjoint_timer_query_webgl2'),qPend=[];
+const gl=renderer.getContext(),qPend=[];let TQ=gl.getExtension('EXT_disjoint_timer_query_webgl2');
 let gpuMs=-1,dtMs=16.7,slowFor=0,fastFor=0,acc=0,frames=0,fps=0;
+// a lost context takes its queries with it, and the restored one needs the timer enabled again. The restore also recompiles
+// every shader, so Auto waits a few seconds, as it does for a new world.
+cv.addEventListener('webglcontextlost',()=>{qPend.length=0;gpuMs=-1});
+cv.addEventListener('webglcontextrestored',()=>{qPend.length=0;gpuMs=-1;TQ=gl.getExtension('EXT_disjoint_timer_query_webgl2');bootGrace=performance.now()+5000});
 function gpuPoll(){
   while(qPend.length&&gl.getQueryParameter(qPend[0],gl.QUERY_RESULT_AVAILABLE)){
     const q=qPend.shift();if(!gl.getParameter(TQ.GPU_DISJOINT_EXT)){const ms=gl.getQueryParameter(q,gl.QUERY_RESULT)/1e6;gpuMs=gpuMs<0?ms:gpuMs*.92+ms*.08}gl.deleteQuery(q);
@@ -575,7 +589,7 @@ function autoQuality(dt){
   const slow=gpuMs>=0?gpuMs>11:dtMs>22,fast=gpuMs>=0&&gpuMs<4.5;
   slowFor=slow?slowFor+dt:0;fastFor=fast?fastFor+dt:0;
   if(slowFor>3&&qLevel<LEVELS.length-1){applyQuality(qLevel+1);slowFor=0}
-  else if(fastFor>8&&qLevel>0){applyQuality(qLevel-1);fastFor=0}
+  else if(fastFor>8&&qLevel>QMIN){applyQuality(qLevel-1);fastFor=0}
 }
 function qUI(){
   const box=$('quality');if(!box)return;$('qualityRow').hidden=!(S&&S.hd);
@@ -588,13 +602,13 @@ function qUI(){
 // drew it twice. Now a frame draws it at most once, and a still scene (nothing moved, the sun's view unchanged) keeps the last
 // one, in every style. Only casters inside the sun's shadow box count (the Mailbot driving its round elsewhere doesn't), and
 // one entering or leaving the box redraws it once. The creatures' idle motion is in their shader, so their shadows hold still
-// between changes.
+// between changes, and a dog's or cat's idle tail wag doesn't count (a few cm of shadow, caught up by the next redraw).
 let shSig=NaN,shDirty=2;
 function shadowSig(){
   sun.shadow.updateMatrices(sun);const fr=sun.shadow.getFrustum(); // three only does this when it draws the map
   let h=0,n=0;
   scene.traverseVisible(o=>{
-    if(!o.castShadow||o.userData.walk)return; // walking coworkers: counted below by where they are
+    if(!o.castShadow||o.userData.walk||o.userData.wag)return; // walking coworkers: counted below by where they are; tails wag in place
     if((o.isMesh||o.isLine||o.isPoints)&&o.frustumCulled&&!fr.intersectsObject(o))return; // three wouldn't draw it into the map either
     const e=o.matrixWorld.elements;n++;
     const x=(e[0]*1.31+e[2]*1.73+e[5]*2.17+e[8]*2.71+e[10]*3.13+e[12]*3.37+e[13]*3.79+e[14]*4.19)*(1+n*1e-4);
@@ -610,12 +624,12 @@ function shadowsBefore(){
 function shadowsAfter(){if(renderer.shadowMap.autoUpdate||!sun)return;const s=shadowSig();if(s!==shSig){shSig=s;shDirty=2}} // matrices are current after a render
 function render(dt){BAKE.frame();
   FX.frame(dt);
-  let tq=null;if(TQ&&qPend.length<6){tq=gl.createQuery();gl.beginQuery(TQ.TIME_ELAPSED_EXT,tq)}
+  let tq=null;if(TQ&&qPend.length<6){tq=gl.createQuery();if(tq)gl.beginQuery(TQ.TIME_ELAPSED_EXT,tq)} // null while the context is lost
   shadowsBefore();
   if(S.hd&&fxOn)composer.render(dt);else renderer.render(scene,camera);
   shadowsAfter();
   if(tq){gl.endQuery(TQ.TIME_ELAPSED_EXT);qPend.push(tq)}if(TQ)gpuPoll();dtMs=dtMs*.95+dt*1000*.05;
-  acc+=dt;frames++;if(acc>1){fps=Math.round(frames/acc);autoQuality(acc);if(S.hd&&!$('stylePop').hidden)qUI();acc=0;frames=0}
+  acc+=dt;frames++;if(acc>1){fps=Math.round(frames/acc);autoQuality(acc);acc=0;frames=0}
 }
 function resizeFx(w,h){if(!composer||!S||!S.hd)return;setSamples();composer.setPixelRatio(renderer.getPixelRatio());composer.setSize(w,h)} // a bigger window may be past MSAA's limit
 

@@ -6,7 +6,7 @@
 const FIG_SURF={lab:.9,hot:.74};                     // work-surface height per arrangement (desks are .775)
 const FIG_SH=[[-.165,.955,.035],[.165,.955,.035]];    // shoulders, in the chair's frame (the sitter faces -z)
 const FIG_HEAD=new V3(0,1.152,.035);
-let figG=null,FIG=[],FIGP=[],figByChair=new Map(),figPick=new Map();
+let figG=null,FIG=[],FIGP=[],figByChair=new Map(),figPick=new Map(),figWM=null;   // figWM: the floor model the figures were built from
 const figTurned=new Set();
 const _FB=new THREE.Matrix4(),_FA=new THREE.Matrix4(),_FM=new THREE.Matrix4(),_FH=new THREE.Matrix4(),_FQ=new THREE.Quaternion(),_FV=new V3(),_FV2=new V3(),_FS=new V3(),_FD=new V3(),FIG_DOWN=new V3(0,-1,0);
 
@@ -462,7 +462,7 @@ function idleFigures(){
 function buildFigures(){
   figReset();
   if(WKIND!=="floor"||!root||!WM)return;
-  const desks=WM.desks||[],people=WM.people||[];
+  figWM=WM;const desks=WM.desks||[],people=WM.people||[];
   for(const c of chairs){
     if(c.desk<0)continue;const d=desks[c.desk];if(!d||d.person<0||!people[d.person])continue;
     const key=WKEY+"|"+d.id,look=PEOPLE.merge(PEOPLE.defaultLook(key,d.arr),LOOKS.get(key));
@@ -506,20 +506,24 @@ function buildFigures(){
   for(const k in figG){const g=figG[k];for(const m of [g.mesh,g.hull])if(m)m.userData.dyn=true}
   walkReset();
   if(figG.torso.mesh)figPick.set(figG.torso.mesh,FIGP);if(figG.head.mesh)figPick.set(figG.head.mesh,FIGP);
-  // Neon night: dark faces with colored edges (shirts in the team color, hats and mugs in their own)
-  const neon=faces&&S.mat==="basic",dark=pal("chair"),P=(g,i,hex)=>g.paint(i,neon?dark:hex),E=(g,i,hex)=>{if(S.teamEdges)g.edge(i,bright(hex))};
-  for(const f of FIGP){
-    const L=f.look,sh=figShirt(f),tone=figTone(f),i=f.n,team=teamColorOf(f.d.team);
-    P(figG.pants,i,L.pants);P(figG.shoes,i,L.shoes);P(figG.torso,i,sh);E(figG.torso,i,team);P(figG.head,i,tone);P(figG.badge,i,team);E(figG.badge,i,team);
-    for(let s=0;s<4;s++){P(figG.arm,4*i+s,sh);E(figG.arm,4*i+s,team);P(figG.joint,4*i+s,sh)}for(let s=0;s<2;s++)P(figG.hand,2*i+s,tone);
-    if(f.hat>=0){P(figG[L.hat],f.hat,L.hatColor);E(figG[L.hat],f.hat,L.hatColor)}
-  }
   for(const f of FIG){
-    const L=f.look;
-    if(f.mug>=0){const d=f.d,dd=d.dd>0?d.dd:.78;_FA.makeRotationY(d.a||0);_FA.setPosition(d.x,FIG_SURF[d.arr]||.775,d.z);_FM.makeTranslation(.34,0,dd/2-.17);_FB.multiplyMatrices(_FA,_FM);figG.mug.set(f.mug,_FB);P(figG.mug,f.mug,L.mugColor);E(figG.mug,f.mug,L.mugColor)}
-    if(f.sp){const coat=crCoat(f),team=teamColorOf(f.d.team);P(figG[f.kb],f.ci,coat);P(figG[f.kh],f.ci,coat);E(figG[f.kb],f.ci,team);P(figG.scarf,f.si,team);E(figG.scarf,f.si,team)}
+    if(f.mug>=0){const d=f.d,dd=d.dd>0?d.dd:.78;_FA.makeRotationY(d.a||0);_FA.setPosition(d.x,FIG_SURF[d.arr]||.775,d.z);_FM.makeTranslation(.34,0,dd/2-.17);_FB.multiplyMatrices(_FA,_FM);figG.mug.set(f.mug,_FB)}
+    figPaint(f);
   }
   FIG.forEach(figPose);figCommit();
+}
+// one figure's colors, from its look and its team (also the repaint after a color-only look change).
+// Neon night: dark faces with colored edges (shirts in the team color, hats and mugs in their own)
+function figPaint(f){
+  const neon=!S.faceIsBg&&!S.depthOnly&&S.mat==="basic",dark=pal("chair"),P=(g,i,hex)=>g.paint(i,neon?dark:hex),E=(g,i,hex)=>{if(S.teamEdges)g.edge(i,bright(hex))};
+  const G=figG,L=f.look,team=teamColorOf(f.d.team);
+  if(f.mug>=0){P(G.mug,f.mug,L.mugColor);E(G.mug,f.mug,L.mugColor)}
+  if(f.sp){const coat=crCoat(f),w=f.away&&f.slot>=0&&G["wk_"+f.sp];P(G[f.kb],f.ci,coat);P(G[f.kh],f.ci,coat);E(G[f.kb],f.ci,team);P(G.scarf,f.si,team);E(G.scarf,f.si,team);
+    if(w)P(w,f.slot,coat);return}   // up and walking: its standing figure too
+  const sh=figShirt(f),tone=figTone(f),i=f.n;
+  P(G.pants,i,L.pants);P(G.shoes,i,L.shoes);P(G.torso,i,sh);E(G.torso,i,team);P(G.head,i,tone);P(G.badge,i,team);E(G.badge,i,team);
+  for(let s=0;s<4;s++){P(G.arm,4*i+s,sh);E(G.arm,4*i+s,team);P(G.joint,4*i+s,sh)}for(let s=0;s<2;s++)P(G.hand,2*i+s,tone);
+  if(f.hat>=0){P(G[L.hat],f.hat,L.hatColor);E(G[L.hat],f.hat,L.hatColor)}
 }
 // put one figure where its chair is now
 function figPose(f){
@@ -557,11 +561,20 @@ function figChair(ch){const f=figByChair.get(ch);if(f)figPose(f)}
 function figAll(){FIG.forEach(figPose)}
 // clearRoot already disposed everything under root: just forget it
 function figReset(){walkReset();figG=null;FIG=[];FIGP=[];figByChair=new Map();figPick=new Map();figTurned.clear()}
-// a look changed: rebuild only the figures (the rest of the floor stays)
+const FIG_TINT={shirt:1,tone:1,labCoat:1,coat:1};   // look fields that only change a color
+// a look changed: when only colors did, repaint in place (no new geometry or shaders, and walks carry on); else rebuild
+// only the figures (the rest of the floor stays)
 function rebuildFigures(){
   if(WKIND!=="floor"||!root)return;
-  if(figG){const dead=new Set();for(const k in figG){const g=figG[k];for(const o of [g.mesh,g.hull,g.lines]){if(!o)continue;if(o.parent)o.parent.remove(o);o.geometry.dispose();if(o.material!==HULL){dead.add(o.material);o.material.dispose()}}}lineMats=lineMats.filter(m=>!dead.has(m))}
+  if(figG&&figWM===WM){const next=FIG.map(f=>PEOPLE.merge(PEOPLE.defaultLook(f.key,f.d.arr),LOOKS.get(f.key)));
+    if(FIG.every((f,i)=>Object.keys(next[i]).every(k=>FIG_TINT[k]||next[i][k]===f.look[k]))){FIG.forEach((f,i)=>{f.look=next[i];figPaint(f)});figCommit();return}}
+  const dead=new Set();
+  if(figG)for(const k in figG){const g=figG[k];for(const o of [g.mesh,g.hull,g.lines]){if(!o)continue;if(o.parent)o.parent.remove(o);o.geometry.dispose();if(o.material!==HULL)dead.add(o.material)}}
   buildFigures();
+  // free the old materials only once the new ones have drawn: they share the same shader programs, and freeing them first
+  // drops each program's use count to 0, so three would compile and link them all again mid-drive (the hull clones are reused)
+  if(figG)for(const k in figG){const g=figG[k];for(const o of [g.mesh,g.hull,g.lines])if(o)dead.delete(o.material)}
+  if(dead.size){lineMats=lineMats.filter(m=>!dead.has(m));requestAnimationFrame(()=>requestAnimationFrame(()=>{for(const m of dead)m.dispose()}))}
 }
 // which desk a ray hit on a figure points at (-1 if none)
 function figDeskOf(h){if(!figG||!h)return -1;const L=figPick.get(h.object),f=L&&L[h.instanceId];return f?f.di:-1}
@@ -618,14 +631,28 @@ function walkDest(f,tr){
   const near=P.rooms.slice().sort((a,b)=>dist(a)-dist(b)||(a.id<b.id?-1:1)).slice(0,6);
   return near.length?{home,to:near[Math.floor(tr.pick*tr.pick*near.length)]}:null;   // nearer rooms more often
 }
+// walkers' own grid: the floor's NAV grid plus every chair at its home spot as a walker post, so walks go round seated
+// coworkers instead of through them (cars and bots keep the plain grid: they push chairs). One per floor model.
+const walkNavs=new WeakMap();
+function walkGrid(){
+  if(!WM)return null;let g=walkNavs.get(WM);
+  if(g===undefined){g=null;try{g=NAV.grid(Object.assign({},WM,{posts:[...(WM.posts||[]),...(WM.chairs||[]).map(c=>({x:c.x,z:c.z,r:.2,m:4}))]}))}catch(e){console.error(e)}walkNavs.set(WM,g)}
+  return g;
+}
 // The path: from a step behind the chair (its home spot, the same for everyone) along NAV to a spot of this coworker's own
-// on a ring around the destination, so two who go to the same room stand side by side. Only the static NAV grid decides,
-// so every viewer gets the same path and length.
+// on a ring around the destination, so two who go to the same room stand side by side. Only static data decides (the
+// walkers' grid, chairs' home spots), so every viewer gets the same path and length.
 function walkPath(f,dd){
-  const g=navGrid(WKEY);if(!g)return null;
-  const find=(x,z)=>{let r=null;try{r=NAV.findPath(g,dd.home.x,dd.home.z,x,z)}catch(_){}return r&&r.pts&&r.pts.length>=2?r:null};
+  const gs=[walkGrid(),navGrid(WKEY)].filter(Boolean);if(!gs.length)return null;
+  // the walkers' grid first; where its chair posts made NAV move the start (tight back-to-back rows), the plain grid as before.
+  // A start NAV had to move on the plain grid too (a stand spot inside the next desk) would cut across desks: no walk
+  const find=(x,z)=>{for(const g of gs){let r=null;try{r=NAV.findPath(g,dd.home.x,dd.home.z,x,z)}catch(_){}
+    if(!r||!r.pts||r.pts.length<2)return null;
+    if(Math.hypot(r.pts[0][0]-dd.home.x,r.pts[0][1]-dd.home.z)<.2)return r}
+    return null};
+  const seat=(x,z)=>chairs.some(c=>c!==f.ch&&Math.hypot(c.hx-x,c.hz-z)<.5);   // never stand in someone's seat
   let r=null;const j=PEOPLE.hash(f.key+"|spot")%6;
-  for(let n=0;n<6&&!r;n++){const an=(dd.to.a||0)+Math.PI/2+((j+n)%6)*Math.PI/3,gx=dd.to.x+Math.sin(an)*.55,gz=dd.to.z+Math.cos(an)*.55,q=find(gx,gz);
+  for(let n=0;n<6&&!r;n++){const an=(dd.to.a||0)+Math.PI/2+((j+n)%6)*Math.PI/3,gx=dd.to.x+Math.sin(an)*.55,gz=dd.to.z+Math.cos(an)*.55;if(seat(gx,gz))continue;const q=find(gx,gz);
     if(q){const e=q.pts[q.pts.length-1];if(Math.hypot(e[0]-gx,e[1]-gz)<.2)r=q}}   // NAV snaps a blocked end elsewhere: only take one that got there
   if(!r)r=find(dd.to.x,dd.to.z);if(!r)return null;
   const c=f.ch,pts=[[c.hx+Math.sin(c.ha)*.5,c.hz+Math.cos(c.ha)*.5],...r.pts],cum=[0];   // behind the seat (a creature faces -z in its chair)
@@ -714,7 +741,8 @@ function walkStep(dt){
     pathAt(f.wp,a.s,_W);let x=_W.x,z=_W.z,h=_W.a;
     if(a.ph==="back")h+=Math.PI;else if(a.ph==="stay"&&f.wp.face!=null)h=f.wp.face;else if(a.ph==="down")h=f.ch.a;
     // a chair pushed away from home: get up from it and sit back down on it, blending into the shared path over the first metre
-    {const c=f.ch,ox=c.x-c.hx,oz=c.z-c.hz,od=Math.hypot(ox,oz);if(od>.02){const w=clamp(1-a.s/Math.max(1,od),0,1);x+=ox*w;z+=oz*w}}
+    // (or as many as the chair is away), but always done by the path's end, so the stay is on its own spot
+    {const c=f.ch,ox=c.x-c.hx,oz=c.z-c.hz,od=Math.hypot(ox,oz);if(od>.02){const w=clamp(1-a.s/Math.max(1e-3,Math.min(Math.max(1,od),f.wp.L)),0,1);x+=ox*w;z+=oz*w}}
     const dh=angDiff(f.wh,h);f.wh=Math.abs(dh)<1e-4?h:f.wh+dh*ke;
     const dg=a.gait-f.wg;f.wg=Math.abs(dg)<.002?a.gait:f.wg+dg*kg;f.hopCd-=dt;
     // step aside for a car close by, across the way it is walking (never into a wall, a desk or a table)
@@ -760,8 +788,9 @@ function watchLooks(){
 // settle every claim against today's seating, then redraw this floor's figures if any of them changed
 function recomputeLooks(){
   if(!DATA)return;
-  const claims=claimsNow(),keys=floorKeys();
-  const r=PEOPLE.resolve(claims,c=>PEOPLE.locate(c,peopleOn,keys),c=>{const n=lookNames.get(c.uid);return!!n&&PEOPLE.norm(n)===PEOPLE.norm(c.name)});
+  // each floor's people once, and one name index, made only if a claim has to be looked for elsewhere (they moved or left)
+  const claims=claimsNow(),keys=floorKeys(),memo=new Map(),on=w=>{if(!memo.has(w))memo.set(w,peopleOn(w));return memo.get(w)};let idx=null;
+  const r=PEOPLE.resolve(claims,c=>PEOPLE.locate(c,on,keys,()=>idx||(idx=PEOPLE.nameIndex(on,keys))),c=>{const n=lookNames.get(c.uid);return!!n&&PEOPLE.norm(n)===PEOPLE.norm(c.name)});
   const next=new Map();for(const [k,c] of r.winners)next.set(k,c.look);
   const prev=LOOKS;LOOKS=next;lookWinners=r.winners;lookStatus=r.status;
   if(WKIND==="floor"){const pre=WKEY+"|",sig=m=>k=>JSON.stringify(m.get(k)||null);let here=false;for(const k of new Set([...prev.keys(),...next.keys()]))if(k.startsWith(pre)&&sig(prev)(k)!==sig(next)(k)){here=true;break}if(here)rebuildFigures()}

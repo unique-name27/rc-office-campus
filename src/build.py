@@ -11,9 +11,9 @@ import sys, os, re, json, base64
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODULES = ["layout.js", "campus.js", "nav.js", "importers.js", "editor.js", "people.js", "props.js", "avatar-meshes.js", "kit-meshes.js", "sound-data.js",
-           "brawl.js", "pbr-data.js", "fx-data.js", "bake-data.js"]
+           "fun.js", "pbr-data.js", "fx-data.js", "bake-data.js"]
 GAME = ["game-1-core.js", "game-1b-avatars.js", "game-2-world.js", "game-2b-people.js", "game-2c-hd.js", "game-2d-fx.js", "game-2e-bake.js",
-        "game-2f-physics.js", "game-3-play.js", "game-3a-brawl-art.js", "game-3b-brawl.js", "game-4-ui.js"]
+        "game-2f-physics.js", "game-3-play.js", "game-3a-fun-art.js", "game-3b-fun.js", "game-4-ui.js"]
 # three.js r165 as ES modules from jsDelivr: one copy, shared with the add-ons through the import map
 TV = "0.165.0"
 IMPORTMAP = ('<script type="importmap">\n{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@%s/build/three.module.min.js",'
@@ -25,11 +25,14 @@ import {GTAOPass} from "three/addons/postprocessing/GTAOPass.js";
 import {UnrealBloomPass} from "three/addons/postprocessing/UnrealBloomPass.js";
 import {OutputPass} from "three/addons/postprocessing/OutputPass.js";
 import {RoomEnvironment} from "three/addons/environments/RoomEnvironment.js";
-window.__rcLoaded=true;"""
-# if the 3D library can't be fetched (offline, a blocked CDN) the module never runs: say so instead of showing a blank page
+window.__rcLoaded=true;
+// on a very slow link the failsafe can fire before this runs: undo it, or its overlay covers the working game
+{const f=document.getElementById("fatal");if(f&&!f.hidden){f.hidden=true;["bar","start","side","panel","mapwrap","speedo","help","fade"].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display=""})}}"""
+# if the 3D library can't be fetched (offline, a blocked CDN) the module never runs: say so instead of showing a blank page.
+# the 25 s count starts when the 2 MB page has finished parsing (before the module runs), not while it still downloads
 FAILSAFE = """<script>
-window.__rcFail=function(){if(window.__rcLoaded)return;var f=document.getElementById("fatal");if(!f)return;f.hidden=false;f.querySelector("p").textContent="The 3D library didn't load, so the campus can't be shown. Check your connection and reload the page.";["bar","start","side","panel","mapwrap","speedo","help"].forEach(function(id){var e=document.getElementById(id);if(e)e.style.display="none"})};
-setTimeout(window.__rcFail,25000);
+window.__rcFail=function(){if(window.__rcLoaded)return;var f=document.getElementById("fatal");if(!f)return;f.hidden=false;f.querySelector("p").textContent="The 3D library didn't load, so the campus can't be shown. Check your connection and reload the page.";["bar","start","side","panel","mapwrap","speedo","help","fade"].forEach(function(id){var e=document.getElementById(id);if(e)e.style.display="none"})};
+(function(){function arm(){if(document.readyState!=="loading"&&!window.__rcT)window.__rcT=setTimeout(window.__rcFail,25000)}arm();document.addEventListener("readystatechange",arm)})();
 </script>"""
 
 TEST_HOOK = """
@@ -48,7 +51,7 @@ window.__rc={get me(){return me},get bot(){return bot},get WKEY(){return WKEY},g
   get FIG(){return FIG},get FIGP(){return FIGP},get figG(){return figG},get LOOKS(){return LOOKS},get lookStatus(){return lookStatus},get lookDocs(){return lookDocs},get myDesk(){return myDesk},get myId(){return myId},
   recomputeLooks,rebuildFigures,figFrame,openMe,closeMe,deskClaimState,showPick,tidyChairs,chairsStep,PHYS,PROPS,spotFree,get cells(){return cells},get RAMPS(){return RAMPS},
   get SND(){return SND},get motor(){return motor},get eng(){return eng},get master(){return master},get AC(){return AC},BAKE,
-  get brawl(){return brawl},brawlStart,brawlLeave,brawlUse,brawlFrame,BRAWL,get myPeer(){return myPeer},set myPeer(v){myPeer=v}};
+  get fun(){return fun},get power(){return power},get coinTotal(){return coinTotal},funWorld,funPower,funFrame,FUN,whereGo,whereSearch,surprise,get myPeer(){return myPeer},set myPeer(v){myPeer=v}};
 """
 
 

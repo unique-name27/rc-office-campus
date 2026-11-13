@@ -171,9 +171,13 @@ function world(key,m,kind){
   const rootNow=root,tok={};loading=tok;
   const done=()=>{if(loading===tok)loading=null};
   pending=textures(key,r).then(
-    t=>{done();if(root===rootNow&&worldKey===key&&S.hd){try{apply(key,m,kind,r,P,t)}catch(e){bad.add(key);console.warn('baked light failed for '+key,e);HD.warm()}}},
-    e=>{done();if(e&&e.bkBad)bad.add(key);console.warn('baked light failed to load for '+key+(e&&e.bkBad?'':' (tries again on the next visit)'),e);if(root===rootNow)HD.warm()}); // realtime it is: warm that up
+    t=>{const late=tok.shown;done();if(late){prefetch();return}   // too late for this visit (see reveal): the next one uses them
+      if(root===rootNow&&worldKey===key&&S.hd){try{apply(key,m,kind,r,P,t)}catch(e){bad.add(key);console.warn('baked light failed for '+key,e);HD.warm()}}},
+    e=>{done();if(e&&e.bkBad)bad.add(key);console.warn('baked light failed to load for '+key+(e&&e.bkBad?'':' (tries again on the next visit)'),e);if(root===rootNow&&!tok.shown)HD.warm()}); // realtime it is: warm that up
 }
+// The cover is lifting and this world's images still haven't arrived: it stays realtime for this visit, so the light (and every
+// shader with it) never switches in front of the player. The images stay cached and light the next visit, behind its fade.
+function reveal(){if(loading){loading.shown=true;loading=null;HD.warm()}}
 function apply(key,m,kind,r,P,t){
   const vars=new Map(),olds=new Set(),K=r.K*(r.g||1),G=P.G;
   U.bkFloor.value.set(G.x0,G.z0,G.w,G.d);
@@ -272,5 +276,5 @@ function capture(){
     O:{p:b64f(new Float32Array(O.p)),c:b64f(new Float32Array(O.c)),n:O.c.length/3}};
 }
 
-return{reg,enter,world,chair,frame,capture,ready:()=>pending,get loading(){return !!loading},enable:v=>{enabled=!!v},get on(){return on},get info(){return{on,key:worldKey,K:rec&&rec.K,faces:faces&&faces.rects?faces.rects.length:0}}};
+return{reg,enter,world,reveal,chair,frame,capture,ready:()=>pending,get loading(){return !!loading},enable:v=>{enabled=!!v},get on(){return on},get info(){return{on,key:worldKey,K:rec&&rec.K,faces:faces&&faces.rects?faces.rects.length:0}}};
 })();

@@ -75,6 +75,7 @@ function makeAvatar(kind,paint){
     for(const M of P.m){
       if(M.k==="furStripe"&&!TABBY.has(paint))continue; // the raised tabby bands: only tabby coats show them
       const r=R[M.k]||["car",paint],m=part(M.geo,r[0],0,0,0,host,{car:true,paint,color:r[1]||undefined,noEdge:true,noOutline:true});
+      if(P.n==="tail")m.userData.wag=1; // HD's shadow gate: the idle wag alone doesn't redraw the sun's shadow map
       if(S.hd&&m.material.isMeshStandardMaterial){m.material.vertexColors=true;m.material.needsUpdate=true} // the AO baked in Blender
     }
     if(hullM)host.add(new THREE.Mesh(avHull(P,hullT),hullM));
