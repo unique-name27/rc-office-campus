@@ -51,7 +51,7 @@ window.__rc={get me(){return me},get bot(){return bot},get WKEY(){return WKEY},g
   get FIG(){return FIG},get FIGP(){return FIGP},get figG(){return figG},get LOOKS(){return LOOKS},get lookStatus(){return lookStatus},get lookDocs(){return lookDocs},get myDesk(){return myDesk},get myId(){return myId},
   recomputeLooks,rebuildFigures,figFrame,openMe,closeMe,deskClaimState,showPick,tidyChairs,chairsStep,PHYS,PROPS,spotFree,get cells(){return cells},get RAMPS(){return RAMPS},
   get SND(){return SND},get motor(){return motor},get eng(){return eng},get master(){return master},get AC(){return AC},BAKE,
-  get fun(){return fun},get power(){return power},get coinTotal(){return coinTotal},funWorld,funPower,funFrame,FUN,whereGo,whereSearch,surprise,get myPeer(){return myPeer},set myPeer(v){myPeer=v}};
+  get fun(){return fun},get power(){return power},get coinTotal(){return coinTotal},funWorld,funPower,funFrame,FUN,whereGo,whereSearch,surprise,get SUGG(){return SUGG},openSuggest,sendSuggestion,reviewSuggestion,dropSuggestion,get canSetup(){return canSetup},get db(){return db},get myPeer(){return myPeer},set myPeer(v){myPeer=v}};
 """
 
 

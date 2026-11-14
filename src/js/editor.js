@@ -691,6 +691,9 @@ const CSS=`
 #ed canvas:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
 #ed .ed-zoom{position:absolute;right:10px;bottom:10px;display:flex;gap:4px;padding:4px;border-radius:10px;border:1px solid var(--line);background:var(--glass)}
 #ed .ed-zoom .tb{min-width:34px;padding:6px 8px}
+#ed .ed-banner{position:absolute;left:12px;top:10px;max-width:min(520px,calc(100% - 24px));padding:8px 8px 8px 12px;border-radius:10px;border:1px solid var(--accent);background:var(--glass2);font:500 13px/1.4 var(--display);display:flex;gap:10px;align-items:flex-start;z-index:2;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+#ed .ed-banner[hidden]{display:none}#ed .ed-banner span{flex:1;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere}
+#ed .ed-notein{width:100%;box-sizing:border-box;min-height:84px;resize:vertical;font:500 14px/1.4 var(--display);padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--btn);color:var(--ink)}
 #ed .ed-msg{position:absolute;left:50%;top:10px;transform:translateX(-50%);max-width:calc(100% - 24px);padding:7px 12px;border-radius:9px;border:1px solid var(--line);background:var(--glass2);font:600 12px var(--display);pointer-events:none;text-align:center;z-index:2}
 #ed .ed-props{grid-area:props;display:flex;flex-direction:column;min-height:0;min-width:0;border-left:1px solid var(--line);background:var(--glass2)}
 #ed .ed-sheet{display:none}
@@ -828,9 +831,11 @@ function makeEditor(opts){
   const bUndo=h("button",{class:"tb",type:"button",text:"Undo",title:"Undo (Ctrl+Z)",onclick:()=>undo()});
   const bRedo=h("button",{class:"tb",type:"button",text:"Redo",title:"Redo (Ctrl+Shift+Z)",onclick:()=>redo()});
   const bCancel=h("button",{class:"tb",type:"button",text:"Cancel",onclick:()=>cancel()});
-  const bSave=h("button",{class:"primary",type:"button",text:"Save",title:"Save (Ctrl+S)",onclick:()=>save()});
+  // mode "suggest": a coworker's proposed change, sent to the page's admins with a note instead of saved over the floor
+  const SUGGEST=opts.mode==="suggest",SAVE_L=SUGGEST?"Send suggestion":"Save",SAVING_L=SUGGEST?"Sending…":"Saving…";
+  const bSave=h("button",{class:"primary",type:"button",text:SAVE_L,title:SAVE_L+" (Ctrl+S)",onclick:()=>save()});
   const dirtyEl=h("span",{class:"ed-dirty"});
-  const top=h("header",{class:"ed-top"},h("div",{class:"ed-ttl"},h("small",{text:"Floor editor"}),h("b",{id:"ed-ttl",text:title})),dirtyEl,h("div",{class:"ed-acts"},bUndo,bRedo,bCancel,bSave));
+  const top=h("header",{class:"ed-top"},h("div",{class:"ed-ttl"},h("small",{text:str(opts.kicker)||(SUGGEST?"Suggest a change":"Floor editor")}),h("b",{id:"ed-ttl",text:title})),dirtyEl,h("div",{class:"ed-acts"},bUndo,bRedo,bCancel,bSave));
   const toolBtns={};
   const rail=h("nav",{class:"ed-rail","aria-label":"Drawing tools"},TOOLS.map(t=>{
     const fl=t.k==="floor";   // Floor is an action (shows floor settings), not a drawing tool
@@ -843,7 +848,9 @@ function makeEditor(opts){
     h("button",{class:"tb",type:"button",text:"Fit",title:"Fit the floor (0)",onclick:()=>fit()}),
     h("button",{class:"tb",type:"button",text:"+","aria-label":"Zoom in",title:"Zoom in (+)",onclick:()=>zoomBy(1.25)}));
   const msgEl=h("div",{class:"ed-msg",role:"status",hidden:true});
-  const stage=h("div",{class:"ed-stage"},cv,zoomBox,msgEl);
+  // a note shown over the drawing (the host passes a suggestion's note while an admin reviews it); Hide tucks it away
+  const bannerEl=str(opts.banner)?h("div",{class:"ed-banner",role:"note"},h("span",{text:str(opts.banner)}),h("button",{class:"tb",type:"button",text:"Hide",onclick:()=>{bannerEl.hidden=true}})):null;
+  const stage=h("div",{class:"ed-stage"},cv,zoomBox,msgEl,bannerEl);
   const sheetTitle=h("span"),sheetState=h("b",{text:"Hide"});
   const sheetBtn=h("button",{class:"ed-sheet",type:"button","aria-expanded":"true",onclick:()=>setCollapsed(!root.classList.contains("ed-collapsed"))},sheetTitle,sheetState);
   const body=h("div",{class:"ed-body"});
@@ -942,8 +949,8 @@ function makeEditor(opts){
   function swapSpec(js){const old=S.spec;S.spec=JSON.parse(js);S.sel=reselect(old,S.spec,S.sel);S.hover=null;committed(js)}
   function updateTop(){
     bUndo.disabled=!hist.canUndo()||S.saving;bRedo.disabled=!hist.canRedo()||S.saving;
-    bSave.disabled=S.saving;bCancel.disabled=S.saving;bSave.textContent=S.saving?"Saving…":"Save";
-    dirtyEl.textContent=S.saving?"Saving…":S.dirty?"Unsaved changes":"";
+    bSave.disabled=S.saving;bCancel.disabled=S.saving;bSave.textContent=S.saving?SAVING_L:SAVE_L;
+    dirtyEl.textContent=S.saving?SAVING_L:S.dirty?(SUGGEST?"Not sent yet":"Unsaved changes"):"";
   }
 
   /* ---------- selection & tools ---------- */
@@ -1346,6 +1353,14 @@ function makeEditor(opts){
     return{ok:v===true,show:v==="show"?show:null};
   }
 
+  // what changed and why, in the suggester's words (optional, up to 400 characters) -> the text, or null to keep editing
+  async function noteDialog(){
+    const ta=h("textarea",{class:"ed-notein",maxlength:"400","aria-label":"What did you change, and why?",placeholder:"For example: the kitchen moved to the east side, and the new phone booths are by the lifts."});
+    const v=await dialog({title:"Send your suggestion",body:[para("The page's admins will see your changes and this note, and can apply them."),ta],
+      buttons:[{label:"Keep editing",value:false},{label:"Send to the admins",value:true,primary:true}],focus:ta});
+    return v===true?str(ta.value).trim().slice(0,400):null;
+  }
+
   /* ---------- save / cancel / close ---------- */
   async function save(){
     if(S.saving||!S.alive||modal)return;
@@ -1366,13 +1381,20 @@ function makeEditor(opts){
         S.warnedKey=key;
       }
     }
+    // a suggestion: something must have changed, and it goes with a short note for the admins
+    let extra;
+    if(SUGGEST){
+      if(json()===S.base){await dialog({title:"Nothing changed yet",body:[para("Move, add or remove something on the floor first, then send it.")]});return}
+      const note=await noteDialog();if(note==null||!S.alive)return;
+      extra={note};
+    }
     if(typeof opts.onSave!=="function"){teardown();return}
-    S.saving=true;updateTop();flash("Saving…",0);
-    try{await opts.onSave(spec)}
+    S.saving=true;updateTop();flash(SAVING_L,0);
+    try{await opts.onSave(spec,extra)}
     catch(err){
       if(!S.alive)return;
       S.saving=false;updateTop();flash("");
-      await dialog({title:"Couldn't save",body:[para(msgOf(err)||"Something went wrong while saving."),para("Your changes are still here. Try again in a moment.","ed-note")]});
+      await dialog({title:SUGGEST?"Couldn't send":"Couldn't save",body:[para(msgOf(err)||"Something went wrong while saving."),para("Your changes are still here. Try again in a moment.","ed-note")]});
       return;
     }
     if(!S.alive)return;
@@ -1385,7 +1407,7 @@ function makeEditor(opts){
     if(S.saving||modal)return;
     if(S.drag)cancelDrag();
     if(!S.dirty){teardown();return}
-    const ok=await dialog({title:"Discard your changes?",body:[para(`Your edits to ${title} haven't been saved.`)],buttons:[{label:"Keep editing",value:false},{label:"Discard changes",value:true,primary:true}]});
+    const ok=await dialog({title:"Discard your changes?",body:[para(`Your edits to ${title} haven't been ${SUGGEST?"sent":"saved"}.`)],buttons:[{label:"Keep editing",value:false},{label:"Discard changes",value:true,primary:true}]});
     if(ok)teardown();
   }
   function teardown(){

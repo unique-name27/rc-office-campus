@@ -28,6 +28,7 @@ Drive a tiny remote-control car (or run around as a dog or a cat) on a two-build
 - **Real sounds.** The car's engine is a real Ford Escort (CC0) that revs through six gears as you speed up, with tyre screech, wall grind and crashes from "FREE CAR SFX" by LMGLolo (CC BY-ND 4.0); the horn, the dog's barks and the cat's meows are CC0 recordings (credits in `src/assets/sounds/CREDITS.md`).
 - **Driving.** Drift (Space), boost (Shift), ramps, pushable chairs, a Mailbot, and chase, bumper, high and top-down cameras.
 - **Loose props you can crash into.** Every floor has 20 to 40 of them: stacks of cardboard boxes along the walls, recycling bins, wet-floor cones, spare water-cooler bottles by the fridge and paper reams by the printers. Drive into them and they tumble, roll and land with a thud (real rigid-body physics from [Rapier](https://rapier.rs/), loaded after the page is up). The dog's big woof blows them over too, and power-up boxes burst into cardboard when you grab them. They are back in place when you come back to the floor. Where the physics engine can't load, the floors stay as they were, without the props. Hit a desk hard and its papers, mug and pens fly off; crash into the kitchen counter or the coffee machine and coffee splashes back (both moments are simulated in Blender and replayed).
+- **Suggest a change.** The people who sit on a floor know it best. On a floor, **Suggest a change to this floor** opens the floor editor for anyone: move a room, redraw a team area, fix a desk, then **Send suggestion** with a short note. The page's admins see it in Set up (the Set up button shows how many are waiting): **Review** opens it in the editor, where Save applies it for everyone, or **Dismiss** drops it. On this public page it stays in your browser tab, so you can try both sides.
 - **Setup.** Load seating from a facilities CSV, then edit each floor: load a PNG, JPG or PDF plan and set its scale, trace rooms, import CAD walls (DXF), draw team areas, or place desks from facilities X/Y coordinates.
 
 On this public page, setup changes and imported files stay in your browser tab and are gone on reload. Nothing is uploaded.
@@ -50,7 +51,7 @@ On this public page, setup changes and imported files stay in your browser tab a
 | Elevator floor | 1–4 on the elevator pad | tap a floor |
 | Coffee run | Enter | Coffee run |
 | Clear route | X | × on the route bar |
-| Switch car / dog / cat | P | Car button |
+| Switch car / dog / cat | P | Switch to … button |
 | My look | L | My look |
 
 ## Loading real seating (team version)

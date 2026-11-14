@@ -158,7 +158,8 @@ function setAvatar(av){
   const L=swatches(),saved=store.get(av==="car"?"rc-paint":"rc-coat-"+av);setPaint(L.some(x=>x[0]===saved)?saved:L.some(x=>x[0]===paint)?paint:L[0][0]);
   $("bCam").innerHTML=camName(camMode)+' <kbd>V</kbd>';setHelp();
   renderBoard();
-  const nx=AV_WHO[AV_NEXT[av]],b=$("bAv");b.innerHTML=AV_LBL[av]+' <kbd>P</kbd>';b.title=`Switch to the ${nx} (P)`;b.setAttribute("aria-label",`Playing as the ${AV_WHO[av]}. Switch to the ${nx}`);
+  // the toolbar button says what it does: switch to the next one (it shows that one's icon); P does the same
+  const nk=AV_NEXT[av],nx=AV_WHO[nk],b=$("bAv");b.innerHTML=`<span class="ai" aria-hidden="true">${AV_ICON[nk]}</span> Switch to ${nk==="car"?"car":nx} <kbd>P</kbd>`;b.title=`Switch to the ${nx} (P)`;b.setAttribute("aria-label",`Playing as the ${AV_WHO[av]}. Switch to the ${nx}`);
 }
 const AV_LBL={car:"Car",dog:"Dog",cat:"Cat"},AV_WHO={car:"RC car",dog:"dog",cat:"cat"},AV_NEXT={car:"dog",dog:"cat",cat:"car"};
 const AV_TIP={car:"RC car: hold Space through a turn for a turbo · Shift boost · J jump · H horn",dog:"Dog: Space jump · Shift sprint · H big woof pushes chairs away",cat:"Cat: Space jump, press again (or keep holding) to double jump · H meow"};
@@ -222,7 +223,7 @@ function renderStart(){
   if(!DATA)return;
   const camp=WKIND==="campus";
   $("myDesk").hidden=$("myLook").hidden=!myDesk;
-  $("bSetup").hidden=$("bSetup2").hidden=!canSetup;
+  $("bSetup").hidden=$("bSetup2").hidden=!canSetup;$("suggestB").hidden=!canSuggest();
   const ban=$("banner");ban.hidden=!DATA.demo;ban.textContent=canSetup?"These are sample people. Load your real seating in Set up.":"These are sample people until the page owner loads real seating.";
   if(camp)$("planT").hidden=true;
   else{const sp=DATA.floors[WKEY];$("planT").hidden=!(sp&&sp.plan&&sp.plan.asset);$("planT").textContent=planOn?"Hide floor plan":"Show floor plan"}
@@ -287,6 +288,7 @@ function surprise(){
 $("surprise").onclick=surprise;
 function rebuildScene(){clearRoot();buildWorld();buildCars();rebuildTags();restoreCups();setTarget(target);routeVisuals(true);updateGates();drawMapBase();labelsClear()}
 $("planT").onclick=()=>{planOn=!planOn;store.set("rc-plan",planOn?"1":"0");rebuildScene();renderStart()};
+$("suggestB").onclick=()=>{setOpts(false);openSuggest(WKEY)};
 function renderLegend(){
   const lg=$("legend");lg.innerHTML="";if(WKIND!=="floor")return;
   (WM.teams||[]).filter(t=>t.team&&t.count).slice(0,10).forEach(t=>{const el=document.createElement("span"),i=document.createElement("i"),n=document.createElement("em"),b=document.createElement("b");i.style.background=teamColorOf(t.team);n.textContent=t.team;b.textContent=t.count;el.append(i,n,b);lg.appendChild(el)});
@@ -811,6 +813,7 @@ function renderSetup(){
   if(fk){const t=[...box.querySelectorAll("button,select,input,summary")].find(x=>(x.getAttribute("aria-label")||x.textContent)===fk);if(t)t.focus()}
 }
 function renderSetupBody(box){
+  suggSection(box);
   box.appendChild(el("p",{cls:"note",text:db?"Load your people from a facilities export, draw each floor, and pick how each team sits. Changes show up for everyone who can open this page.":"Try-out mode: changes stay in this browser tab and disappear when you reload. Files you load here never leave your computer."}));
   // 1. people
   const s1=el("div",{cls:"sec"});box.appendChild(s1);
@@ -967,29 +970,114 @@ async function shrinkPlan(blob){
 }
 let pdfjs=null;
 function loadPdfJs(){if(pdfjs)return pdfjs;pdfjs=new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";s.onload=()=>{const L=window.pdfjsLib;if(!L){rej(new Error("PDF reader didn't load"));return}try{L.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"}catch(_){}res(L)};s.onerror=()=>{pdfjs=null;rej(new Error("The PDF reader couldn't load. Export the plan as PNG instead."))};document.head.appendChild(s)});return pdfjs}
-function openEditor(key){
-  const spec=DATA.floors[key];if(!spec)return;
+// o: {suggest: a coworker's proposal (sent, not saved) | spec: the version to start from | kicker, banner: what the editor
+//     says about it | onSaved: after a normal save (an admin applying a suggestion drops it)}
+function openEditor(key,o){
+  o=o||{};const spec=o.spec||DATA.floors[key];if(!spec||!DATA.floors[key])return;
   const xyRows=dbXY[key]||[],xyBy=new Map(xyRows.map(r=>[String(r[0]).toLowerCase(),r]));
   const roster=(DATA.rosters[key]||[]).map(p=>{const r=xyBy.get(String(p.desk||"").toLowerCase());return r?Object.assign({},p,{x:r[1],y:r[2],rot:r[3]}):Object.assign({},p)});
   // desks with coordinates but nobody assigned (open desks) still get placed
   for(const r of xyRows)if(!roster.some(p=>String(p.desk||"").toLowerCase()===String(r[0]).toLowerCase()))roster.push({desk:String(r[0]),name:"",team:"",title:"",x:r[1],y:r[2],rot:r[3],vacant:true});
   $("setup").hidden=true;setInert(false);edOpen=true;stopKeys();
   try{
-    EDITOR.open({key,title:floorName(key),spec,planUrl:spec.plan&&/^[0-9a-f]{32}$/.test(spec.plan.asset||"")?blobUrl(spec.plan.asset):null,teams:teamsMap(),roster,
+    // the floor as it would be saved: its key, building and floor, a fresh stamp, and not too big for one document
+    const prep=s=>{s=Object.assign({},s,{key,b:CAMPUS.parseKey(key).b,f:CAMPUS.parseKey(key).f,updatedAt:Date.now()});delete s.auto;const size=JSON.stringify(s).length;if(size>240000)throw new Error(`This floor has too much detail to save (${Math.round(size/1024)} KB). Remove some walls or desks.`);return s};
+    EDITOR.open({key,title:floorName(key),spec,mode:o.suggest?"suggest":null,kicker:o.kicker,banner:o.banner,planUrl:spec.plan&&/^[0-9a-f]{32}$/.test(spec.plan.asset||"")?blobUrl(spec.plan.asset):null,teams:teamsMap(),roster,
       build:s=>LAYOUT.build(s,DATA.rosters[key]||[],teamsMap()),
-      upload:assets?async blob=>{blob=await shrinkPlan(blob);const t=/^image\/(png|jpeg|webp|gif)$/.test(blob.type)?blob.type:"image/png";const r=await assets.upload(blob,{type:t});return{asset:r.id,url:r.url}}
+      upload:o.suggest?null:assets?async blob=>{blob=await shrinkPlan(blob);const t=/^image\/(png|jpeg|webp|gif)$/.test(blob.type)?blob.type:"image/png";const r=await assets.upload(blob,{type:t});return{asset:r.id,url:r.url}}
         :!db?async blob=>{blob=await shrinkPlan(blob);const id=[...crypto.getRandomValues(new Uint8Array(16))].map(b=>b.toString(16).padStart(2,"0")).join(""),url=URL.createObjectURL(blob);LOCAL_BLOBS.set(id,url);return{asset:id,url}}:null,
       renderPDF:async f=>IMPORT.renderPDF(f,await loadPdfJs()),parseDXF:t=>IMPORT.parseDXF(t),similarity:(a,b,c,d)=>IMPORT.similarity(a,b,c,d),
-      onSave:async s=>{s=Object.assign({},s,{key,b:CAMPUS.parseKey(key).b,f:CAMPUS.parseKey(key).f,updatedAt:Date.now()});delete s.auto;const size=JSON.stringify(s).length;if(size>240000)throw new Error(`This floor has too much detail to save (${Math.round(size/1024)} KB). Remove some walls or desks.`);
+      onSave:o.suggest?async(s,x)=>{await sendSuggestion(key,prep(s),x&&x.note);toast(db?"Thanks! Your suggestion went to the page's admins.":"Suggestion saved. Open Set up to review it the way an admin would.")}:async s=>{s=prep(s);
         if(db){try{await db.doc("floors/"+key).set(s)}catch(e){throw new Error(e&&e.code==="invalid_argument"?"Only editors of this page can save floors.":"Couldn't save the floor. Try again.")}}
         else{dbFloors[key]=s;mergeData();refreshWorld()}
         // floor 1 sets the building's footprint on the campus (the front door must line up with the floor's doorway)
         const pk=CAMPUS.parseKey(key),bb=bldg(pk.b);
         if(pk.f===1&&bb&&(Math.abs(bb.w-s.w)>.01||Math.abs(bb.d-s.d)>.01)){try{await saveCampus({buildings:DATA.campus.buildings.map(b=>b.id===bb.id?Object.assign({},b,{w:clamp(s.w,12,300),d:clamp(s.d,12,300)}):b)},true)}catch(_){}}
-        toast(floorName(key)+" saved")},
-      onClose:()=>{edOpen=false;stopKeys();if(canSetup){openSetup()}}
+        toast(floorName(key)+" saved");if(o.onSaved)await o.onSaved()},
+      onClose:()=>{edOpen=false;stopKeys();if(canSetup&&!o.suggest){openSetup()}}
     });
   }catch(e){console.error(e);edOpen=false;toast("The floor editor couldn't open.")}
+}
+
+/* ---------- suggestions: coworkers propose floor changes, the page's admins review them ---------- */
+// The people who sit on a floor know it best. A coworker opens the floor editor in suggest mode and sends their version of
+// the floor with a short note. It is kept under their own suggestions/<uid> (rules: each writes their own; only admins read
+// them all): the index doc suggestions/<uid> = {v, items: {<floor key>: {note, at, base (the floor's updatedAt then)}}} and
+// one doc per floor, suggestions/<uid>/specs/<key> = {v, spec}. One per person per floor: sending again replaces it.
+// Admins see them in Set up: Review opens the editor on the suggested floor (Save applies it for everyone and drops the
+// suggestion, Cancel keeps it), Dismiss drops it. Without the db (the public page) they stay in this tab, so you can try both sides.
+let SUGG=[],suggUnsub=null;const LOCAL_SUGG=new Map(),suggNames=new Map(); // LOCAL_SUGG: "<uid>|<key>" -> {uid,w,note,at,base,spec}
+const canSuggest=()=>WKIND==="floor"&&!!DATA&&!!DATA.floors[WKEY]&&(!db||(!!myId&&!canSetup));
+const suggWho=u=>u==="you"?"You":(suggNames.get(u)||"A coworker");
+const suggAgo=t=>{const m=Math.round((Date.now()-t)/60000);return m<1?"just now":m<60?m+" min ago":m<1440?Math.round(m/60)+" h ago":plural(Math.round(m/1440),"day")+" ago"};
+async function openSuggest(key){
+  if(!DATA.floors[key]||trans)return;
+  let spec=null;
+  if(db&&myId){try{const d=await db.doc(`suggestions/${myId}/specs/${key}`).get(),v=d.exists&&d.data();spec=v?validSpec(v.spec,key):null}catch(_){}}
+  else if(!db){const l=LOCAL_SUGG.get("you|"+key);spec=l?l.spec:null}
+  openEditor(key,{suggest:true,spec,banner:spec?"This is the change you suggested earlier. Edit it and send it again, or Cancel to leave it as it is.":"Fix what's out of date on your floor: walls, rooms, team areas or desks. When you send it, the page's admins see your version and your note, and can apply it."});
+}
+async function sendSuggestion(key,spec,note){
+  const it={note:String(note||"").slice(0,400),at:Date.now(),base:+(DATA.floors[key]&&DATA.floors[key].updatedAt)||0};
+  if(!db){LOCAL_SUGG.set("you|"+key,Object.assign({uid:"you",w:key,spec},it));suggLocal();return}
+  if(!myId)throw new Error("Sign in to send a suggestion.");
+  try{
+    await db.doc(`suggestions/${myId}/specs/${key}`).set({v:1,spec});
+    const d=await db.doc("suggestions/"+myId).get(),cur=(d.exists&&d.data()&&d.data().items)||{};
+    await db.doc("suggestions/"+myId).set({v:1,items:Object.assign({},cur,{[key]:it})});
+  }catch(e){const c=e&&e.code;throw new Error(c==="invalid_argument"?"Your access to this page doesn't let you send suggestions. Ask its owner for Contributor access.":c==="quota_exceeded"?"The page's storage is full. Ask its owner to clear old suggestions.":"Couldn't send your suggestion. Try again in a moment.")}
+}
+// admins: every pending suggestion, live (shared data is untrusted: keep only known floors and plain values)
+function watchSuggestions(){
+  if(!db||!canSetup||suggUnsub)return;
+  try{suggUnsub=db.collection("suggestions").limit(200).onSnapshot(sn=>{
+    const out=[];
+    for(const d of sn.docs){const v=d.data(),items=v&&v.items&&typeof v.items==="object"?v.items:{};
+      for(const w in items){const it=items[w];if(!it||typeof it!=="object"||!DATA.floors[w])continue;out.push({uid:String(d.id),w,note:typeof it.note==="string"?it.note.slice(0,400):"",at:+it.at||0,base:+it.base||0})}}
+    out.sort((a,b)=>b.at-a.at);SUGG=out;suggChanged();
+  },()=>{})}catch(_){}
+}
+function suggLocal(){SUGG=[...LOCAL_SUGG.values()].sort((a,b)=>b.at-a.at);suggChanged()}
+function suggChanged(){
+  const n=SUGG.length,b=$("bSetup");b.textContent=n?`Set up · ${n}`:"Set up";
+  if(n)b.setAttribute("aria-label",`Set up the campus: ${plural(n,"suggestion")} to review`);else b.removeAttribute("aria-label");
+  $("bSetup2").textContent=n?`Set up the campus (${plural(n,"suggestion")})`:"Set up the campus";
+  resolveSuggNames();if(!$("setup").hidden&&canSetup)renderSetup();
+}
+async function resolveSuggNames(){
+  if(!user||typeof user.profiles!=="function")return;const ids=[...new Set(SUGG.map(x=>x.uid))].filter(id=>id!=="you"&&!suggNames.has(id));if(!ids.length)return;
+  try{const ps=await user.profiles(ids);for(const id of ids)suggNames.set(id,(ps&&ps[id]&&ps[id].name)||"");if(!$("setup").hidden&&canSetup)renderSetup()}catch(_){}
+}
+const suggStale=it=>{const f=DATA.floors[it.w];return!!(it.base&&f&&f.updatedAt&&f.updatedAt!==it.base)};
+async function reviewSuggestion(it){
+  let spec=it.spec||null;
+  if(!spec&&db){try{const d=await db.doc(`suggestions/${it.uid}/specs/${it.w}`).get(),v=d.exists&&d.data();spec=v?validSpec(v.spec,it.w):null}catch(_){}}
+  if(!spec){toast("That suggestion couldn't be loaded. It may have been withdrawn.");return}
+  const who=suggWho(it.uid);
+  openEditor(it.w,{spec,kicker:"Suggestion from "+who,
+    banner:`${who} suggests this version of ${floorName(it.w)}${it.note?": “"+it.note+"”":"."}${suggStale(it)?" The floor was changed after this was suggested, so check that nothing newer gets lost.":""} Save applies it for everyone; Cancel keeps the suggestion for later.`,
+    onSaved:()=>dropSuggestion(it)});
+}
+async function dropSuggestion(it){
+  if(!db){LOCAL_SUGG.delete(it.uid+"|"+it.w);suggLocal();return}
+  try{
+    await db.doc(`suggestions/${it.uid}/specs/${it.w}`).delete();
+    const ix=db.doc("suggestions/"+it.uid),d=await ix.get(),items=Object.assign({},(d.exists&&d.data()&&d.data().items)||{});delete items[it.w];
+    if(Object.keys(items).length)await ix.set({v:1,items});else await ix.delete();
+  }catch(_){toast("Couldn't remove the suggestion. Try again.")}
+}
+// Set up: the pending suggestions, newest first
+function suggSection(box){
+  if(!SUGG.length)return;
+  const sec=el("div",{cls:"sec",id:"suggSec"});box.appendChild(sec);
+  sec.appendChild(el("h3",{text:`Suggestions from coworkers (${SUGG.length})`}));
+  sec.appendChild(el("p",{cls:"note",text:"People who sit on a floor can propose changes to it. Review one to open it in the floor editor: Save applies it for everyone, Cancel keeps it here for later."}));
+  const ul=el("ul",{cls:"sugg"});
+  for(const it of SUGG){const who=suggWho(it.uid);
+    ul.appendChild(el("li",null,[el("div",{cls:"st"},[el("b",{text:floorName(it.w)}),el("span",{cls:"m",text:`${who} · ${suggAgo(it.at)}${suggStale(it)?" · the floor changed since":""}`}),it.note?el("q",{text:it.note}):null]),
+      el("div",{cls:"row"},[el("button",{cls:"tb",type:"button",text:"Review","aria-label":`Review ${who}'s suggestion for ${floorName(it.w)}`,onclick:()=>reviewSuggestion(it)}),
+        el("button",{cls:"tb",type:"button",text:"Dismiss","aria-label":`Dismiss ${who}'s suggestion for ${floorName(it.w)}`,onclick:()=>confirmDlg(`Dismiss ${who}'s suggestion for ${floorName(it.w)}? It can't be brought back.`,"Dismiss",()=>dropSuggestion(it))})])]))}
+  sec.appendChild(ul);
 }
 
 /* ---------- my look: claim your desk ("This is me") and choose how your figure looks ---------- */
@@ -1257,7 +1345,7 @@ setTimeout(()=>{if(!capsIn)hideLoading(introAtLift)},3000);
   if(db)showLoading();else if($("fade").dataset.on==="1")hideLoading(introAtLift);
   if(user){try{myId=await user.id()}catch(_){}try{canWrite=await user.can("data.write")}catch(_){}try{canSetup=!!(await user.canEdit())||!!(await user.isOwner())}catch(_){}}
   if(!db&&!window.claude)canSetup=true; // local preview: let the setup tools run in memory
-  watchData();startBoard();watchLooks();recomputeLooks();renderStart();
+  watchData();startBoard();watchLooks();watchSuggestions();recomputeLooks();renderStart();
   if(room){try{room.onPeers(ch=>syncPeers(ch.peers),()=>{room=null;for(const r of remotes.values())removeRemote(r);remotes.clear();renderRoster()});setTimeout(()=>{roomSettled=true;renderRoster()},2000)}catch(_){room=null}}
   presDirty=true;resolveNames();renderStart();
 })();

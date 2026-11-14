@@ -92,6 +92,9 @@ body.moving:not([data-mode="overview"]) #start:not(:hover):not(:focus-within){op
 .fl:hover{border-color:var(--accent)}
 .fl[aria-current="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
 .fl .you{margin-left:4px}
+.sugg{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}.sugg li{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--btn)}
+.sugg .st{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}.sugg .m{font:500 11px var(--mono);color:var(--muted)}.sugg q{font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+#bAv .ai{font-size:15px;line-height:1}
 #banner{font-size:12px;line-height:1.4;color:var(--muted);border-left:3px solid var(--accent);padding:2px 0 2px 8px}
 /* side: leaderboard + roster */
 #side{position:fixed;z-index:5;right:max(14px,env(safe-area-inset-right,0px));top:calc(66px + env(safe-area-inset-top,0px));width:272px;padding:14px;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 96px);overflow:auto;box-sizing:border-box}
@@ -300,7 +303,7 @@ body.touch #help{display:none}
   </div>
   <div class="row gorow"><button class="tb surprise" id="surprise" type="button"><span aria-hidden="true">🎲</span> Surprise me</button><button class="primary" id="go" type="button">Let's go</button></div>
   <div id="banner" hidden></div>
-  <div class="row" id="stLinks"><button class="lnk" id="myDesk" type="button" hidden>Route to my desk</button><button class="lnk" id="myLook" type="button" hidden>My look</button><button class="lnk no-c" id="planT" type="button" hidden>Hide floor plan</button><button class="lnk" id="bSetup2" type="button" hidden>Set up the campus</button></div>
+  <div class="row" id="stLinks"><button class="lnk" id="myDesk" type="button" hidden>Route to my desk</button><button class="lnk" id="myLook" type="button" hidden>My look</button><button class="lnk no-c" id="planT" type="button" hidden>Hide floor plan</button><button class="lnk no-c" id="suggestB" type="button" hidden>Suggest a change to this floor</button><button class="lnk" id="bSetup2" type="button" hidden>Set up the campus</button></div>
 </section>
 
 <aside id="side" class="glass hud no-d no-w" aria-label="Coffee run times and who's here">

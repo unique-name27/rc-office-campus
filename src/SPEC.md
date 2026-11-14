@@ -188,10 +188,18 @@ EDITOR.open({
   build,                      // (spec) -> FloorModel  — live preview of auto-filled desks (LAYOUT.build bound to roster/teams)
   upload,                     // (File|Blob) -> Promise<{ asset, url }>, or null if this viewer can't upload images
   renderPDF, parseDXF, similarity,   // IMPORT helpers
-  onSave,                     // (spec) -> Promise   (resolve => editor closes; reject(Error) => show message, stay open)
+  mode,                       // "suggest": a coworker's proposal: Save reads "Send suggestion", needs a change and asks for a note
+  kicker, banner,             // optional: the small line above the title; a note shown over the drawing (Hide tucks it away)
+  onSave,                     // (spec, {note}?) -> Promise   (resolve => editor closes; reject(Error) => show message, stay open)
   onClose                     // () -> void
 }) -> { close() }
 ```
+Suggestions (game side, `game-4-ui.js`): a coworker who can't set up the page opens a floor in suggest mode ("Suggest a change to this
+floor" on the start card). Stored under their own `suggestions/<uid>` (rules: `suggestions` read/write admin, `suggestions/{self}`
+read/write interact): the index doc `suggestions/<uid>` = `{v, items: {<floor key>: {note (<= 400 chars), at, base (the floor's
+updatedAt then)}}}` and `suggestions/<uid>/specs/<key>` = `{v, spec}`; one per person per floor. Admins see them in Set up (and a count
+on the Set up button): Review opens the editor on the suggested floor (Save applies it and drops the suggestion), Dismiss drops it.
+Without the db they stay in the tab.
 
 ## 8b. FUN  (`FUN`)  — coins and power-up boxes in every world (pure); the game side is `js/game-3b-fun.js`, art `js/game-3a-fun-art.js`
 Where they sit is the same for everyone (seeded by the world key); what a player has picked up is that player's own and is never

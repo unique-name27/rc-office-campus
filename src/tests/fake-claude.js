@@ -2,7 +2,10 @@
 // In-memory, async like the real store, notifies listeners after writes. Never shipped in the published page.
 (function () {
   if (!/fakedb/.test(location.hash)) return;
-  const store = new Map(), subs = new Set(), later = f => setTimeout(f, 30);
+  // #fakedb-coworker: a Contributor (no Set up); #fakedb-persist: the store survives reloads (try one role, then the other)
+  const role = /coworker/.test(location.hash) ? 'coworker' : 'admin', persist = /persist/.test(location.hash);
+  const store = new Map(persist ? (() => { try { return JSON.parse(localStorage.getItem('__fakeStore') || '[]') } catch (_) { return [] } })() : []), subs = new Set(), later = f => setTimeout(f, 30);
+  const save = () => { if (persist) try { localStorage.setItem('__fakeStore', JSON.stringify([...store])) } catch (_) {} };
   const clone = v => JSON.parse(JSON.stringify(v));
   const segs = p => p.split('/');
   const snapDoc = path => { const d = store.get(path); return { id: segs(path).pop(), exists: !!d, data: () => d && clone(d), metadata: { fromCache: false, hasPendingWrites: false } } };
@@ -11,7 +14,7 @@
     const docs = [...store.keys()].filter(k => k.startsWith(path + '/') && segs(k).length === n).sort().slice(0, lim || 1000).map(snapDoc);
     return { docs, size: docs.length, empty: !docs.length, metadata: { fromCache: false, hasPendingWrites: false }, docChanges: () => [] };
   };
-  const notify = () => { for (const s of subs) later(() => s.cb(s.kind === 'doc' ? snapDoc(s.path) : snapCol(s.path, s.lim))) };
+  const notify = () => { save(); for (const s of subs) later(() => s.cb(s.kind === 'doc' ? snapDoc(s.path) : snapCol(s.path, s.lim))) };
   const merge = (a, b) => { for (const k in b) { if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k] && typeof a[k] === 'object') merge(a[k], b[k]); else a[k] = b[k] } };
   window.__fakeWrites = [];
   function docRef(path) {
@@ -35,8 +38,8 @@
   }
   const db = { doc: docRef, collection: p => colRef(p) };
   const user = {
-    id: async () => window.__fakeUid || 'u_test', canEdit: async () => true, isOwner: async () => true, can: async () => true,
-    profiles: async ids => Object.fromEntries(ids.map(i => [i, { name: i === 'u_test' ? (window.__fakeName || localStorage.getItem('__fakeName') || 'Test Person') : 'Coworker ' + i }])),
+    id: async () => window.__fakeUid || (role === 'coworker' ? 'u_cowork' : 'u_test'), canEdit: async () => role === 'admin', isOwner: async () => role === 'admin', can: async () => role === 'admin',
+    profiles: async ids => Object.fromEntries(ids.map(i => [i, { name: i === 'u_test' ? (window.__fakeName || localStorage.getItem('__fakeName') || 'Test Person') : i === 'u_cowork' ? 'Sam Rivera' : 'Coworker ' + i }])),
   };
   const room = { presence: () => Promise.resolve(), onPeers: () => () => {} };
   window.__fakeStore = store;
